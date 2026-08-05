@@ -3,12 +3,14 @@ productName: 拾光素材库
 directories:
   buildResources: build
 files:
+  - 'out/**'
   - '!**/.vscode/*'
   - '!src/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!.ui-shot/**'
 win:
   executableName: ShiGuangMaterials
   icon: build/icon.ico
