@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        width: 256px;
+        margin: 0;
+        background: #0b0e13;
+        color: #d5dbe2;
+        font-family: 'Cascadia Mono', 'Segoe UI', 'Microsoft YaHei', monospace, sans-serif;
+        font-size: 13px;
+      }
+      .wrap {
+        padding: 14px;
+      }
+      h1 {
+        font-size: 13px;
+        letter-spacing: 0.2em;
+        margin: 0 0 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .logo {
+        width: 20px;
+        height: 20px;
+        background: linear-gradient(135deg, #10141b, #07090d);
+        border: 1px solid #2b7ab8;
+        color: #4da9e9;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 11px;
+      }
+      button {
+        width: 100%;
+        padding: 8px 0;
+        border: 1px solid #2b7ab8;
+        border-radius: 2px;
+        background: transparent;
+        color: #d5dbe2;
+        font-size: 12px;
+        letter-spacing: 0.06em;
+        cursor: pointer;
+        margin-bottom: 6px;
+        font-family: inherit;
+      }
+      button:hover:not(:disabled) {
+        background: rgba(77, 169, 233, 0.12);
+        color: #8fcdf7;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      button.primary {
+        background: #4da9e9;
+        border-color: #4da9e9;
+        color: #04182b;
+        font-weight: 700;
+      }
+      button.primary:hover:not(:disabled) {
+        background: #77c4f5;
+        color: #04182b;
+      }
+      .filters {
+        border: 1px solid rgba(148, 175, 205, 0.2);
+        padding: 8px 10px;
+        margin-bottom: 8px;
+      }
+      .filters .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        font-size: 11px;
+        color: #8494a5;
+        margin-bottom: 6px;
+      }
+      .filters .row:last-child {
+        margin-bottom: 0;
+      }
+      select {
+        background: #07090d;
+        color: #d5dbe2;
+        border: 1px solid rgba(148, 175, 205, 0.3);
+        font-size: 11px;
+        padding: 2px 4px;
+        font-family: inherit;
+      }
+      .exts {
+        display: flex;
+        gap: 8px;
+      }
+      .exts label {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        cursor: pointer;
+      }
+      input[type='checkbox'] {
+        accent-color: #4da9e9;
+      }
+      #status {
+        margin-top: 8px;
+        min-height: 16px;
+        color: #4f5c6b;
+        font-size: 11px;
+        text-align: center;
+      }
+      #status.ok {
+        color: #4ade80;
+      }
+      #status.err {
+        color: #f87171;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1><span class="logo">L</span>LUMEN CLIP</h1>
+      <div class="filters">
+        <div class="row">
+          <span>批量过滤 · 最小宽度</span>
+          <select id="minW">
+            <option value="0">不限</option>
+            <option value="300">≥ 300px</option>
+            <option value="600" selected>≥ 600px</option>
+            <option value="1000">≥ 1000px</option>
+          </select>
+        </div>
+        <div class="row">
+          <span>格式</span>
+          <div class="exts">
+            <label><input type="checkbox" class="fmt" value="jpg" checked />jpg</label>
+            <label><input type="checkbox" class="fmt" value="png" checked />png</label>
+            <label><input type="checkbox" class="fmt" value="gif" checked />gif</label>
+            <label><input type="checkbox" class="fmt" value="webp" checked />webp</label>
+            <label><input type="checkbox" class="fmt" value="svg" checked />svg</label>
+          </div>
+        </div>
+      </div>
+      <button id="clip" class="primary">✂ 剪藏本页图片</button>
+      <button id="region">▣ 区域截图</button>
+      <button id="fullpage">↕ 整页长截图</button>
+      <div id="status">需保持 LUMEN 应用运行</div>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,26 @@
+# 依赖
+node_modules
+
+# 构建产物
+dist
+out
+build/!icon.*
+
+# 日志与本地环境
+*.local
+*.log*
+.env
+.env.*
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 用户指南 PDF（由 .ui-shot/make-guide-pdf.cjs 生成，不入库）
+*.pdf
+
+# 截图走查临时产物
+.ui-shot/*.png
+.ui-shot/*.jpg
+.ui-shot/.userdata/
+.ui-shot/test-export.zip

@@ -1,0 +1,45 @@
+{
+  "name": "eagle-like",
+  "version": "0.5.4",
+  "productName": "LUMEN",
+  "description": "LUMEN - 类 Eagle 本地素材管理应用",
+  "main": "./out/main/index.js",
+  "author": "eagle-like",
+  "license": "MIT",
+  "scripts": {
+    "postinstall": "electron-rebuild -f -o better-sqlite3",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "build:win": "npm run typecheck && electron-vite build && electron-builder --win"
+  },
+  "dependencies": {
+    "ag-psd": "^31.0.2",
+    "better-sqlite3": "^12.2.0",
+    "electron-updater": "^6.8.9",
+    "ffmpeg-static": "^5.3.0",
+    "fontkit": "^2.0.4",
+    "sharp": "^0.34.3",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
+    "@tailwindcss/vite": "^4.1.12",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/fontkit": "^2.0.9",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.10",
+    "@vitejs/plugin-react": "^5.0.1",
+    "electron": "^41.0.0",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^3.1.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "tailwindcss": "^4.1.12",
+    "typescript": "^5.9.2",
+    "vite": "^6.3.5"
+  }
+}

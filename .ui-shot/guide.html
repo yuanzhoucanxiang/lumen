@@ -1,0 +1,137 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Microsoft YaHei', 'PingFang SC', 'Segoe UI', sans-serif;
+    color: #1f2430;
+    font-size: 12.5px;
+    line-height: 1.75;
+    margin: 0;
+  }
+  .page { padding: 8px 4px; }
+  h1 {
+    font-size: 22px;
+    margin: 0 0 4px;
+    letter-spacing: 0.04em;
+    color: #0d1117;
+    border-bottom: 3px solid #4da9e9;
+    padding-bottom: 10px;
+  }
+  h2 {
+    font-size: 15.5px;
+    margin: 22px 0 8px;
+    padding-left: 9px;
+    border-left: 4px solid #4da9e9;
+    color: #0d1117;
+  }
+  h3 { font-size: 13.5px; margin: 14px 0 6px; }
+  p { margin: 6px 0; }
+  blockquote {
+    margin: 8px 0;
+    padding: 8px 12px;
+    background: #f0f7ff;
+    border-left: 4px solid #4da9e9;
+    color: #40536b;
+  }
+  ul, ol { margin: 6px 0; padding-left: 22px; }
+  li { margin: 3px 0; }
+  code {
+    background: #eef1f5;
+    border: 1px solid #dde3ea;
+    border-radius: 3px;
+    padding: 0 4px;
+    font-family: Consolas, monospace;
+    font-size: 11.5px;
+    color: #b0403a;
+  }
+  a { color: #2b7ab8; text-decoration: none; word-break: break-all; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+    font-size: 12px;
+  }
+  th, td {
+    border: 1px solid #d7dee8;
+    padding: 5px 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: #f0f7ff; color: #2b5a80; white-space: nowrap; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  hr { border: none; border-top: 1px solid #dde3ea; margin: 18px 0; }
+  .footer { text-align: center; color: #8a94a3; margin-top: 16px; font-size: 11px; }
+  strong { color: #0d1117; }
+</style></head>
+<body><div class="page"><h1>LUMEN 拾光档案馆 · 安装使用说明</h1>
+<blockquote>一个类 Eagle 的本地素材管理工具：收集、整理、检索你的图片/视频/字体/PSD 素材。</blockquote>
+<blockquote>数据全部存在你自己电脑上，无需注册、无需联网（联网仅用于自动更新）。</blockquote>
+<hr/>
+<h2>一、下载与安装</h2>
+<ol>
+<li>打开下载页，下载最新的 <code>Lumen-x.x.x-setup.exe</code>（约 147MB）：</li>
+</ol>
+<p><strong>https://github.com/yuanzhoucanxiang/shiguang-materials/releases/latest</strong></p>
+<ol>
+<li>双击安装包。如果 Windows 弹出蓝色警告「已阻止启动无法识别的应用」：</li>
+</ol>
+<p>点 <strong>「更多信息」→「仍要运行」</strong>（软件没有购买代码签名证书，属正常现象，放心安装）。</p>
+<ol>
+<li>安装完成，桌面会出现 <strong>LUMEN</strong> 图标，双击即用。</li>
+</ol>
+<h2>二、第一次使用</h2>
+<ul>
+<li>首次启动会自动创建素材库，位置在 <code>文档\EagleLike.library</code>（素材都存这里，别手动改里面的文件）。</li>
+<li><strong>导入素材的四种方式</strong>：</li>
+</ul>
+<ol>
+<li>直接把文件/文件夹<strong>拖进窗口</strong></li>
+<li>左上角蓝色「<strong>导入</strong>」按钮</li>
+<li>复制图片后按 <strong>Ctrl+V</strong> 粘贴</li>
+<li>用浏览器扩展<strong>剪藏网页图片</strong>（见第五节）</li>
+</ol>
+<h2>三、看图与找图</h2>
+<table><thead><tr><th>操作</th><th>方式</th></tr></thead><tbody><tr><td>放大看一眼</td><td>鼠标<strong>悬停</strong>在卡片上不动（GIF/视频/音频会自动播放）</td></tr><tr><td>看大图</td><td><strong>双击</strong>卡片；滚轮缩放、放大后拖动、双击复位</td></tr><tr><td>切换图片</td><td>大图预览里按 <strong>← →</strong> 方向键</td></tr><tr><td>多选</td><td>Ctrl+点击 = 加选；<strong>Shift+点击 = 连选一片</strong>；Ctrl+A = 全选</td></tr><tr><td>布局</td><td>工具栏右侧切换 瀑布流 / 网格 / 列表</td></tr><tr><td>搜索</td><td>顶部搜索框（按名称/注释）</td></tr><tr><td>筛选</td><td>格式、颜色（色环取色）、星级、未标注、导入日期</td></tr><tr><td>找相似图</td><td>右键图片 →「<strong>搜索相似图片</strong>」</td></tr><tr><td>查重复</td><td>工具栏「查重」按钮，自动分组重复图，一键清理副本</td></tr></tbody></table>
+<h2>四、整理素材</h2>
+<ul>
+<li><strong>评分</strong>：悬停卡片点星星，或选中后按键盘 <strong>1–5</strong></li>
+<li><strong>打标签</strong>：选中图片，在右侧详情面板添加；多选可批量打标签/批量评分</li>
+<li><strong>文件夹</strong>：侧栏右键 → 新建文件夹/子文件夹，把图<strong>拖进去</strong>即可（可多选批量拖）</li>
+<li><strong>智能文件夹</strong>：按条件自动聚合（如「4星以上 + 横图 + 近30天」），条件随时可改</li>
+<li><strong>标签分组与颜色</strong>：右键标签可设颜色、移动到分组，让标签区井井有条</li>
+<li><strong>批注/裁剪</strong>：右键图片 →「批注 / 裁剪」（画笔/矩形/箭头/文字/裁剪，15 步撤销）</li>
+<li><strong>回收站</strong>：删除先进回收站，可恢复；<strong>Ctrl+Z 撤销删除</strong>；30 天前内容自动清理</li>
+<li><strong>导出</strong>：右键 →「导出到文件夹…」或「打包为 ZIP…」</li>
+</ul>
+<h2>五、浏览器剪藏（LUMEN Clip）</h2>
+<p>在网页上看到好图，一键收进库里：</p>
+<ol>
+<li>打开 Chrome → 地址栏输入 <code>chrome://extensions</code> → 右上角打开<strong>开发者模式</strong></li>
+<li>点「<strong>加载已解压的扩展程序</strong>」，选择发给您的 <code>browser-extension</code> 文件夹</li>
+<li>保持 LUMEN 应用在运行，然后：</li>
+</ol>
+<ul>
+<li>点扩展图标 →「<strong>剪藏本页图片</strong>」批量收图（可按尺寸/格式过滤）</li>
+<li>「<strong>区域截图</strong>」框选网页局部；「<strong>整页长截图</strong>」自动滚动拼接</li>
+<li>或在图片上<strong>右键 → 剪藏图片到 LUMEN</strong></li>
+</ul>
+<h2>六、自动整理（监控文件夹）</h2>
+<p>设置（左下角 ⚙）→「监控文件夹」添加目录，支持多个、<strong>含子目录</strong>。</p>
+<p>之后这些文件夹里新出现的图片/视频会<strong>自动导入</strong>素材库——</p>
+<p>配合下载目录使用，下载即入库。</p>
+<h2>七、多个素材库</h2>
+<p>侧栏底部可切换/新建素材库（比如「工作图库」和「个人图库」分开）。</p>
+<p>每个库是一个独立文件夹，也可以放到移动硬盘或网盘目录里随身携带。</p>
+<h2>八、快捷键一览</h2>
+<table><thead><tr><th>按键</th><th>作用</th></tr></thead><tbody><tr><td>空格</td><td>预览选中图片</td></tr><tr><td>← → ↑ ↓</td><td>移动选择</td></tr><tr><td>1–5</td><td>给选中图片评星</td></tr><tr><td>Ctrl+A</td><td>全选</td></tr><tr><td>Ctrl+Z</td><td>撤销删除</td></tr><tr><td>Ctrl+V</td><td>粘贴导入</td></tr><tr><td>Delete</td><td>删除（进回收站）</td></tr><tr><td>Esc</td><td>关闭预览/取消选择</td></tr></tbody></table>
+<h2>九、自动更新</h2>
+<p>应用启动时会自动检查新版本。发现更新会在右下角弹出提示，</p>
+<p>点「立即下载」→「重启安装」即可，无需重新下载安装包。</p>
+<h2>十、常见问题</h2>
+<ul>
+<li><strong>PSD 没有缩略图？</strong> PSD 需要在 Photoshop 保存时勾选「最大兼容性」才有预览图；重新保存后再导入即可。</li>
+<li><strong>AI/HEIC 格式？</strong> 暂不支持生成缩略图，会显示为格式图标，文件本身正常入库。</li>
+<li><strong>剪藏没反应？</strong> 确认 LUMEN 应用正在运行，且没有被其他程序占用 45678 端口。</li>
+<li><strong>数据在哪？</strong> 素材库在 <code>文档\EagleLike.library</code>；配置在 <code>%APPDATA%\eagle-like</code>。卸载应用不会删除素材库。</li>
+</ul>
+<hr/>
+<p>*LUMEN 拾光档案馆 — 拾取每一束光。*</p></div></body></html>

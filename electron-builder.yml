@@ -1,0 +1,27 @@
+appId: com.shiguang.materials
+productName: 拾光素材库
+directories:
+  buildResources: build
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
+  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+win:
+  executableName: ShiGuangMaterials
+  icon: build/icon.ico
+asarUnpack:
+  - '**/node_modules/ffmpeg-static/**'
+nsis:
+  artifactName: Lumen-${version}-setup.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  createDesktopShortcut: always
+npmRebuild: true
+# 自动更新源：GitHub Releases（yuanzhoucanxiang/shiguang-materials，仅发布安装包）
+publish:
+  provider: github
+  owner: yuanzhoucanxiang
+  repo: shiguang-materials
