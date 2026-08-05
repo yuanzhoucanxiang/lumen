@@ -22,6 +22,20 @@ export default function App() {
   const [dragOver, setDragOver] = useState(false)
   const [upd, setUpd] = useState<UpdateStatus | null>(null)
   const [updDismissed, setUpdDismissed] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+
+  // 立即下载更新（带反馈：失败 toast，下载中按钮禁用）
+  const startDownload = async () => {
+    setDownloading(true)
+    try {
+      await window.api.downloadUpdate()
+      // 下载完成后主进程会推送 downloaded 状态,这里不额外处理
+    } catch {
+      useLibraryStore.getState().showToast('更新下载失败,请检查网络后重试')
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   useEffect(() => {
     void refreshAll()
@@ -40,7 +54,9 @@ export default function App() {
       if (s.state === 'none') useLibraryStore.getState().showToast('已是最新版本')
       if (s.state === 'dev') useLibraryStore.getState().showToast('开发模式不检查更新')
       if (s.state === 'error') {
-        useLibraryStore.getState().showToast(`更新检查失败：${s.message ?? '网络异常'}`)
+        const msg = s.message ?? '网络异常'
+        // 检查阶段 vs 下载阶段:下载失败时 lastStatus 是 downloading,主进程已标记
+        useLibraryStore.getState().showToast(`更新失败：${msg}`)
       }
     })
   }, [refreshAll])
@@ -183,10 +199,11 @@ export default function App() {
               <p className="mt-1.5 text-[11px] text-[var(--text-faint)]">下载后重启即可完成安装</p>
               <div className="mt-2.5 flex gap-2">
                 <button
-                  className="btn-primary flex-1"
-                  onClick={() => void window.api.downloadUpdate()}
+                  className="btn-primary flex-1 disabled:opacity-40"
+                  disabled={downloading}
+                  onClick={() => void startDownload()}
                 >
-                  立即下载
+                  {downloading ? '下载中…' : '立即下载'}
                 </button>
                 <button className="btn-ghost" onClick={() => setUpdDismissed(true)}>
                   稍后

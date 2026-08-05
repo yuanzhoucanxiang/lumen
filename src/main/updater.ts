@@ -56,9 +56,12 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     send({ state: 'downloaded', version: info.version, notes: releaseNotesOf(info) })
   )
   autoUpdater.on('error', (err) => {
-    // 网络异常只在手动检查时提示
-    if (manualCheck) send({ state: 'error', message: err?.message ?? '网络异常' })
-    else console.log('[updater] silent error:', err?.message)
+    // 网络异常只在手动检查时提示；下载阶段的错误必须提示（否则用户点「立即下载」无反馈）
+    if (manualCheck || lastStatus.state === 'downloading') {
+      send({ state: 'error', message: err?.message ?? '网络异常' })
+    } else {
+      console.log('[updater] silent error:', err?.message)
+    }
     manualCheck = false
   })
 
@@ -78,7 +81,13 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     return lastStatus
   })
   ipcMain.handle('update:download', async () => {
-    await autoUpdater.downloadUpdate()
+    try {
+      await autoUpdater.downloadUpdate()
+    } catch (e) {
+      // 下载失败必须让渲染层知道（否则用户点「立即下载」无反馈）
+      send({ state: 'error', message: e instanceof Error ? e.message : '下载失败' })
+      throw e
+    }
   })
   ipcMain.handle('update:install', () => {
     autoUpdater.quitAndInstall(false, true)
