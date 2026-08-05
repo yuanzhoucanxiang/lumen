@@ -8,6 +8,7 @@ import Preview from './components/Preview'
 import Editor from './components/Editor'
 import ScrambleText from './components/ScrambleText'
 import ConfirmDialog from './components/ConfirmDialog'
+import UpdateNotes from './components/UpdateNotes'
 import type { UpdateStatus } from '@shared/types'
 
 let clipListenerRegistered = false
@@ -175,8 +176,8 @@ export default function App() {
                 <span className="mono text-[var(--accent-text)]">v{upd.version}</span>
               </p>
               {upd.notes && (
-                <div className="modal-scroll mt-2 max-h-28 overflow-y-auto whitespace-pre-wrap border-l-2 border-[var(--accent-deep)] pl-2 text-[11px] leading-relaxed text-[var(--text-dim)]">
-                  {upd.notes}
+                <div className="modal-scroll mt-2 max-h-28 overflow-y-auto border-l-2 border-[var(--accent-deep)] pl-2 text-[11px] leading-relaxed text-[var(--text-dim)]">
+                  <UpdateNotes notes={upd.notes} />
                 </div>
               )}
               <p className="mt-1.5 text-[11px] text-[var(--text-faint)]">下载后重启即可完成安装</p>
@@ -213,7 +214,14 @@ export default function App() {
       {upd?.state === 'downloaded' && (
         <ConfirmDialog
           title={`新版本 v${upd.version} 已就绪`}
-          message={upd.notes ? `更新内容：\n${upd.notes}\n\n更新已下载完成，重启应用后立即生效。` : '更新已下载完成，重启应用后立即生效。'}
+          message={
+            upd.notes
+              ? `更新内容：\n${upd.notes
+                  .split('\n')
+                  .map((l) => (l.trimStart().startsWith('·') ? `   ${l.trim()}` : l))
+                  .join('\n')}\n\n更新已下载完成，重启应用后立即生效。`
+              : '更新已下载完成，重启应用后立即生效。'
+          }
           confirmLabel="重启安装"
           danger={false}
           onConfirm={() => window.api.installUpdate()}

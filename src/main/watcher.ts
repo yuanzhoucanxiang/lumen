@@ -2,6 +2,7 @@ import { existsSync, statSync, watch, type FSWatcher } from 'fs'
 import { join } from 'path'
 import { loadConfig } from './library'
 import { importFiles } from './importer'
+import { logger } from './logger'
 
 const watchers = new Map<string, FSWatcher>()
 const pending = new Map<string, ReturnType<typeof setTimeout>>()
@@ -23,8 +24,8 @@ function handleFile(filePath: string): void {
         if (filePath.startsWith(cfg.current)) return
         const result = await importFiles([filePath], { move: cfg.importMode === 'move' })
         if (result.imported > 0) notify(result.imported)
-      } catch {
-        /* 单文件失败忽略 */
+      } catch (e) {
+        logger.warn('[watcher]', `监控导入失败 ${filePath}: ${(e as Error).message}`)
       }
     }, 500)
   )
@@ -41,8 +42,8 @@ function watchDir(dir: string): void {
       }
     })
     watchers.set(dir, w)
-  } catch {
-    /* 目录不可读则跳过 */
+  } catch (e) {
+    logger.warn('[watcher]', `监控目录失败 ${dir}: ${(e as Error).message}`)
   }
 }
 

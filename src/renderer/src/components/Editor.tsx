@@ -163,8 +163,8 @@ export default function Editor() {
       setReady(true)
       requestAnimationFrame(drawView)
     }
-    img.src = window.api.originalUrl(asset.id)
-  }, [asset?.id])
+    img.src = `${window.api.originalUrl(asset.id)}&e=${asset.edited ?? 0}`
+  }, [asset?.id, asset?.edited])
 
   useEffect(() => {
     if (ready) drawView()

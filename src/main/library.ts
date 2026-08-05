@@ -2,6 +2,7 @@ import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { basename, join } from 'path'
 import { closeDb, openDb } from './db'
+import { logger } from './logger'
 
 const CONFIG_NAME = 'config.json'
 
@@ -31,8 +32,9 @@ export function loadConfig(): AppConfig {
   if (existsSync(p)) {
     try {
       raw = JSON.parse(readFileSync(p, 'utf-8'))
-    } catch {
+    } catch (e) {
       /* 配置损坏则重建 */
+      logger.warn('[library]', `配置文件损坏已重建: ${(e as Error).message}`)
     }
   }
   // 兼容旧格式 { libraryPath }

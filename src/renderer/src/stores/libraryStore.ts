@@ -218,14 +218,22 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   importDialog: async () => {
     const r = await window.api.importViaDialog()
-    get().showToast(`导入完成：新增 ${r.imported}，跳过 ${r.skipped}，失败 ${r.failed}`)
+    const msg =
+      r.failed > 0
+        ? `导入完成：新增 ${r.imported}，跳过 ${r.skipped}，⚠ 失败 ${r.failed}`
+        : `导入完成：新增 ${r.imported}，跳过 ${r.skipped}`
+    get().showToast(msg)
     await get().refreshAll()
   },
 
   importFiles: async (files) => {
     if (files.length === 0) return
     const r = await window.api.importFileObjects(files)
-    get().showToast(`导入完成：新增 ${r.imported}，跳过 ${r.skipped}，失败 ${r.failed}`)
+    const msg =
+      r.failed > 0
+        ? `导入完成：新增 ${r.imported}，跳过 ${r.skipped}，⚠ 失败 ${r.failed}`
+        : `导入完成：新增 ${r.imported}，跳过 ${r.skipped}`
+    get().showToast(msg)
     await get().refreshAll()
   },
 
@@ -314,13 +322,34 @@ export function zoomToWidth(zoom: number): number {
   return steps[Math.min(Math.max(zoom, 1), 6) - 1]
 }
 
-export function assetThumbUrl(a: { id: string; ext: string }): string {
+/** 视频扩展名集合 */
+const VIDEO_EXTS = ['mp4', 'webm', 'mov', 'mkv', 'avi', 'wmv', 'm4v']
+
+/**
+ * 素材缩略图 URL。
+ * 视频：优先返回故事板四宫格 URL（onError 回退到首帧缩略图，见卡片组件）；
+ * 其余可出缩略图格式：返回 thumbnail.jpg。
+ * edited 戳用于编辑/恢复后强制刷新浏览器缓存的图片。
+ */
+export function assetThumbUrl(a: { id: string; ext: string; edited?: number }): string {
   const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'tiff', 'tif', 'psd',
     'ttf', 'otf', 'ttc', 'woff', 'woff2']
-  return imageExts.includes(a.ext) ? window.api.thumbnailUrl(a.id) : ''
+  if (VIDEO_EXTS.includes(a.ext)) {
+    // 视频封面 = 故事板四宫格（无故事板的短视频由 onError 回退到首帧缩略图）
+    return `${window.api.storyboardUrl(a.id)}&e=${a.edited ?? 0}`
+  }
+  if (!imageExts.includes(a.ext)) return ''
+  return `${window.api.thumbnailUrl(a.id)}&e=${a.edited ?? 0}`
 }
 
 /** 可进入编辑器/浏览器可直接解码的格式（PSD 有缩略图但无法进编辑器） */
 export function assetEditable(a: { ext: string }): boolean {
   return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'tiff', 'tif'].includes(a.ext)
+}
+
+/** 视频故事板 URL（悬停预览时优先显示，无则返回空串） */
+export function assetStoryboardUrl(a: { id: string; ext: string; edited?: number }): string {
+  return VIDEO_EXTS.includes(a.ext)
+    ? `${window.api.storyboardUrl(a.id)}&e=${a.edited ?? 0}`
+    : ''
 }

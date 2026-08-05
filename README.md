@@ -82,11 +82,45 @@ export ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-
 
 ## 发布流程
 
-1. `package.json` 版本号 +1
-2. `npm run build:win`
-3. `gh release create vX.X.X dist/Lumen-X.X.X-setup.exe dist/Lumen-X.X.X-setup.exe.blockmap dist/latest.yml --title "LUMEN vX.X.X" --notes "..."`
+**一键发布**（自动版本号 +1、生成分点 notes、打包、创建 Release、git tag + push）：
+
+```bash
+node scripts/release.cjs                # 发布（patch 版本 +1）
+node scripts/release.cjs --bump minor   # 次版本号 +1
+node scripts/release.cjs --dry-run      # 预览：生成 notes 草稿 + 校验格式，不打包不发布
+node scripts/release.cjs --notes my.md  # 使用指定 notes 文件
+node scripts/release.cjs --no-git       # 不执行 git tag/push
+```
+
+流程：版本 bump → notes 生成/校验 → `npm run build:win` → `gh release create` → git tag + push。
+
+- **notes 来源**：优先读 `notes.md`（存在则直接使用）；不存在则从 `工作日志.md` 最后一条里程碑**自动生成分点草稿**写入 `notes.md`，编辑后再次运行即可发布。
+- **格式校验**：发布前校验 notes 必须是「分类标题 + `·` 条目」格式，不合规会中止。
 
 > 安装包文件名必须用 ASCII（GitHub 附件名会剥掉非 ASCII 字符，中文名会导致 latest.yml 引用 404）。
+
+### Release Notes 格式约定（应用内分类分点展示）
+
+应用内更新卡片会按以下格式解析并渲染为「分类标题 + 圆点条目」：
+
+```
+✨ 新功能
+· 侧栏分区折叠
+· 支持格式筛选
+
+🐛 修复
+· 修复导出覆盖同名文件
+
+⚙️ 优化
+· 导入速度提升
+```
+
+- 空行分隔分类区块
+- 非 `·` 开头的行 = 分类标题（加粗显示）
+- `·` 开头的行 = 条目（圆点缩进）
+- 纯文本（无分类）也能正常显示
+
+建议分类：`✨ 新功能` / `🐛 修复` / `⚙️ 优化` / `🔧 技术`
 
 ## 许可证
 

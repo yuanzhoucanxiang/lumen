@@ -1,5 +1,5 @@
 import { join } from 'path'
-import { rmSync } from 'fs'
+import { existsSync, rmSync } from 'fs'
 import { getDb } from './db'
 import { getLibraryPath } from './library'
 import { assetKindOf, computeDHash } from './importer'
@@ -20,6 +20,8 @@ interface AssetRow {
   created_at: number
   imported_at: number
   deleted_at: number | null
+  edited: number
+  exif: string
 }
 
 function rowToAsset(row: AssetRow): Asset {
@@ -38,6 +40,8 @@ function rowToAsset(row: AssetRow): Asset {
     createdAt: row.created_at,
     importedAt: row.imported_at,
     deletedAt: row.deleted_at,
+    edited: row.edited ?? 0,
+    exif: row.exif ?? '',
     tagIds: [],
     tagNames: []
   }
@@ -128,7 +132,17 @@ export function queryAssets(q: AssetQuery): Asset[] {
     where.push('id NOT IN (SELECT DISTINCT asset_id FROM asset_tags)')
   }
   if (q.folderId != null) {
-    where.push('id IN (SELECT asset_id FROM asset_folders WHERE folder_id = ?)')
+    // 递归 CTE：查询该文件夹及所有后代文件夹的素材（联动子文件夹）
+    where.push(
+      `id IN (
+        WITH RECURSIVE subtree(id) AS (
+          SELECT id FROM folders WHERE id = ?
+          UNION ALL
+          SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+        )
+        SELECT asset_id FROM asset_folders WHERE folder_id IN (SELECT id FROM subtree)
+      )`
+    )
     params.push(q.folderId)
   }
   if (q.tagIds && q.tagIds.length > 0) {
@@ -138,6 +152,19 @@ export function queryAssets(q: AssetQuery): Asset[] {
         .join(',')}) GROUP BY asset_id HAVING COUNT(DISTINCT tag_id) = ?)`
     )
     params.push(...q.tagIds, q.tagIds.length)
+  }
+
+  // 构图下推 SQL（用 width/height 比较，可命中索引，避免内存过滤全表扫描）
+  if (q.shape) {
+    if (q.shape === 'landscape') where.push('width > height')
+    else if (q.shape === 'portrait') where.push('width < height')
+    else where.push('width > 0 AND height > 0 AND ABS(width - height) <= MAX(width, height) * 0.05')
+  }
+
+  // 颜色数量下推 SQL（SQLite json_array_length，避免内存解析 JSON）
+  if (q.colorCountMax && q.colorCountMax > 0) {
+    where.push('json_array_length(colors) <= ?')
+    params.push(q.colorCountMax)
   }
 
   const sortMap = {
@@ -156,26 +183,6 @@ export function queryAssets(q: AssetQuery): Asset[] {
 
   let assets = rows.map(rowToAsset)
 
-  if (q.colorCountMax && q.colorCountMax > 0) {
-    assets = assets.filter((a) => {
-      try {
-        return (JSON.parse(a.colors) as number[][]).length <= (q.colorCountMax ?? 99)
-      } catch {
-        return false
-      }
-    })
-  }
-
-  // 构图：横图 w>h / 竖图 w<h / 方形 近似等边（±5%）
-  if (q.shape) {
-    assets = assets.filter((a) => {
-      if (a.width <= 0 || a.height <= 0) return false
-      if (q.shape === 'landscape') return a.width > a.height
-      if (q.shape === 'portrait') return a.width < a.height
-      return Math.abs(a.width - a.height) <= Math.max(a.width, a.height) * 0.05
-    })
-  }
-
   if (q.color) {
     const target = hexToRgb(q.color)
     assets = assets.filter((a) => matchColor(a.colors, target, q.colorTolerance ?? 40))
@@ -187,16 +194,18 @@ export function queryAssets(q: AssetQuery): Asset[] {
 }
 
 export function assetPaths(id: string): { dir: string; original: string; thumbnail: string } | null {
-  const row = getDb().prepare('SELECT rel_dir, ext FROM assets WHERE id = ?').get(id) as
-    | { rel_dir: string; ext: string }
-    | undefined
+  const row = getDb()
+    .prepare('SELECT rel_dir, ext, edited, edited_ext FROM assets WHERE id = ?')
+    .get(id) as { rel_dir: string; ext: string; edited: number; edited_ext: string } | undefined
   if (!row) return null
   const dir = join(getLibraryPath(), row.rel_dir)
-  return {
-    dir,
-    original: join(dir, `${id}.${row.ext || 'file'}`),
-    thumbnail: join(dir, 'thumbnail.jpg')
-  }
+  const ext = row.ext || 'file'
+  // ext 恒指向原图格式；编辑版格式单独存 edited_ext（兼容旧数据回退 ext）
+  const editedExt = row.edited_ext || row.ext || 'file'
+  const editedPath = join(dir, `${id}.edited.${editedExt}`)
+  const original =
+    row.edited === 1 && existsSync(editedPath) ? editedPath : join(dir, `${id}.${ext}`)
+  return { dir, original, thumbnail: join(dir, 'thumbnail.jpg') }
 }
 
 export function updateAsset(
@@ -444,8 +453,11 @@ function hammingBytes(a: number[], b: number[], max: number): number {
   return d + Math.abs(a.length - b.length) * 8
 }
 
-/** 扫描素材库，按 dHash 汉明距离 ≤6 归组（并查集），返回相似组 */
-export async function findDuplicates(): Promise<DupeGroup[]> {
+/**
+ * 扫描素材库，按 dHash 汉明距离 ≤ maxDistance 归组（并查集），返回相似组。
+ * @param maxDistance 汉明距离阈值（默认 6，越大越宽松）
+ */
+export async function findDuplicates(maxDistance = 6): Promise<DupeGroup[]> {
   const db = getDb()
   // 为旧导入的图片补算哈希
   const missing = db
@@ -460,7 +472,7 @@ export async function findDuplicates(): Promise<DupeGroup[]> {
   }
   const rows = db
     .prepare(
-      "SELECT id, name, ext, size, hash FROM assets WHERE hash != '' AND deleted_at IS NULL ORDER BY imported_at"
+      "SELECT id, name, ext, size, hash FROM assets WHERE hash != '' AND deleted_at IS NULL ORDER BY ext, imported_at"
     )
     .all() as { id: string; name: string; ext: string; size: number; hash: string }[]
 
@@ -474,11 +486,20 @@ export async function findDuplicates(): Promise<DupeGroup[]> {
     }
     return i
   }
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      if (find(i) === find(j)) continue
-      if (hammingBytes(hashes[i], hashes[j], 6) <= 6) parent[find(j)] = find(i)
+  // 按 ext 分组预过滤：只在相同扩展名内比较，大幅减少比较次数
+  //（同一张图不同格式导出也会被 dHash 匹配，但跨格式查重价值低且增加 O(n²) 开销）
+  let i = 0
+  while (i < n) {
+    let j = i + 1
+    // 找到 ext 相同的连续区间 [i, end)
+    while (j < n && rows[j].ext === rows[i].ext) j++
+    for (let a = i; a < j; a++) {
+      for (let b = a + 1; b < j; b++) {
+        if (find(a) === find(b)) continue
+        if (hammingBytes(hashes[a], hashes[b], maxDistance) <= maxDistance) parent[find(b)] = find(a)
+      }
     }
+    i = j
   }
   const groups = new Map<number, DupeGroup['assets']>()
   rows.forEach((r, i) => {

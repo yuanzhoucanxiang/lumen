@@ -78,9 +78,14 @@ async function main() {
   check('findDuplicates', Array.isArray(dupes), `${Array.isArray(dupes) ? dupes.length : '?'} 组`)
 
   if (Array.isArray(assets) && assets.length > 0) {
-    const id0 = assets[0].id
-    const sim = (await evalJs(`window.api.findSimilar(${JSON.stringify(id0)})`)).result.value
-    check('findSimilar', Array.isArray(sim), `${Array.isArray(sim) ? sim.length : '?'} 个`)
+    // 选一个浏览器可解码的图片素材来测 asset: 协议（视频/音频不能被 <img> 加载）
+    const imgAsset = assets.find(
+      (a) => ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'tiff', 'tif'].includes(a.ext)
+    )
+    if (imgAsset) {
+      const id0 = imgAsset.id
+      const sim = (await evalJs(`window.api.findSimilar(${JSON.stringify(id0)})`)).result.value
+      check('findSimilar', Array.isArray(sim), `${Array.isArray(sim) ? sim.length : '?'} 个`)
 
     // 用 <img> 真实加载路径验证 asset: 协议（fetch 不支持自定义 scheme）
     const thumbUrl = (await evalJs(`window.api.thumbnailUrl(${JSON.stringify(id0)})`)).result.value
@@ -98,6 +103,11 @@ async function main() {
       )
     ).result.value
     check('asset:// 原图可加载', st2 > 0, `naturalWidth=${st2}`)
+    } else {
+      check('findSimilar', false, '库内无可测图片，跳过')
+      check('asset:// 缩略图', false, '库内无可测图片，跳过')
+      check('asset:// 原图', false, '库内无可测图片，跳过')
+    }
   } else {
     check('findSimilar', false, '库内无素材，跳过')
     check('asset:// 缩略图', false, '库内无素材，跳过')

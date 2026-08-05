@@ -13,6 +13,11 @@ const api = {
     ipcRenderer.invoke('library:switch', path),
   removeLibrary: (path: string): Promise<void> => ipcRenderer.invoke('library:remove', path),
 
+  /* 备份 */
+  backupDatabase: (): Promise<string> => ipcRenderer.invoke('library:backupDb'),
+  backupLibraryToZip: (): Promise<{ count: number; target: string } | null> =>
+    ipcRenderer.invoke('library:backupZip'),
+
   /* 导入 */
   importViaDialog: (): Promise<ImportResult> => ipcRenderer.invoke('import:dialog'),
   importFileObjects: (files: File[]): Promise<ImportResult> =>
@@ -28,11 +33,13 @@ const api = {
     ipcRenderer.invoke('assets:delete', ids, permanent),
   restoreAssets: (ids: string[]): Promise<void> => ipcRenderer.invoke('assets:restore', ids),
   emptyTrash: (): Promise<void> => ipcRenderer.invoke('trash:empty'),
-  findDuplicates: (): Promise<DupeGroup[]> => ipcRenderer.invoke('assets:findDupes'),
+  findDuplicates: (maxDistance?: number): Promise<DupeGroup[]> =>
+    ipcRenderer.invoke('assets:findDupes', maxDistance),
   findSimilar: (id: string, maxDistance?: number): Promise<Asset[]> =>
     ipcRenderer.invoke('assets:findSimilar', id, maxDistance),
   applyEdit: (id: string, dataUrl: string): Promise<void> =>
     ipcRenderer.invoke('asset:applyEdit', id, dataUrl),
+  revertEdit: (id: string): Promise<void> => ipcRenderer.invoke('asset:revertEdit', id),
 
   /* 设置 */
   getSettings: (): Promise<{ watchDirs: string[]; importMode: 'copy' | 'move' }> =>
@@ -90,6 +97,7 @@ const api = {
   /* URL 辅助 */
   thumbnailUrl: (id: string): string => `asset://${id}/file?t=t`,
   originalUrl: (id: string): string => `asset://${id}/file?t=o`,
+  storyboardUrl: (id: string): string => `asset://${id}/file?t=s`,
 
   /* 剪藏通知 */
   onClipImported: (cb: (count: number) => void): void => {

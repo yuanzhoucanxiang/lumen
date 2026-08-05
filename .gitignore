@@ -24,3 +24,7 @@ Thumbs.db
 .ui-shot/*.jpg
 .ui-shot/.userdata/
 .ui-shot/test-export.zip
+.ui-shot/q*.cjs
+
+# ZCode 工具本地文件
+.zcode/

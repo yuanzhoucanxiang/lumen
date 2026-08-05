@@ -42,6 +42,9 @@ function migrate(d: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_assets_imported ON assets(imported_at DESC);
     CREATE INDEX IF NOT EXISTS idx_assets_name ON assets(name);
+    CREATE INDEX IF NOT EXISTS idx_assets_ext ON assets(ext);
+    CREATE INDEX IF NOT EXISTS idx_assets_star ON assets(star);
+    CREATE INDEX IF NOT EXISTS idx_assets_width_height ON assets(width, height);
 
     CREATE TABLE IF NOT EXISTS tags (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,7 +82,10 @@ function migrate(d: Database.Database): void {
   `)
   // 增量迁移：为旧库补充新字段
   ensureColumns(d, 'assets', {
-    hash: "TEXT NOT NULL DEFAULT ''"
+    hash: "TEXT NOT NULL DEFAULT ''",
+    edited: 'INTEGER NOT NULL DEFAULT 0',
+    edited_ext: "TEXT NOT NULL DEFAULT ''",
+    exif: 'TEXT NOT NULL DEFAULT \'\''
   })
   ensureColumns(d, 'folders', {
     is_smart: 'INTEGER NOT NULL DEFAULT 0',

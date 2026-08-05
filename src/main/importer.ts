@@ -2,6 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync,
 import { basename, extname, join } from 'path'
 import { randomUUID } from 'crypto'
 import { spawn } from 'child_process'
+import { cpus } from 'os'
 import { app } from 'electron'
 import ffmpegPath from 'ffmpeg-static'
 import sharp from 'sharp'
@@ -9,6 +10,8 @@ import { readPsd, initializeCanvas } from 'ag-psd'
 import * as fontkit from 'fontkit'
 import { getDb } from './db'
 import { getLibraryPath } from './library'
+import { logger } from './logger'
+import { parseExif } from './exif'
 import type { ImportResult } from '../shared/types'
 
 // Electron 主进程无 DOM canvas：注入纯 JS ImageData 工厂，
@@ -63,6 +66,62 @@ function isDuplicate(name: string, size: number): boolean {
   return !!row
 }
 
+/* ---------------- 并发控制（自写极简池，不引入新依赖） ---------------- */
+
+/**
+ * 安全删除临时文件：Windows 上 ffmpeg 刚写完的文件可能被 Defender 实时扫描短暂锁定，
+ * rmSync 会抛 EPERM。这里重试几次（每次 150ms），仍失败只记 debug 日志，绝不阻断主流程。
+ */
+function rmSafe(p: string): void {
+  for (let i = 0; i < 5; i++) {
+    try {
+      rmSync(p, { force: true })
+      return
+    } catch (e) {
+      if (i === 4) {
+        logger.debug('[importer]', `临时文件删除失败(重试5次) ${p}: ${(e as Error).message}`)
+        return
+      }
+      // 同步等待 150ms 再重试
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150)
+    }
+  }
+}
+
+/** 按 limit 并发执行 fn，保持结果顺序。limit <= 1 时退化为串行。 */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let i = 0
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) {
+      const idx = i++
+      results[idx] = await fn(items[idx])
+    }
+  })
+  await Promise.all(workers)
+  return results
+}
+
+/** 阶段 A 产出：一个已复制到库内、缩略图/主色/dHash 已计算完毕的待提交记录 */
+interface PreparedAsset {
+  status: 'ok' | 'skip' | 'fail'
+  filePath: string
+  name: string
+  /** 仅 status='ok' 时有效 */
+  id?: string
+  relDir?: string
+  absDir?: string
+  ext?: string
+  size?: number
+  width?: number
+  height?: number
+  colors?: number[][]
+  hash?: string
+  mtimeMs?: number
+  sourceUrl?: string
+  exif?: string
+}
+
 /** 提取图片主色调：降采样后统计量化颜色，返回最多 4 个 [r,g,b] */
 export async function extractColors(input: string | Buffer): Promise<number[][]> {
   try {
@@ -85,7 +144,8 @@ export async function extractColors(input: string | Buffer): Promise<number[][]>
       .sort((a, b) => b.n - a.n)
       .slice(0, 4)
       .map((c) => [Math.round(c.r / c.n), Math.round(c.g / c.n), Math.round(c.b / c.n)])
-  } catch {
+  } catch (e) {
+    logger.debug('[importer]', `extractColors 失败: ${(e as Error).message}`)
     return []
   }
 }
@@ -107,7 +167,8 @@ export async function computeDHash(input: string | Buffer): Promise<string> {
       hash += byte.toString(16).padStart(2, '0')
     }
     return hash
-  } catch {
+  } catch (e) {
+    logger.debug('[importer]', `computeDHash 失败: ${(e as Error).message}`)
     return ''
   }
 }
@@ -125,7 +186,8 @@ async function psdToRaw(
       width: img.width,
       height: img.height
     }
-  } catch {
+  } catch (e) {
+    logger.warn('[importer]', `PSD 解码失败 ${filePath}: ${(e as Error).message}`)
     return null
   }
 }
@@ -178,7 +240,8 @@ async function renderFontThumb(
     </svg>`
     const data = await sharp(Buffer.from(svg)).jpeg({ quality: 86 }).toBuffer()
     return { data, width: W, height: H }
-  } catch {
+  } catch (e) {
+    logger.warn('[importer]', `字体样张渲染失败 ${filePath}: ${(e as Error).message}`)
     return null
   }
 }
@@ -189,12 +252,15 @@ function ffmpegBin(): string | null {
   return app.isPackaged ? ffmpegPath.replace('app.asar', 'app.asar.unpacked') : ffmpegPath
 }
 
-/** 用 ffmpeg 提取视频首帧作为封面 */
-async function extractVideoFrame(videoPath: string, outPath: string): Promise<boolean> {
+/** 用 ffmpeg 提取视频指定时间点的帧（默认首帧） */
+async function extractVideoFrame(videoPath: string, outPath: string, seekSec?: number): Promise<boolean> {
   const bin = ffmpegBin()
   if (!bin) return false
   return new Promise((resolve) => {
-    const p = spawn(bin, ['-y', '-i', videoPath, '-frames:v', '1', '-vf', 'scale=512:-2', outPath], {
+    const args = ['-y']
+    if (seekSec !== undefined) args.push('-ss', String(seekSec))
+    args.push('-i', videoPath, '-frames:v', '1', '-vf', 'scale=512:-2', outPath)
+    const p = spawn(bin, args, {
       windowsHide: true,
       stdio: 'ignore'
     })
@@ -213,12 +279,72 @@ async function extractVideoFrame(videoPath: string, outPath: string): Promise<bo
   })
 }
 
-async function importOne(filePath: string, opts: ImportOptions): Promise<'ok' | 'skip' | 'fail'> {
+/**
+ * 获取视频时长（秒）。
+ * 注意：ffmpeg-static 只打包 ffmpeg.exe 不带 ffprobe，所以用 `ffmpeg -i` 探测——
+ * 格式信息输出到 stderr，解析其中的 Duration 行。
+ */
+function getVideoDuration(videoPath: string): number {
+  const bin = ffmpegBin()
+  if (!bin) return 0
+  try {
+    const result = require('child_process').spawnSync(bin, ['-i', videoPath], {
+      windowsHide: true,
+      encoding: 'utf-8',
+      timeout: 10000
+    })
+    const m = (result.stderr ?? '').match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/)
+    if (!m) return 0
+    return parseInt(m[1], 10) * 3600 + parseInt(m[2], 10) * 60 + parseFloat(m[3])
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * 生成视频故事板：提取 4 个时间点（10%/35%.60%.85%）的帧，
+ * 用 sharp 拼成横向 2x2 网格 storyboard.jpg。
+ */
+async function generateStoryboard(videoPath: string, absDir: string, duration: number): Promise<void> {
+  if (duration <= 0) return
+  const positions = [0.1, 0.35, 0.6, 0.85].map((p) => duration * p)
+  const frames: Buffer[] = []
+  for (const sec of positions) {
+    const tmpPath = join(absDir, `_sb_${sec}.jpg`)
+    const ok = await extractVideoFrame(videoPath, tmpPath, sec)
+    if (ok && existsSync(tmpPath)) {
+      try {
+        const buf = await sharp(tmpPath).resize(256, 144, { fit: 'cover' }).jpeg({ quality: 80 }).toBuffer()
+        frames.push(buf)
+      } catch { /* ignore */ }
+      rmSafe(tmpPath)
+    }
+  }
+  if (frames.length < 2) return // 至少 2 帧才拼故事板
+  // 2x2 网格拼接（不足 4 帧时补空）
+  while (frames.length < 4) frames.push(Buffer.alloc(0))
+  const W = 256 * 2
+  const H = 144 * 2
+  const composites = frames.slice(0, 4).map((buf, i) => ({
+    input: buf,
+    top: Math.floor(i / 2) * 144,
+    left: (i % 2) * 256
+  })).filter((c) => c.input.length > 0)
+  await sharp({
+    create: { width: W, height: H, channels: 3, background: { r: 13, g: 15, b: 18 } }
+  }).composite(composites).jpeg({ quality: 80 }).toFile(join(absDir, 'storyboard.jpg'))
+}
+
+/**
+ * 阶段 A：复制文件到库内 + 生成缩略图/主色/dHash/视频封面/字体样张。
+ * 可并发调用（sharp/ffmpeg/fontkit 互不影响）。不写数据库。
+ */
+async function prepareOne(filePath: string, opts: ImportOptions): Promise<PreparedAsset> {
   try {
     const name = basename(filePath)
     const ext = extname(filePath).slice(1).toLowerCase()
     const st = statSync(filePath)
-    if (isDuplicate(name, st.size)) return 'skip'
+    if (isDuplicate(name, st.size)) return { status: 'skip', filePath, name }
 
     const id = randomUUID().replace(/-/g, '').slice(0, 16)
     const relDir = join('assets', id.slice(0, 2), id)
@@ -234,6 +360,7 @@ async function importOne(filePath: string, opts: ImportOptions): Promise<'ok' | 
     let height = 0
     let colors: number[][] = []
     let hash = ''
+    let exifJson = ''
     const kind = assetKindOf(ext)
 
     if (kind === 'image' && ext !== 'svg') {
@@ -251,6 +378,9 @@ async function importOne(filePath: string, opts: ImportOptions): Promise<'ok' | 
           width = meta.width ?? 0
           height = meta.height ?? 0
           base = sharp(targetPath).rotate() // 依据 EXIF 方向
+          // 读取 EXIF 元数据（相机型号/拍摄时间/光圈/快门/ISO/焦距）
+          const exifInfo = parseExif(meta.exif)
+          if (exifInfo) exifJson = JSON.stringify(exifInfo)
         }
         const thumbBuf = await base
           .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
@@ -259,8 +389,9 @@ async function importOne(filePath: string, opts: ImportOptions): Promise<'ok' | 
         writeFileSync(join(absDir, 'thumbnail.jpg'), thumbBuf)
         colors = await extractColors(thumbBuf)
         hash = await computeDHash(thumbBuf)
-      } catch {
+      } catch (e) {
         /* 缩略图失败不阻断导入（如 PSD 无合成图/AI/HEIC 部分格式） */
+        logger.warn('[importer]', `缩略图生成失败 ${name}: ${(e as Error).message}`)
       }
     } else if (kind === 'video') {
       // 提取首帧作为封面，并从封面读取尺寸/主色
@@ -276,14 +407,23 @@ async function importOne(filePath: string, opts: ImportOptions): Promise<'ok' | 
             .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
             .jpeg({ quality: 82 })
             .toFile(join(absDir, 'thumbnail.jpg'))
-        } catch {
-          /* ignore */
+          // 生成故事板（4 帧拼图，用于悬停预览）
+          const duration = getVideoDuration(targetPath)
+          if (duration > 2) {
+            try {
+              await generateStoryboard(targetPath, absDir, duration)
+            } catch (e) {
+              logger.warn('[importer]', `故事板生成失败 ${name}: ${(e as Error).message}`)
+            }
+          }
+        } catch (e) {
+          logger.warn('[importer]', `视频封面处理失败 ${name}: ${(e as Error).message}`)
         } finally {
-          rmSync(framePath, { force: true })
+          rmSafe(framePath)
         }
       }
     } else if (FONT_EXTS.has(ext)) {
-      // 字体：渲染样张作为缩略图（fontkit 字形轮廓 → SVG → sharp）
+      // 字体：渲染样张作为缩略图（fontkit 字形轮廓 -> SVG -> sharp）
       try {
         const thumb = await renderFontThumb(targetPath)
         if (thumb) {
@@ -293,44 +433,100 @@ async function importOne(filePath: string, opts: ImportOptions): Promise<'ok' | 
           colors = await extractColors(thumb.data)
           hash = await computeDHash(thumb.data)
         }
-      } catch {
+      } catch (e) {
         /* 字体解析失败降级为格式图标 */
+        logger.warn('[importer]', `字体缩略图写入失败 ${name}: ${(e as Error).message}`)
       }
     }
 
-    const now = Date.now()
-    getDb()
-      .prepare(
-        `INSERT INTO assets (id, name, ext, rel_dir, size, width, height, colors, hash, star, comment, url, created_at, imported_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?)`
-      )
-      .run(id, name, ext, relDir, st.size, width, height, JSON.stringify(colors), hash, opts.sourceUrl ?? '', st.mtimeMs, now)
-
-    // 附带 metadata.json（与 Eagle 格式兼容的基础元数据）
-    const metaJson = {
-      id, name, ext, size: st.size, width, height,
-      colors, star: 0, annotation: '', url: opts.sourceUrl ?? '',
-      palettes: colors, modificationTime: now, creationTime: st.mtimeMs
+    return {
+      status: 'ok',
+      filePath,
+      name,
+      id,
+      relDir,
+      absDir,
+      ext,
+      size: st.size,
+      width,
+      height,
+      colors,
+      hash,
+      mtimeMs: st.mtimeMs,
+      sourceUrl: opts.sourceUrl,
+      exif: exifJson
     }
-    try {
-      writeFileSync(join(absDir, 'metadata.json'), JSON.stringify(metaJson, null, 2), 'utf-8')
-    } catch {
-      /* ignore */
-    }
-    return 'ok'
-  } catch {
-    return 'fail'
+  } catch (e) {
+    logger.error('[importer]', `导入失败 ${filePath}: ${(e as Error).message}`)
+    return { status: 'fail', filePath, name: basename(filePath) }
   }
+}
+
+/**
+ * 阶段 B：把一批已准备好的记录原子写入数据库 + metadata.json。
+ * 用 better-sqlite3 事务包裹，任一失败整批回滚（已复制的文件保留，下次启动 isDuplicate 会判重）。
+ */
+function commitBatch(records: PreparedAsset[]): void {
+  const db = getDb()
+  const insert = db.prepare(
+    `INSERT INTO assets (id, name, ext, rel_dir, size, width, height, colors, hash, star, comment, url, created_at, imported_at, exif)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?)`
+  )
+  const run = db.transaction((recs: PreparedAsset[]) => {
+    const now = Date.now()
+    for (const r of recs) {
+      insert.run(
+        r.id, r.name, r.ext, r.relDir, r.size, r.width, r.height,
+        JSON.stringify(r.colors), r.hash, r.sourceUrl ?? '', r.mtimeMs, now, r.exif ?? ''
+      )
+      // 附带 metadata.json（与 Eagle 格式兼容的基础元数据）
+      const metaJson = {
+        id: r.id, name: r.name, ext: r.ext, size: r.size, width: r.width, height: r.height,
+        colors: r.colors, star: 0, annotation: '', url: r.sourceUrl ?? '',
+        palettes: r.colors, modificationTime: now, creationTime: r.mtimeMs
+      }
+      try {
+        writeFileSync(join(r.absDir!, 'metadata.json'), JSON.stringify(metaJson, null, 2), 'utf-8')
+      } catch (e) {
+        logger.warn('[importer]', `metadata.json 写入失败 ${r.name}: ${(e as Error).message}`)
+      }
+    }
+  })
+  run(records)
 }
 
 export async function importFiles(paths: string[], opts: ImportOptions = {}): Promise<ImportResult> {
   const files = collectFiles(paths)
-  const result: ImportResult = { imported: 0, skipped: 0, failed: 0 }
-  for (const f of files) {
-    const r = await importOne(f, opts)
-    if (r === 'ok') result.imported++
-    else if (r === 'skip') result.skipped++
-    else result.failed++
+  const result: ImportResult = { imported: 0, skipped: 0, failed: 0, failedFiles: [] }
+  if (files.length === 0) return result
+
+  // 阶段 A：并发复制 + 计算（IO/CPU 密集，按 CPU 核心数并发）
+  const concurrency = Math.max(1, cpus().length)
+  const prepared = await mapWithConcurrency(files, concurrency, (f) => prepareOne(f, opts))
+
+  // 分离 ok 记录 vs skip/fail
+  const okRecords: PreparedAsset[] = []
+  for (const r of prepared) {
+    if (r.status === 'ok') okRecords.push(r)
+    else if (r.status === 'skip') result.skipped++
+    else {
+      result.failed++
+      result.failedFiles!.push(r.name)
+    }
   }
+
+  // 阶段 B：事务原子写入数据库 + metadata.json（串行，任一失败整批回滚）
+  if (okRecords.length > 0) {
+    try {
+      commitBatch(okRecords)
+      result.imported = okRecords.length
+    } catch (e) {
+      // 事务失败（DB 磁盘满/损坏等极端情况）：整批算失败，已复制文件保留待重试
+      logger.error('[importer]', `事务提交失败，${okRecords.length} 条记录回滚: ${(e as Error).message}`)
+      result.failed += okRecords.length
+      for (const r of okRecords) result.failedFiles!.push(r.name)
+    }
+  }
+
   return result
 }

@@ -100,7 +100,7 @@ export default function DupeModal({ onClose }: { onClose: () => void }) {
                           onChange={() => toggle(a.id)}
                         />
                         <img
-                          src={window.api.thumbnailUrl(a.id)}
+                          src={`${window.api.thumbnailUrl(a.id)}&e=0`}
                           className="h-20 w-full rounded-md object-cover"
                           alt={a.name}
                         />

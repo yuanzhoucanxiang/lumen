@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { assetEditable, assetThumbUrl, useLibraryStore, zoomToWidth } from '@renderer/stores/libraryStore'
+import { assetEditable, assetStoryboardUrl, assetThumbUrl, useLibraryStore, zoomToWidth } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 import PixelArt from './PixelArt'
 import ScrambleText from './ScrambleText'
+import ConfirmDialog from './ConfirmDialog'
 import type { IconName } from './Icon'
 import type { Asset } from '@shared/types'
 
@@ -10,6 +11,7 @@ const GAP = 14
 const LABEL_H = 24
 const LIST_ROW_H = 38
 const HOVER_PREVIEW_DELAY = 420
+const VIDEO_EXTS = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi', 'wmv', 'm4v'])
 
 function fmtSize(n: number): string {
   if (n < 1024) return `${n} B`
@@ -130,7 +132,13 @@ function AssetCard({
 }) {
   const { a } = item
   const [thumbErr, setThumbErr] = useState(false)
-  const thumb = thumbErr ? '' : assetThumbUrl(a)
+  const [thumbFallback, setThumbFallback] = useState(false)
+  // 视频：优先故事板封面，故事板缺失(短视频)时回退到首帧缩略图；再失败才显示图标
+  const thumb = thumbErr
+    ? ''
+    : thumbFallback
+      ? `${window.api.thumbnailUrl(a.id)}&e=${a.edited ?? 0}`
+      : assetThumbUrl(a)
   const imgH = item.h - LABEL_H
   const setStar = async (star: number) => {
     await window.api.updateAsset(a.id, { star })
@@ -179,7 +187,11 @@ function AssetCard({
               draggable={false}
               className="glitch-once h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.02]"
               alt={a.name}
-              onError={() => setThumbErr(true)}
+              onError={() => {
+                // 视频故事板不存在(短视频)时回退到首帧缩略图
+                if (VIDEO_EXTS.has(a.ext) && !thumbFallback) setThumbFallback(true)
+                else setThumbErr(true)
+              }}
             />
           ) : (
             <div className="flex flex-col items-center gap-2 text-[var(--text-faint)]">
@@ -251,6 +263,7 @@ export default function Gallery() {
   const folders = useLibraryStore((s) => s.folders)
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null)
   const [hoverPv, setHoverPv] = useState<{ a: Asset; x: number; y: number } | null>(null)
+  const [revertId, setRevertId] = useState<string | null>(null)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   /** 悬停放大预览：延迟触发，贴近卡片右侧（空间不足换左侧） */
@@ -502,23 +515,36 @@ export default function Gallery() {
           <div className="flex max-h-60 items-center justify-center overflow-hidden bg-[#0d0f12]">
             {hoverPv.a.ext === 'gif' ? (
               <img
-                src={window.api.originalUrl(hoverPv.a.id)}
+                src={`${window.api.originalUrl(hoverPv.a.id)}&e=${hoverPv.a.edited ?? 0}`}
                 className="max-h-60 w-full object-contain"
                 alt=""
               />
-            ) : ['mp4', 'webm'].includes(hoverPv.a.ext) ? (
-              <video
-                src={window.api.originalUrl(hoverPv.a.id)}
-                className="max-h-60 w-full"
-                muted
-                autoPlay
-                loop
-                playsInline
+            ) : ['mp4', 'webm', 'mov', 'mkv', 'avi', 'wmv', 'm4v'].includes(hoverPv.a.ext) ? (
+              <img
+                src={assetStoryboardUrl(hoverPv.a)}
+                className="max-h-60 w-full object-contain"
+                alt=""
+                onError={(e) => {
+                  // 故事板不存在时回退到视频首帧播放
+                  const el = e.currentTarget
+                  if (!el.dataset.fbk) {
+                    el.dataset.fbk = '1'
+                    el.style.display = 'none'
+                    const v = document.createElement('video')
+                    v.src = `${window.api.originalUrl(hoverPv.a.id)}&e=${hoverPv.a.edited ?? 0}`
+                    v.className = 'max-h-60 w-full'
+                    v.muted = true
+                    v.autoplay = true
+                    v.loop = true
+                    v.playsInline = true
+                    el.parentElement?.appendChild(v)
+                  }
+                }}
               />
             ) : ['mp3', 'wav', 'ogg', 'flac'].includes(hoverPv.a.ext) ? (
               <div className="flex h-32 w-full flex-col items-center justify-center gap-3 px-4">
                 <Icon name="music" size={32} strokeWidth={1.4} className="text-[var(--text-faint)]" />
-                <audio src={window.api.originalUrl(hoverPv.a.id)} autoPlay controls className="h-7 w-full" />
+                <audio src={`${window.api.originalUrl(hoverPv.a.id)}&e=${hoverPv.a.edited ?? 0}`} autoPlay controls className="h-7 w-full" />
               </div>
             ) : assetThumbUrl(hoverPv.a) ? (
               <img
@@ -575,6 +601,18 @@ export default function Gallery() {
               }}
             >
               批注 / 裁剪
+            </button>
+          )}
+          {contextAsset.edited === 1 && (
+            <button
+              role="menuitem"
+              className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-red-400"
+              onClick={() => {
+                setRevertId(menu.id)
+                setMenu(null)
+              }}
+            >
+              恢复原图
             </button>
           )}
           <button
@@ -684,6 +722,25 @@ export default function Gallery() {
             </button>
           )}
         </div>
+      )}
+      {revertId && (
+        <ConfirmDialog
+          title="恢复原图"
+          message="将丢弃当前编辑结果，恢复为原始图片。此操作不可撤销。"
+          confirmLabel="恢复原图"
+          danger
+          onConfirm={async () => {
+            try {
+              await window.api.revertEdit(revertId)
+              useLibraryStore.getState().showToast('已恢复原图')
+              await useLibraryStore.getState().refreshAssets()
+            } catch {
+              useLibraryStore.getState().showToast('恢复失败，请查看日志')
+            }
+            setRevertId(null)
+          }}
+          onClose={() => setRevertId(null)}
+        />
       )}
       </div>
     </div>

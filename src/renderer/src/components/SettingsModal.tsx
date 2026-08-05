@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import Icon from './Icon'
+import { useLibraryStore } from '../stores/libraryStore'
 
 export default function SettingsModal({ onClose }: { onClose: () => void }) {
   const [settings, setSettings] = useState<{ watchDirs: string[]; importMode: 'copy' | 'move' } | null>(null)
   const [version, setVersion] = useState('')
   const [checking, setChecking] = useState(false)
+  const [backing, setBacking] = useState(false)
 
   useEffect(() => {
     void window.api.getSettings().then(setSettings)
@@ -29,6 +31,30 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
     const dir = await window.api.chooseWatchDir()
     if (dir && settings && !settings.watchDirs.includes(dir)) {
       await update({ watchDirs: [...settings.watchDirs, dir] })
+    }
+  }
+
+  const backupDb = async () => {
+    setBacking(true)
+    try {
+      await window.api.backupDatabase()
+      useLibraryStore.getState().showToast('数据库已备份')
+    } catch {
+      useLibraryStore.getState().showToast('备份失败,请查看日志')
+    } finally {
+      setBacking(false)
+    }
+  }
+
+  const backupZip = async () => {
+    setBacking(true)
+    try {
+      const r = await window.api.backupLibraryToZip()
+      if (r) useLibraryStore.getState().showToast(`已备份 ${r.count} 个文件到 ${r.target}`)
+    } catch {
+      useLibraryStore.getState().showToast('备份失败,请查看日志')
+    } finally {
+      setBacking(false)
     }
   }
 
@@ -126,6 +152,30 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
                 可同时监控多个文件夹；每个文件夹（含子目录）中新增的图片/视频会自动导入素材库
               </div>
             )}
+          </div>
+        </div>
+
+        {/* 备份 */}
+        <div className="mt-5 border-t border-[var(--border)] pt-4">
+          <div className="section-title mb-2">备份</div>
+          <div className="mb-2 text-[11px] text-[var(--text-dim)]">
+            启动时已自动备份数据库；也可手动备份数据库或导出完整库（含原图）为 ZIP。
+          </div>
+          <div className="flex gap-2">
+            <button
+              className="btn-ghost disabled:opacity-40"
+              disabled={backing}
+              onClick={() => void backupDb()}
+            >
+              {backing ? '处理中…' : '备份数据库'}
+            </button>
+            <button
+              className="btn-ghost disabled:opacity-40"
+              disabled={backing}
+              onClick={() => void backupZip()}
+            >
+              {backing ? '处理中…' : '导出完整库 ZIP'}
+            </button>
           </div>
         </div>
 

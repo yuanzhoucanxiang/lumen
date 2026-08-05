@@ -292,6 +292,30 @@ export default function Inspector() {
                 </dd>
               </div>
             )}
+            {(() => {
+              const exif = asset.exif ? JSON.parse(asset.exif) : null
+              if (!exif) return null
+              const items: { label: string; value: string }[] = []
+              if (exif.make || exif.model) {
+                items.push({ label: '相机', value: [exif.make, exif.model].filter(Boolean).join(' ') })
+              }
+              if (exif.dateTime) items.push({ label: '拍摄时间', value: exif.dateTime })
+              if (exif.fNumber) items.push({ label: '光圈', value: `f/${exif.fNumber.toFixed(1)}` })
+              if (exif.exposureTime) {
+                items.push({
+                  label: '快门',
+                  value: exif.exposureTime < 1 ? `1/${Math.round(1 / exif.exposureTime)}s` : `${exif.exposureTime}s`
+                })
+              }
+              if (exif.iso) items.push({ label: 'ISO', value: String(exif.iso) })
+              if (exif.focalLength) items.push({ label: '焦距', value: `${exif.focalLength}mm` })
+              return items.map((it) => (
+                <div key={it.label} className="flex justify-between">
+                  <dt>{it.label}</dt>
+                  <dd className="mono truncate" title={it.value}>{it.value}</dd>
+                </div>
+              ))
+            })()}
             <div className="flex justify-between">
               <dt>导入时间</dt>
               <dd className="tnum mono">

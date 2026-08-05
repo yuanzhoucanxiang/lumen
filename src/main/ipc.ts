@@ -1,5 +1,6 @@
 import { BrowserWindow, clipboard, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { existsSync } from 'fs'
+import { join } from 'path'
 import {
   addAndSwitchLibrary,
   getLibraryPath,
@@ -10,6 +11,7 @@ import {
 } from './library'
 import { importFiles } from './importer'
 import { exportToFolder, exportToZip } from './exporter'
+import { backupDatabase, backupLibraryToZip } from './backup'
 import {
   addTagToAssets,
   addToFolder,
@@ -42,7 +44,7 @@ import {
   updateSmartFolder
 } from './repository'
 import type { AssetQuery, LibraryInfo } from '../shared/types'
-import { applyEdit } from './editor'
+import { applyEdit, revertEdit } from './editor'
 import { syncWatchers } from './watcher'
 
 export function registerIpc(getWindow: () => BrowserWindow | null): void {
@@ -73,6 +75,26 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
 
   ipcMain.handle('library:remove', (_e, path: string) => removeLibrary(path))
 
+  /* ---------------- 备份 ---------------- */
+  // 立即备份数据库到 library.db.bak（启动时已自动备份一次,此为手动触发）
+  ipcMain.handle('library:backupDb', (): string => backupDatabase())
+
+  // 导出整个库为 ZIP（含原图 + 缩略图 + db,用于完整灾难恢复）
+  ipcMain.handle(
+    'library:backupZip',
+    async (): Promise<{ count: number; target: string } | null> => {
+      const win = getWindow()
+      const r = await dialog.showSaveDialog(win!, {
+        title: '导出完整素材库为 ZIP',
+        defaultPath: `lumen-backup-${new Date().toISOString().slice(0, 10)}.zip`,
+        filters: [{ name: 'ZIP 压缩包', extensions: ['zip'] }]
+      })
+      if (r.canceled || !r.filePath) return null
+      const count = backupLibraryToZip(r.filePath)
+      return { count, target: r.filePath }
+    }
+  )
+
   /* ---------------- 导入 ---------------- */
   ipcMain.handle('import:dialog', async (): Promise<{ imported: number; skipped: number; failed: number }> => {
     const win = getWindow()
@@ -97,6 +119,10 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     await applyEdit(id, dataUrl)
   })
 
+  ipcMain.handle('asset:revertEdit', async (_e, id: string) => {
+    await revertEdit(id)
+  })
+
   ipcMain.handle('assets:update', (_e, id: string, fields) => updateAsset(id, fields))
 
   ipcMain.handle('assets:delete', (_e, ids: string[], permanent = false) => deleteAssets(ids, permanent))
@@ -105,7 +131,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
 
   ipcMain.handle('trash:empty', () => emptyTrash())
 
-  ipcMain.handle('assets:findDupes', async () => findDuplicates())
+  ipcMain.handle('assets:findDupes', async (_e, maxDistance?: number) => findDuplicates(maxDistance))
 
   ipcMain.handle('assets:findSimilar', async (_e, id: string, maxDistance?: number) =>
     findSimilar(id, maxDistance ?? 10)
@@ -221,11 +247,15 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
 }
 
 /** 供协议处理：解析 asset: URL 对应的真实文件路径 */
-export function resolveAssetFile(id: string, kind: 'thumbnail' | 'original'): string | null {
+export function resolveAssetFile(id: string, kind: 'thumbnail' | 'original' | 'storyboard'): string | null {
   const paths = assetPaths(id)
   if (!paths) return null
   if (kind === 'thumbnail') {
     return existsSync(paths.thumbnail) ? paths.thumbnail : null
+  }
+  if (kind === 'storyboard') {
+    const sb = join(paths.dir, 'storyboard.jpg')
+    return existsSync(sb) ? sb : null
   }
   return existsSync(paths.original) ? paths.original : null
 }

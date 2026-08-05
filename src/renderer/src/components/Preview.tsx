@@ -140,7 +140,7 @@ export default function Preview() {
       >
         {isImage ? (
           <img
-            src={window.api.originalUrl(asset.id)}
+            src={`${window.api.originalUrl(asset.id)}&e=${asset.edited ?? 0}`}
             className="anim-fade max-h-full max-w-full border border-[var(--border-strong)] object-contain shadow-[0_24px_80px_rgba(0,0,0,0.65)]"
             style={{
               transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.s})`,
@@ -162,20 +162,20 @@ export default function Preview() {
               const el = e.currentTarget
               if (!el.dataset.fbk) {
                 el.dataset.fbk = '1'
-                el.src = window.api.thumbnailUrl(asset.id)
+                el.src = `${window.api.thumbnailUrl(asset.id)}&e=${asset.edited ?? 0}`
               }
             }}
           />
         ) : asset.ext === 'mp4' || asset.ext === 'webm' ? (
           <video
-            src={window.api.originalUrl(asset.id)}
+            src={`${window.api.originalUrl(asset.id)}&e=${asset.edited ?? 0}`}
             controls
             autoPlay
             className="max-h-full max-w-full rounded-sm shadow-[0_24px_80px_rgba(0,0,0,0.6)]"
             onClick={(e) => e.stopPropagation()}
           />
         ) : asset.ext === 'mp3' || asset.ext === 'wav' || asset.ext === 'ogg' ? (
-          <audio src={window.api.originalUrl(asset.id)} controls autoPlay onClick={(e) => e.stopPropagation()} />
+          <audio src={`${window.api.originalUrl(asset.id)}&e=${asset.edited ?? 0}`} controls autoPlay onClick={(e) => e.stopPropagation()} />
         ) : (
           <div className="text-white/50">该格式暂不支持预览</div>
         )}

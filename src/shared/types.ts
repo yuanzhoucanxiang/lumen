@@ -16,6 +16,10 @@ export interface Asset {
   createdAt: number
   importedAt: number
   deletedAt: number | null
+  /** 1 = 已编辑（存在 {id}.edited.{ext}，原图保留） */
+  edited: number
+  /** EXIF 元数据 JSON 字符串（相机型号/拍摄时间/光圈/快门/ISO/焦距） */
+  exif: string
   tagIds: number[]
   tagNames: string[]
 }
@@ -71,6 +75,8 @@ export interface ImportResult {
   imported: number
   skipped: number
   failed: number
+  /** 失败文件的文件名列表（用于 UI 提示与日志） */
+  failedFiles?: string[]
 }
 
 export interface AssetQuery {
