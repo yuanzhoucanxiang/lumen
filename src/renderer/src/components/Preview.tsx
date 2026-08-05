@@ -171,6 +171,8 @@ export default function Preview() {
             src={`${window.api.originalUrl(asset.id)}&e=${asset.edited ?? 0}`}
             controls
             autoPlay
+            muted
+            playsInline
             className="max-h-full max-w-full rounded-sm shadow-[0_24px_80px_rgba(0,0,0,0.6)]"
             onClick={(e) => e.stopPropagation()}
           />
