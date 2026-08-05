@@ -1,6 +1,6 @@
 {
   "name": "eagle-like",
-  "version": "0.6.7",
+  "version": "0.6.8",
   "productName": "LUMEN",
   "description": "LUMEN - 类 Eagle 本地素材管理应用",
   "main": "./out/main/index.js",
