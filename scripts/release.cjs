@@ -97,12 +97,15 @@ if (!dryRun && !existsSync(join(ROOT, setupExe))) {
 }
 
 const tag = `v${newVer}`
+// 发布仓库固定为 shiguang-materials（安装包仓库），源码仓库是 lumen
+const RELEASE_REPO = 'yuanzhoucanxiang/shiguang-materials'
 const cmd = [
   'gh release create',
   tag,
   setupExe,
   blockmap,
   latestYml,
+  `--repo ${RELEASE_REPO}`,
   `--title "LUMEN v${newVer}"`,
   `--notes "${notes.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`
 ].join(' ')
