@@ -7,7 +7,7 @@ import { registerIpc, resolveAssetFile } from './ipc'
 import { closeDb } from './db'
 import { importFiles } from './importer'
 import { startClipServer } from './clipServer'
-import { syncWatchers } from './watcher'
+import { syncWatchers, syncOnStartup } from './watcher'
 import { cleanTrashOlderThan } from './repository'
 import { initUpdater } from './updater'
 import { initLogger, logger } from './logger'
@@ -160,6 +160,11 @@ app.whenReady().then(() => {
 
   // 监控文件夹自动导入
   syncWatchers((count) => {
+    mainWindow?.webContents.send('clip:imported', count)
+  })
+
+  // 启动增量同步：导入软件关闭期间监控目录新增的文件（类 Eagle 行为）
+  void syncOnStartup((count) => {
     mainWindow?.webContents.send('clip:imported', count)
   })
 
