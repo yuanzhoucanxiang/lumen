@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { assetEditable, assetThumbUrl, useLibraryStore } from '@renderer/stores/libraryStore'
+import { assetEditable, useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 
 interface ZoomState {
@@ -45,7 +45,10 @@ export default function Preview() {
     useLibraryStore.getState().updateAssetLocal(asset.id, { star })
   }
 
-  const isImage = assetThumbUrl(asset)
+  // 可浏览器直接解码的图片格式(排除视频:视频走 video 分支播放)
+  // 注意不能用 assetThumbUrl 判断——视频的 assetThumbUrl 返回故事板 URL,会导致视频被当图片预览
+  const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'tiff', 'tif'])
+  const isImage = IMAGE_EXTS.has(asset.ext)
   const canEdit = assetEditable(asset)
 
   /** 以光标为中心缩放 */
