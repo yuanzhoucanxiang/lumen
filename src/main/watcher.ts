@@ -22,7 +22,7 @@ function handleFile(filePath: string): void {
         const cfg = loadConfig()
         // 避免监控库自身目录造成循环
         if (filePath.startsWith(cfg.current)) return
-        const result = await importFiles([filePath], { move: cfg.importMode === 'move' })
+        const result = await importFiles([filePath], { move: cfg.importMode === 'move', checkTombstone: true })
         if (result.imported > 0) notify(result.imported)
       } catch (e) {
         logger.warn('[watcher]', `监控导入失败 ${filePath}: ${(e as Error).message}`)
@@ -81,7 +81,8 @@ export async function syncOnStartup(onImported: (count: number) => void): Promis
   if (files.length === 0) return
   logger.info('[watcher]', `启动增量同步：扫描 ${dirs.length} 个监控目录，${files.length} 个文件`)
   // importMode 由 loadConfig 决定，syncOnStartup 用 copy（不删源文件，监控目录的文件要保留）
-  const result = await importFiles(files)
+  // checkTombstone: 已删除文件不再自动重导入(尊重删除记忆)
+  const result = await importFiles(files, { checkTombstone: true })
   if (result.imported > 0) {
     logger.info('[watcher]', `启动增量同步完成：新增 ${result.imported}，跳过 ${result.skipped}，失败 ${result.failed}`)
     onImported(result.imported)

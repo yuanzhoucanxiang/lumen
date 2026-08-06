@@ -257,6 +257,18 @@ export function updateAsset(
 
 export function deleteAssets(ids: string[], permanent: boolean): void {
   const db = getDb()
+  // 先写入 tombstone(已删除文件记忆),阻止重启/监控时重新导入。
+  // 软删与永久删都记录;用户主动导入(checkTombstone=false)不受限,仍可重新导入。
+  const insTomb = db.prepare(
+    'INSERT OR IGNORE INTO deleted_files (hash, size, name, deleted_at) VALUES (?, ?, ?, ?)'
+  )
+  const sel = db.prepare('SELECT hash, size, name FROM assets WHERE id = ?')
+  const now = Date.now()
+  for (const id of ids) {
+    const row = sel.get(id) as { hash: string; size: number; name: string } | undefined
+    if (row) insTomb.run(row.hash ?? '', row.size ?? 0, row.name ?? '', now)
+  }
+
   if (permanent) {
     for (const id of ids) {
       const paths = assetPaths(id)
@@ -266,14 +278,23 @@ export function deleteAssets(ids: string[], permanent: boolean): void {
       db.prepare('DELETE FROM asset_folders WHERE asset_id = ?').run(id)
     }
   } else {
-    const now = Date.now()
     const stmt = db.prepare('UPDATE assets SET deleted_at = ? WHERE id = ?')
     for (const id of ids) stmt.run(now, id)
   }
 }
 
 export function restoreAssets(ids: string[]): void {
-  const stmt = getDb().prepare('UPDATE assets SET deleted_at = NULL WHERE id = ?')
+  const db = getDb()
+  // 从回收站恢复:清除对应 tombstone,让该文件可被正常重导入
+  const sel = db.prepare('SELECT hash, size, name FROM assets WHERE id = ?')
+  const delTomb = db.prepare(
+    'DELETE FROM deleted_files WHERE hash = ? AND size = ? AND name = ?'
+  )
+  for (const id of ids) {
+    const row = sel.get(id) as { hash: string; size: number; name: string } | undefined
+    if (row) delTomb.run(row.hash ?? '', row.size ?? 0, row.name ?? '')
+  }
+  const stmt = db.prepare('UPDATE assets SET deleted_at = NULL WHERE id = ?')
   for (const id of ids) stmt.run(id)
 }
 
@@ -443,11 +464,17 @@ export function removeFromFolder(assetIds: string[], folderId: number): void {
   for (const id of assetIds) stmt.run(id, folderId)
 }
 
-export function libraryStats(): { total: number; deleted: number } {
+export function libraryStats(): { total: number; deleted: number; tombstones: number } {
   const db = getDb()
   const total = (db.prepare('SELECT COUNT(*) AS n FROM assets WHERE deleted_at IS NULL').get() as { n: number }).n
   const deleted = (db.prepare('SELECT COUNT(*) AS n FROM assets WHERE deleted_at IS NOT NULL').get() as { n: number }).n
-  return { total, deleted }
+  let tombstones = 0
+  try {
+    tombstones = (db.prepare('SELECT COUNT(*) AS n FROM deleted_files').get() as { n: number }).n
+  } catch {
+    // deleted_files 表尚不存在(旧库未迁移)时返回 0
+  }
+  return { total, deleted, tombstones }
 }
 
 /* ---------------- 重复检测与相似检索 ---------------- */

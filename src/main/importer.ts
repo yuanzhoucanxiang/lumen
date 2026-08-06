@@ -35,6 +35,9 @@ export interface ImportOptions {
   sourceUrl?: string
   /** true = 导入后删除源文件 */
   move?: boolean
+  /** true = 查重时检查 deleted_files tombstone(已删除文件不再自动重导入)。
+   *  监控/启动同步设 true;用户主动导入(对话框/拖拽/剪藏)不设,允许重新导入已删文件 */
+  checkTombstone?: boolean
 }
 
 export function assetKindOf(ext: string): 'image' | 'video' | 'audio' | 'other' {
@@ -59,11 +62,55 @@ export function collectFiles(paths: string[], acc: string[] = []): string[] {
   return acc
 }
 
-function isDuplicate(name: string, size: number): boolean {
-  const row = getDb()
-    .prepare('SELECT id FROM assets WHERE name = ? AND size = ? AND deleted_at IS NULL LIMIT 1')
-    .get(name, size)
-  return !!row
+/**
+ * 查重:判断文件是否已在库中或已被删除。
+ * - ① name+size 命中活跃记录:绝大多数正常重复的快速路径
+ * - ② hash+size 命中活跃记录:AI 改名后 name 变但内容不变 -> 命中(防重复)
+ * - ③ tombstone(仅 checkTombstone):之前删过的文件不再自动重导入
+ *   图片走 hash+size,非图片回退 name+size
+ */
+function isDuplicate(
+  name: string,
+  size: number,
+  hash: string,
+  checkTombstone: boolean
+): boolean {
+  const db = getDb()
+  // ① 快速路径:name+size 活跃记录(零额外开销)
+  if (
+    db
+      .prepare('SELECT 1 FROM assets WHERE name = ? AND size = ? AND deleted_at IS NULL LIMIT 1')
+      .get(name, size)
+  )
+    return true
+  // ② 哈希路径:hash+size 活跃记录(AI 改名后防重复)
+  if (hash) {
+    if (
+      db
+        .prepare('SELECT 1 FROM assets WHERE hash = ? AND size = ? AND deleted_at IS NULL LIMIT 1')
+        .get(hash, size)
+    )
+      return true
+    // tombstone:已删除的图片(仅监控/启动同步检查)
+    if (checkTombstone) {
+      if (
+        db
+          .prepare('SELECT 1 FROM deleted_files WHERE hash = ? AND size = ? LIMIT 1')
+          .get(hash, size)
+      )
+        return true
+    }
+  }
+  // ③ 无 hash 的 tombstone 回退(视频/PSD/字体):按 name+size
+  if (checkTombstone) {
+    if (
+      db
+        .prepare('SELECT 1 FROM deleted_files WHERE name = ? AND size = ? LIMIT 1')
+        .get(name, size)
+    )
+      return true
+  }
+  return false
 }
 
 /* ---------------- 并发控制（自写极简池，不引入新依赖） ---------------- */
@@ -344,7 +391,35 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
     const name = basename(filePath)
     const ext = extname(filePath).slice(1).toLowerCase()
     const st = statSync(filePath)
-    if (isDuplicate(name, st.size)) return { status: 'skip', filePath, name }
+    const kind = assetKindOf(ext)
+    const checkTombstone = !!opts.checkTombstone
+
+    // 快速预检:name+size 活跃记录命中 -> 直接 skip(避免给正常重复文件算缩略图)
+    // 仅图片需要预算哈希做二次查重(AI 改名后 name 变但内容不变)
+    if (isDuplicate(name, st.size, '', false)) return { status: 'skip', filePath, name }
+
+    // 图片:从源文件预算缩略图 + 哈希(与已存储哈希同源:512 缩略图 -> dHash),
+    // 用 hash 做二次查重(AI 改名/已删除都能命中)。算出的 thumbBuf 复用写入磁盘。
+    let preThumbBuf: Buffer | null = null
+    let preHash = ''
+    if (kind === 'image' && ext !== 'svg' && ext !== 'psd') {
+      try {
+        const meta = await sharp(filePath).metadata()
+        preThumbBuf = await sharp(filePath)
+          .rotate() // 依据 EXIF 方向,与正式导入一致
+          .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 82 })
+          .toBuffer()
+        preHash = await computeDHash(preThumbBuf)
+      } catch (e) {
+        /* 预算失败(部分 HEIC/AI 图)留空,后续正式流程再降级处理 */
+        logger.debug('[importer]', `预算缩略图失败 ${name}: ${(e as Error).message}`)
+      }
+    }
+    // 二次查重(含哈希 + 可选 tombstone):AI 改名后 hash 命中活跃记录;已删除文件命中 tombstone
+    if (isDuplicate(name, st.size, preHash, checkTombstone)) {
+      return { status: 'skip', filePath, name }
+    }
 
     const id = randomUUID().replace(/-/g, '').slice(0, 16)
     const relDir = join('assets', id.slice(0, 2), id)
@@ -359,15 +434,14 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
     let width = 0
     let height = 0
     let colors: number[][] = []
-    let hash = ''
+    let hash = preHash
     let exifJson = ''
-    const kind = assetKindOf(ext)
 
     if (kind === 'image' && ext !== 'svg') {
       try {
         let base: sharp.Sharp
         if (ext === 'psd') {
-          // PSD：取合成图（ag-psd），无合成图则降级为格式图标
+          // PSD:源文件无法直接 sharp,从已复制的 targetPath 取合成图(ag-psd)
           const raw = await psdToRaw(targetPath)
           if (!raw) throw new Error('psd: no composite image')
           width = raw.width
@@ -382,13 +456,11 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
           const exifInfo = parseExif(meta.exif)
           if (exifInfo) exifJson = JSON.stringify(exifInfo)
         }
-        const thumbBuf = await base
-          .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
-          .jpeg({ quality: 82 })
-          .toBuffer()
+        // 复用预算的 thumbBuf(非 PSD),否则现算
+        const thumbBuf = preThumbBuf ?? (await base.resize(512, 512, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer())
         writeFileSync(join(absDir, 'thumbnail.jpg'), thumbBuf)
         colors = await extractColors(thumbBuf)
-        hash = await computeDHash(thumbBuf)
+        if (!hash) hash = await computeDHash(thumbBuf) // PSD 或预算失败时补算
       } catch (e) {
         /* 缩略图失败不阻断导入（如 PSD 无合成图/AI/HEIC 部分格式） */
         logger.warn('[importer]', `缩略图生成失败 ${name}: ${(e as Error).message}`)

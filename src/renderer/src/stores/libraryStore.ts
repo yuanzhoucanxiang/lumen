@@ -18,7 +18,7 @@ interface LibraryState {
   tags: Tag[]
   tagGroups: TagGroup[]
   folders: Folder[]
-  stats: { total: number; deleted: number }
+  stats: { total: number; deleted: number; tombstones: number }
 
   view: ViewType
   keyword: string
@@ -118,7 +118,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   tags: [],
   tagGroups: [],
   folders: [],
-  stats: { total: 0, deleted: 0 },
+  stats: { total: 0, deleted: 0, tombstones: 0 },
 
   view: { type: 'all' },
   keyword: '',

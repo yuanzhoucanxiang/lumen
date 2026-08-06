@@ -79,6 +79,18 @@ function migrate(d: Database.Database): void {
       PRIMARY KEY (asset_id, folder_id)
     );
     CREATE INDEX IF NOT EXISTS idx_asset_folders_folder ON asset_folders(folder_id);
+
+    -- 已删除文件记忆表(tombstone):阻止重启/监控时重新导入已删除的文件。
+    -- hash 为图片 dHash(非图片为空);name+size 为回退查重键。
+    CREATE TABLE IF NOT EXISTS deleted_files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      hash TEXT NOT NULL DEFAULT '',
+      size INTEGER NOT NULL,
+      name TEXT NOT NULL DEFAULT '',
+      deleted_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_deleted_files_hash ON deleted_files(hash, size);
+    CREATE INDEX IF NOT EXISTS idx_deleted_files_namesize ON deleted_files(name, size);
   `)
   // 增量迁移：为旧库补充新字段
   ensureColumns(d, 'assets', {
@@ -94,6 +106,19 @@ function migrate(d: Database.Database): void {
   ensureColumns(d, 'tags', {
     group_id: 'INTEGER'
   })
+
+  // 回填迁移:把当前回收站里的软删记录一次性写入 tombstone,
+  // 让现有已删除文件也能阻止重启/监控重导入。幂等(已存在则跳过)。
+  d.exec(`
+    INSERT INTO deleted_files (hash, size, name, deleted_at)
+    SELECT DISTINCT hash, size, name, deleted_at
+    FROM assets a
+    WHERE a.deleted_at IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM deleted_files t
+        WHERE t.hash = a.hash AND t.size = a.size AND t.name = a.name
+      )
+  `)
 }
 
 function ensureColumns(d: Database.Database, table: string, defs: Record<string, string>): void {

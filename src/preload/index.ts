@@ -4,7 +4,7 @@ import type { Asset, AssetQuery, AiProcessOptions, AiProcessResult, AiScope, App
 const api = {
   /* 库管理 */
   getLibraryInfo: (): Promise<LibraryInfo> => ipcRenderer.invoke('library:info'),
-  getLibraryStats: (): Promise<{ total: number; deleted: number }> =>
+  getLibraryStats: (): Promise<{ total: number; deleted: number; tombstones: number }> =>
     ipcRenderer.invoke('library:stats'),
   listLibraries: (): Promise<{ libraries: { name: string; path: string }[]; current: string }> =>
     ipcRenderer.invoke('library:list'),
