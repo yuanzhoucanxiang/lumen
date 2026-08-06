@@ -84,6 +84,27 @@ interface LibraryState {
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 
+/** 导入后自动 AI 处理：若设置页开启了「导入后自动 AI」且有 key，对新导入的素材跑 AI */
+async function autoAiAfterImport(importedCount: number): Promise<void> {
+  if (importedCount <= 0) return
+  const settings = await window.api.getSettings()
+  if (!settings.aiAutoOnImport || !settings.aiHasKey) return
+  // 新导入的素材按 imported_at 排序在最前面，取前 importedCount 条
+  const fresh = await window.api.queryAssets({ sortBy: 'imported', sortDesc: true, limit: importedCount })
+  if (fresh.length === 0) return
+  try {
+    const r = await window.api.aiProcess(fresh.map((a) => a.id))
+    useLibraryStore.getState().showToast(
+      r.failed > 0
+        ? `AI 自动处理：${r.processed} 张成功，${r.failed} 张失败`
+        : `AI 自动处理：${r.processed} 张（改名+打标签）`
+    )
+    await useLibraryStore.getState().refreshAll()
+  } catch (e) {
+    useLibraryStore.getState().showToast(`AI 自动处理失败：${(e as Error).message}`)
+  }
+}
+
 export const useLibraryStore = create<LibraryState>((set, get) => ({
   assets: [],
   loading: false,
@@ -224,6 +245,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         : `导入完成：新增 ${r.imported}，跳过 ${r.skipped}`
     get().showToast(msg)
     await get().refreshAll()
+    await autoAiAfterImport(r.imported)
   },
 
   importFiles: async (files) => {
@@ -235,6 +257,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         : `导入完成：新增 ${r.imported}，跳过 ${r.skipped}`
     get().showToast(msg)
     await get().refreshAll()
+    await autoAiAfterImport(r.imported)
   },
 
   updateAssetLocal: (id, patch) =>

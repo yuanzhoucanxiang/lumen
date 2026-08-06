@@ -150,7 +150,8 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       aiBaseUrl: cfg.aiBaseUrl ?? 'https://open.bigmodel.cn/api/paas/v4',
       aiModel: cfg.aiModel ?? 'glm-4v',
       aiHasKey: !!cfg.aiApiKey,
-      aiKeyTail: cfg.aiApiKey ? cfg.aiApiKey.slice(-4) : ''
+      aiKeyTail: cfg.aiApiKey ? cfg.aiApiKey.slice(-4) : '',
+      aiAutoOnImport: cfg.aiAutoOnImport ?? false
     }
   })
 
@@ -164,15 +165,16 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
         aiBaseUrl?: string
         aiApiKey?: string
         aiModel?: string
+        aiAutoOnImport?: boolean
       }
     ) => {
       const cfg = loadConfig()
       if (patch.watchDirs) cfg.watchDirs = patch.watchDirs
       if (patch.importMode) cfg.importMode = patch.importMode
-      // AI 字段用 !== undefined 判断（空串 key 也是合法值，代表清除）
       if (patch.aiBaseUrl !== undefined) cfg.aiBaseUrl = patch.aiBaseUrl
       if (patch.aiApiKey !== undefined) cfg.aiApiKey = patch.aiApiKey
       if (patch.aiModel !== undefined) cfg.aiModel = patch.aiModel
+      if (patch.aiAutoOnImport !== undefined) cfg.aiAutoOnImport = patch.aiAutoOnImport
       saveConfig(cfg)
       syncWatchers((count) => getWindow()?.webContents.send('clip:imported', count))
       return {
@@ -181,7 +183,8 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
         aiBaseUrl: cfg.aiBaseUrl ?? 'https://open.bigmodel.cn/api/paas/v4',
         aiModel: cfg.aiModel ?? 'glm-4v',
         aiHasKey: !!cfg.aiApiKey,
-        aiKeyTail: cfg.aiApiKey ? cfg.aiApiKey.slice(-4) : ''
+        aiKeyTail: cfg.aiApiKey ? cfg.aiApiKey.slice(-4) : '',
+        aiAutoOnImport: cfg.aiAutoOnImport ?? false
       }
     }
   )

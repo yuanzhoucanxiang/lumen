@@ -1,5 +1,5 @@
 import { readFileSync } from 'fs'
-import { assetPaths, getAssetById, updateAsset, addTagToAssets } from './repository'
+import { assetPaths, getAssetById, listTags, updateAsset, addTagToAssets } from './repository'
 import { logger } from './logger'
 import type { AiProcessResult } from '../shared/types'
 
@@ -66,9 +66,16 @@ async function suggestForAsset(id: string, cfg: AiConfig): Promise<AiSuggestion>
     ? `原名=${asset.name},尺寸=${asset.width}x${asset.height},已有标签=${asset.tagNames.join('/')}`
     : `id=${id}`
 
+  // 取已有标签库，让 AI 优先复用（避免同义标签泛滥，如"夜景"和"夜晚场景"）
+  const allTags = listTags().map((t) => t.name)
+  const tagLibHint =
+    allTags.length > 0
+      ? `已有标签库：${allTags.slice(0, 50).join('、')}。优先从已有标签中选用匹配的，不足时再新建（避免同义重复）。`
+      : ''
+
   const prompt =
     `看这张图，返回 JSON：{"name":"简短中文文件名(8-20字，不含扩展名，用下划线或短横连接)","tags":["标签1","标签2","标签3"]}。` +
-    `参考信息：${meta}。生成 2-5 个描述性标签。只返回 JSON，不要其他文字。`
+    `参考信息：${meta}。生成 2-5 个描述性标签。${tagLibHint}只返回 JSON，不要其他文字。`
 
   const url = `${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`
   const resp = await fetch(url, {

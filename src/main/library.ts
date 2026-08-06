@@ -20,6 +20,8 @@ export interface AppConfig {
   aiBaseUrl?: string
   aiApiKey?: string
   aiModel?: string
+  /** 导入后自动执行 AI 处理（改名+打标签） */
+  aiAutoOnImport?: boolean
 }
 
 function configPath(): string {
@@ -60,7 +62,8 @@ export function loadConfig(): AppConfig {
       importMode: raw.importMode ?? 'copy',
       aiBaseUrl: raw.aiBaseUrl ?? 'https://open.bigmodel.cn/api/paas/v4',
       aiApiKey: raw.aiApiKey ?? '',
-      aiModel: raw.aiModel ?? 'glm-4v'
+      aiModel: raw.aiModel ?? 'glm-4v',
+      aiAutoOnImport: raw.aiAutoOnImport ?? false
     }
   }
   const def = defaultLibraryPath()
@@ -71,7 +74,8 @@ export function loadConfig(): AppConfig {
     importMode: 'copy',
     aiBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     aiApiKey: '',
-    aiModel: 'glm-4v'
+    aiModel: 'glm-4v',
+    aiAutoOnImport: false
   }
   saveConfig(cfg)
   return cfg

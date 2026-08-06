@@ -118,6 +118,8 @@ export interface AppSettings {
   aiModel?: string
   aiHasKey?: boolean
   aiKeyTail?: string
+  /** 导入后自动执行 AI 处理 */
+  aiAutoOnImport?: boolean
 }
 
 /** AI 处理进度（主进程推送） */

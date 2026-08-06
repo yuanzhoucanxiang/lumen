@@ -133,7 +133,28 @@ export default function Toolbar() {
   const sortRef = useRef<HTMLDivElement>(null)
   const [dupeOpen, setDupeOpen] = useState(false)
   const [confirm, setConfirm] = useState<{ type: 'deleteSel' | 'emptyTrash' } | null>(null)
+  const [aiProcessing, setAiProcessing] = useState(false)
   const colorDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  /** 一键 AI 智能处理：选中素材 -> 改名+打标签（直接应用） */
+  const doAiProcess = async () => {
+    const s = useLibraryStore.getState()
+    if (s.selection.length === 0) return
+    setAiProcessing(true)
+    try {
+      const r = await window.api.aiProcess(s.selection)
+      s.showToast(
+        r.failed > 0
+          ? `已处理 ${r.processed} 张，失败 ${r.failed} 张`
+          : `已处理 ${r.processed} 张（改名+打标签）`
+      )
+      await s.refreshAll()
+    } catch (e) {
+      s.showToast(`AI 处理失败：${(e as Error).message}`)
+    } finally {
+      setAiProcessing(false)
+    }
+  }
 
   /** 色环拖动时防抖应用筛选 */
   const applyWheelColor = (hex: string) => {
@@ -393,6 +414,20 @@ export default function Toolbar() {
         <Icon name="copy" size={13} />
         查重
       </button>
+
+      {/* 一键 AI 智能处理（选中素材后可直接点，不用进右键菜单） */}
+      {view.type !== 'trash' && selection.length > 0 && (
+        <button
+          className="btn-ghost flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40"
+          disabled={aiProcessing}
+          title={`AI 智能处理所选 ${selection.length} 个素材（改名+打标签）`}
+          onClick={() => void doAiProcess()}
+        >
+          <Icon name="sparkles" size={13} />
+          {aiProcessing ? '处理中…' : 'AI 处理'}
+          {!aiProcessing && <span className="mono tnum text-[10px]">{selection.length}</span>}
+        </button>
+      )}
 
       {/* 批量操作（回收站视图，纯图标按钮） */}
       {view.type === 'trash' && selection.length > 0 && (

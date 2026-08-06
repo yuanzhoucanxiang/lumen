@@ -218,10 +218,13 @@ export default function Sidebar() {
   }
 
   const normalFolders = folders.filter((f) => !f.isSmart)
-  const smartFolders = folders.filter((f) => f.isSmart)
+  const smartFolders = folders
+    .filter((f) => f.isSmart)
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh-CN'))
 
-  /* 标签按分组聚合（含空分组，便于管理） */
+  /* 标签按分组聚合（含空分组，便于管理），组内按 count 降序 */
   const { grouped, ungroupedTags } = useMemo(() => {
+    const byCount = (a: Tag, b: Tag) => b.count - a.count || a.name.localeCompare(b.name, 'zh-CN')
     const byGroup = new Map<number, Tag[]>()
     const ungrouped: Tag[] = []
     for (const t of tags) {
@@ -234,8 +237,8 @@ export default function Sidebar() {
       }
     }
     return {
-      grouped: tagGroups.map((g) => ({ group: g, tags: byGroup.get(g.id) ?? [] })),
-      ungroupedTags: ungrouped
+      grouped: tagGroups.map((g) => ({ group: g, tags: (byGroup.get(g.id) ?? []).sort(byCount) })),
+      ungroupedTags: ungrouped.sort(byCount)
     }
   }, [tags, tagGroups])
 
@@ -315,7 +318,8 @@ export default function Sidebar() {
       else roots.push(n)
     }
     const sortRec = (list: FolderNode[]): void => {
-      list.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+      // 按包含素材数量降序（多的在上），数量相同按名称
+      list.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh-CN'))
       list.forEach((l) => sortRec(l.children))
     }
     sortRec(roots)
