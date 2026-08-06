@@ -23,6 +23,7 @@ export default function App() {
   const [upd, setUpd] = useState<UpdateStatus | null>(null)
   const [updDismissed, setUpdDismissed] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [aiProgress, setAiProgress] = useState<{ done: number; total: number; failed: number } | null>(null)
 
   // 立即下载更新（带反馈：失败 toast，下载中按钮禁用）
   const startDownload = async () => {
@@ -57,6 +58,14 @@ export default function App() {
         const msg = s.message ?? '网络异常'
         // 检查阶段 vs 下载阶段:下载失败时 lastStatus 是 downloading,主进程已标记
         useLibraryStore.getState().showToast(`更新失败：${msg}`)
+      }
+    })
+    // AI 处理进度推送
+    window.api.onAiProgress((p) => {
+      setAiProgress(p)
+      if (p.done >= p.total) {
+        // 处理完成,2 秒后自动隐藏进度卡片
+        setTimeout(() => setAiProgress(null), 2000)
       }
     })
   }, [refreshAll])
@@ -179,6 +188,25 @@ export default function App() {
           className="anim-toast menu fixed bottom-6 left-1/2 z-[200] px-5 py-2.5 text-[13px]"
         >
           <ScrambleText text={toast} speed={18} />
+        </div>
+      )}
+
+      {/* AI 处理进度卡片 */}
+      {aiProgress && (
+        <div className="anim-dialog menu fixed bottom-6 right-6 z-[190] w-72 p-3.5">
+          <p className="text-[13px] font-medium">AI 智能处理中…</p>
+          <p className="mt-1 flex justify-between text-[12px] text-[var(--text-dim)]">
+            <span>
+              {aiProgress.done} / {aiProgress.total}
+            </span>
+            {aiProgress.failed > 0 && <span className="text-red-400">失败 {aiProgress.failed}</span>}
+          </p>
+          <div className="mt-2 h-1 w-full bg-[var(--bg-active)]">
+            <div
+              className="h-full bg-[var(--accent)] transition-all duration-200"
+              style={{ width: `${aiProgress.total > 0 ? (aiProgress.done / aiProgress.total) * 100 : 0}%` }}
+            />
+          </div>
         </div>
       )}
 

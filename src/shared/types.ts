@@ -112,6 +112,26 @@ export interface DupeGroup {
 export interface AppSettings {
   watchDirs: string[]
   importMode: 'copy' | 'move'
+  /** AI 配置（aiApiKey 脱敏：只返回 hasKey + 末 4 位，不返回完整 key） */
+  aiBaseUrl?: string
+  aiApiKey?: string
+  aiModel?: string
+  aiHasKey?: boolean
+  aiKeyTail?: string
+}
+
+/** AI 处理进度（主进程推送） */
+export interface AiProgress {
+  done: number
+  total: number
+  failed: number
+}
+
+/** AI 批量处理结果 */
+export interface AiProcessResult {
+  processed: number
+  failed: number
+  failedIds: string[]
 }
 
 export interface LibraryInfo {

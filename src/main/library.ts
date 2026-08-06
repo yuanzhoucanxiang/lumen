@@ -16,6 +16,10 @@ export interface AppConfig {
   current: string
   watchDirs: string[]
   importMode: 'copy' | 'move'
+  /** AI 配置（OpenAI 兼容格式） */
+  aiBaseUrl?: string
+  aiApiKey?: string
+  aiModel?: string
 }
 
 function configPath(): string {
@@ -53,7 +57,10 @@ export function loadConfig(): AppConfig {
       libraries: raw.libraries,
       current: raw.current,
       watchDirs: raw.watchDirs ?? [],
-      importMode: raw.importMode ?? 'copy'
+      importMode: raw.importMode ?? 'copy',
+      aiBaseUrl: raw.aiBaseUrl ?? 'https://open.bigmodel.cn/api/paas/v4',
+      aiApiKey: raw.aiApiKey ?? '',
+      aiModel: raw.aiModel ?? 'glm-4v'
     }
   }
   const def = defaultLibraryPath()
@@ -61,7 +68,10 @@ export function loadConfig(): AppConfig {
     libraries: [{ name: basename(def), path: def }],
     current: def,
     watchDirs: [],
-    importMode: 'copy'
+    importMode: 'copy',
+    aiBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    aiApiKey: '',
+    aiModel: 'glm-4v'
   }
   saveConfig(cfg)
   return cfg

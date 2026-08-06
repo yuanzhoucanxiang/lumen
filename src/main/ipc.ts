@@ -43,8 +43,9 @@ import {
   updateAsset,
   updateSmartFolder
 } from './repository'
-import type { AssetQuery, LibraryInfo } from '../shared/types'
 import { applyEdit, revertEdit } from './editor'
+import { aiProcessBatch, testAiConnection } from './aiRename'
+import type { AiProcessResult, AssetQuery, LibraryInfo } from '../shared/types'
 import { syncWatchers } from './watcher'
 
 export function registerIpc(getWindow: () => BrowserWindow | null): void {
@@ -140,20 +141,48 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('trash:cleanOld', () => cleanTrashOlderThan(30))
 
   /* ---------------- 设置 ---------------- */
+  // settings:get 返回 AI key 脱敏（只返回 hasKey + 末 4 位，完整 key 不进渲染进程）
   ipcMain.handle('settings:get', () => {
     const cfg = loadConfig()
-    return { watchDirs: cfg.watchDirs, importMode: cfg.importMode }
+    return {
+      watchDirs: cfg.watchDirs,
+      importMode: cfg.importMode,
+      aiBaseUrl: cfg.aiBaseUrl ?? 'https://open.bigmodel.cn/api/paas/v4',
+      aiModel: cfg.aiModel ?? 'glm-4v',
+      aiHasKey: !!cfg.aiApiKey,
+      aiKeyTail: cfg.aiApiKey ? cfg.aiApiKey.slice(-4) : ''
+    }
   })
 
   ipcMain.handle(
     'settings:update',
-    (_e, patch: { watchDirs?: string[]; importMode?: 'copy' | 'move' }) => {
+    (
+      _e,
+      patch: {
+        watchDirs?: string[]
+        importMode?: 'copy' | 'move'
+        aiBaseUrl?: string
+        aiApiKey?: string
+        aiModel?: string
+      }
+    ) => {
       const cfg = loadConfig()
       if (patch.watchDirs) cfg.watchDirs = patch.watchDirs
       if (patch.importMode) cfg.importMode = patch.importMode
+      // AI 字段用 !== undefined 判断（空串 key 也是合法值，代表清除）
+      if (patch.aiBaseUrl !== undefined) cfg.aiBaseUrl = patch.aiBaseUrl
+      if (patch.aiApiKey !== undefined) cfg.aiApiKey = patch.aiApiKey
+      if (patch.aiModel !== undefined) cfg.aiModel = patch.aiModel
       saveConfig(cfg)
       syncWatchers((count) => getWindow()?.webContents.send('clip:imported', count))
-      return { watchDirs: cfg.watchDirs, importMode: cfg.importMode }
+      return {
+        watchDirs: cfg.watchDirs,
+        importMode: cfg.importMode,
+        aiBaseUrl: cfg.aiBaseUrl ?? 'https://open.bigmodel.cn/api/paas/v4',
+        aiModel: cfg.aiModel ?? 'glm-4v',
+        aiHasKey: !!cfg.aiApiKey,
+        aiKeyTail: cfg.aiApiKey ? cfg.aiApiKey.slice(-4) : ''
+      }
     }
   )
 
@@ -165,6 +194,23 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
+  })
+
+  /* ---------------- AI 智能处理（改名+打标签）---------------- */
+  // 批量处理：主进程读 key 发请求，key 不进渲染进程；进度通过 webContents.send 推送
+  ipcMain.handle('ai:process', async (_e, ids: string[]): Promise<AiProcessResult> => {
+    const cfg = loadConfig()
+    if (!cfg.aiApiKey) throw new Error('未配置 AI API Key，请在设置页填写')
+    return aiProcessBatch(
+      ids,
+      { baseUrl: cfg.aiBaseUrl ?? 'https://open.bigmodel.cn/api/paas/v4', apiKey: cfg.aiApiKey, model: cfg.aiModel ?? 'glm-4v' },
+      (done, total, failed) => getWindow()?.webContents.send('ai:progress', { done, total, failed })
+    )
+  })
+
+  // 测试连通性：用户在设置页填完 key 后点「测试连接」
+  ipcMain.handle('ai:testKey', async (_e, cfg: { baseUrl: string; apiKey: string; model: string }) => {
+    return testAiConnection(cfg)
   })
 
   /* ---------------- 标签 ---------------- */

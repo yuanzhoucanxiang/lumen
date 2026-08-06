@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react'
 import Icon from './Icon'
 import { useLibraryStore } from '../stores/libraryStore'
+import type { AppSettings } from '@shared/types'
 
 export default function SettingsModal({ onClose }: { onClose: () => void }) {
-  const [settings, setSettings] = useState<{ watchDirs: string[]; importMode: 'copy' | 'move' } | null>(null)
+  const [settings, setSettings] = useState<AppSettings | null>(null)
   const [version, setVersion] = useState('')
   const [checking, setChecking] = useState(false)
   const [backing, setBacking] = useState(false)
+  const [aiKeyInput, setAiKeyInput] = useState('')
+  const [aiTesting, setAiTesting] = useState(false)
 
   useEffect(() => {
     void window.api.getSettings().then(setSettings)
@@ -22,7 +25,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const update = async (patch: { watchDirs?: string[]; importMode?: 'copy' | 'move' }) => {
+  const update = async (patch: Partial<AppSettings>) => {
     const next = await window.api.updateSettings(patch)
     setSettings(next)
   }
@@ -55,6 +58,34 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
       useLibraryStore.getState().showToast('备份失败,请查看日志')
     } finally {
       setBacking(false)
+    }
+  }
+
+  // 保存 AI key(输入框非空时保存,空串清除)
+  const saveAiKey = async () => {
+    await update({ aiApiKey: aiKeyInput })
+    setAiKeyInput('')
+    useLibraryStore.getState().showToast(aiKeyInput ? 'API Key 已保存' : 'API Key 已清除')
+  }
+
+  const testAi = async () => {
+    if (!settings) return
+    setAiTesting(true)
+    try {
+      // 测试时用输入框的 key(若填了)否则用已保存的 key
+      const key = aiKeyInput || ''
+      if (!key && !settings.aiHasKey) {
+        useLibraryStore.getState().showToast('请先填写 API Key')
+        return
+      }
+      const r = await window.api.aiTestKey({
+        baseUrl: settings.aiBaseUrl || 'https://open.bigmodel.cn/api/paas/v4',
+        apiKey: key,
+        model: settings.aiModel || 'glm-4v'
+      })
+      useLibraryStore.getState().showToast(r.ok ? '连接成功' : `连接失败:${r.message}`)
+    } finally {
+      setAiTesting(false)
     }
   }
 
@@ -175,6 +206,62 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
               onClick={() => void backupZip()}
             >
               {backing ? '处理中…' : '导出完整库 ZIP'}
+            </button>
+          </div>
+        </div>
+
+        {/* AI 智能处理 */}
+        <div className="mt-5 border-t border-[var(--border)] pt-4">
+          <div className="section-title mb-2">AI 智能处理</div>
+          <div className="mb-2 text-[11px] text-[var(--text-dim)]">
+            配置后可批量为素材自动生成文件名和标签（OpenAI 兼容格式，支持智谱 GLM-4V / 通义 / Ollama 等）。
+          </div>
+          <div className="space-y-2">
+            <div>
+              <label className="mb-0.5 block text-[11px] text-[var(--text-dim)]">Base URL</label>
+              <input
+                className="field-input w-full text-[12px]"
+                value={settings.aiBaseUrl || ''}
+                placeholder="https://open.bigmodel.cn/api/paas/v4"
+                onChange={(e) => void update({ aiBaseUrl: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="mb-0.5 block text-[11px] text-[var(--text-dim)]">模型</label>
+              <input
+                className="field-input w-full text-[12px]"
+                value={settings.aiModel || ''}
+                placeholder="glm-4v"
+                onChange={(e) => void update({ aiModel: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="mb-0.5 block text-[11px] text-[var(--text-dim)]">
+                API Key{settings.aiHasKey && <span className="ml-1 text-[var(--accent-text)]">（已配置 ···{settings.aiKeyTail}）</span>}
+              </label>
+              <div className="flex gap-2">
+                <input
+                  className="field-input flex-1 text-[12px]"
+                  type="password"
+                  value={aiKeyInput}
+                  placeholder={settings.aiHasKey ? '输入新 Key 覆盖（留空不变）' : '粘贴 API Key'}
+                  onChange={(e) => setAiKeyInput(e.target.value)}
+                />
+                <button
+                  className="btn-ghost shrink-0 disabled:opacity-40"
+                  disabled={!aiKeyInput}
+                  onClick={() => void saveAiKey()}
+                >
+                  保存
+                </button>
+              </div>
+            </div>
+            <button
+              className="btn-ghost disabled:opacity-40"
+              disabled={aiTesting || (!aiKeyInput && !settings.aiHasKey)}
+              onClick={() => void testAi()}
+            >
+              {aiTesting ? '测试中…' : '测试连接'}
             </button>
           </div>
         </div>

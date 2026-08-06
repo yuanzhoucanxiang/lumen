@@ -396,6 +396,23 @@ export default function Gallery() {
     }
   }
 
+  const doAiProcess = async () => {
+    const s = useLibraryStore.getState()
+    const ids = selection.includes(menu!.id) ? selection : [menu!.id]
+    setMenu(null)
+    try {
+      const r = await window.api.aiProcess(ids)
+      s.showToast(
+        r.failed > 0
+          ? `已处理 ${r.processed} 张，失败 ${r.failed} 张`
+          : `已处理 ${r.processed} 张（改名+打标签）`
+      )
+      await s.refreshAll()
+    } catch (e) {
+      s.showToast(`AI 处理失败：${(e as Error).message}`)
+    }
+  }
+
   if (assets.length === 0) {
     return (
       <div className="anim-fade flex flex-1 flex-col items-center justify-center gap-4 text-[var(--text-dim)]">
@@ -651,6 +668,13 @@ export default function Gallery() {
             onClick={() => void doExport('zip')}
           >
             打包为 ZIP…
+          </button>
+          <button
+            role="menuitem"
+            className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+            onClick={() => void doAiProcess()}
+          >
+            AI 智能处理（改名+打标签）…
           </button>
           {assetThumbUrl(contextAsset) && (
             <button

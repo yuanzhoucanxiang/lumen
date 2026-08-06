@@ -193,6 +193,15 @@ export function queryAssets(q: AssetQuery): Asset[] {
   return assets
 }
 
+/** 查单个素材（含标签），供 AI 处理等需要完整元数据的场景使用 */
+export function getAssetById(id: string): Asset | null {
+  const row = getDb().prepare('SELECT * FROM assets WHERE id = ?').get(id) as AssetRow | undefined
+  if (!row) return null
+  const asset = rowToAsset(row)
+  attachTags([asset])
+  return asset
+}
+
 export function assetPaths(id: string): { dir: string; original: string; thumbnail: string } | null {
   const row = getDb()
     .prepare('SELECT rel_dir, ext, edited, edited_ext FROM assets WHERE id = ?')

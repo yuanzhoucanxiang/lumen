@@ -20,6 +20,26 @@ export default function Inspector() {
   const [tagInput, setTagInput] = useState('')
   const [comment, setComment] = useState('')
   const [batchTag, setBatchTag] = useState('')
+  const [aiProcessing, setAiProcessing] = useState(false)
+
+  /** AI 智能处理：批量改名 + 打标签（直接应用，对标 Eagle） */
+  const applyAiProcess = async () => {
+    if (selection.length === 0) return
+    setAiProcessing(true)
+    try {
+      const r = await window.api.aiProcess(selection)
+      useLibraryStore.getState().showToast(
+        r.failed > 0
+          ? `已处理 ${r.processed} 张，失败 ${r.failed} 张`
+          : `已处理 ${r.processed} 张（改名+打标签）`
+      )
+      await useLibraryStore.getState().refreshAll()
+    } catch (e) {
+      useLibraryStore.getState().showToast(`AI 处理失败：${(e as Error).message}`)
+    } finally {
+      setAiProcessing(false)
+    }
+  }
 
   /** 批量打标签：追加到所有选中素材 */
   const applyBatchTag = async () => {
@@ -129,6 +149,17 @@ export default function Inspector() {
                   onClick={() => void applyBatchTag()}
                 >
                   应用到 {selection.length} 个素材
+                </button>
+              </div>
+              {/* AI 智能处理 */}
+              <div className="mt-4 text-left">
+                <div className="section-title mb-1.5">AI 智能处理</div>
+                <button
+                  className="btn-ghost w-full disabled:opacity-40"
+                  disabled={aiProcessing}
+                  onClick={() => void applyAiProcess()}
+                >
+                  {aiProcessing ? '处理中…' : `AI 改名+打标签（${selection.length} 个）`}
                 </button>
               </div>
             </div>

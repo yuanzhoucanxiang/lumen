@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Asset, AssetQuery, DupeGroup, Folder, ImportResult, LibraryInfo, Tag, TagGroup, UpdateStatus } from '../shared/types'
+import type { Asset, AssetQuery, AiProcessResult, AppSettings, DupeGroup, Folder, ImportResult, LibraryInfo, Tag, TagGroup, UpdateStatus } from '../shared/types'
 
 const api = {
   /* 库管理 */
@@ -42,13 +42,18 @@ const api = {
   revertEdit: (id: string): Promise<void> => ipcRenderer.invoke('asset:revertEdit', id),
 
   /* 设置 */
-  getSettings: (): Promise<{ watchDirs: string[]; importMode: 'copy' | 'move' }> =>
-    ipcRenderer.invoke('settings:get'),
-  updateSettings: (
-    patch: { watchDirs?: string[]; importMode?: 'copy' | 'move' }
-  ): Promise<{ watchDirs: string[]; importMode: 'copy' | 'move' }> =>
+  getSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
+  updateSettings: (patch: Partial<AppSettings>): Promise<AppSettings> =>
     ipcRenderer.invoke('settings:update', patch),
   chooseWatchDir: (): Promise<string | null> => ipcRenderer.invoke('settings:chooseWatchDir'),
+
+  /* AI 智能处理（改名+打标签） */
+  aiProcess: (ids: string[]): Promise<AiProcessResult> => ipcRenderer.invoke('ai:process', ids),
+  aiTestKey: (cfg: { baseUrl: string; apiKey: string; model: string }): Promise<{ ok: boolean; message: string }> =>
+    ipcRenderer.invoke('ai:testKey', cfg),
+  onAiProgress: (cb: (p: { done: number; total: number; failed: number }) => void): void => {
+    ipcRenderer.on('ai:progress', (_e, p) => cb(p))
+  },
 
   /* 标签 */
   listTags: (): Promise<Tag[]> => ipcRenderer.invoke('tags:list'),
