@@ -25,6 +25,7 @@ const api = {
 
   /* 素材 */
   queryAssets: (q: AssetQuery): Promise<Asset[]> => ipcRenderer.invoke('assets:query', q),
+  getAsset: (id: string): Promise<Asset | null> => ipcRenderer.invoke('assets:get', id),
   updateAsset: (
     id: string,
     fields: Partial<Pick<Asset, 'name' | 'star' | 'comment' | 'url'>>

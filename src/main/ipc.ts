@@ -28,6 +28,7 @@ import {
   emptyTrash,
   findDuplicates,
   findSimilar,
+  getAssetById,
   isUnnamedName,
   libraryStats,
   listFolders,
@@ -114,6 +115,8 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
 
   /* ---------------- 素材查询与编辑 ---------------- */
   ipcMain.handle('assets:query', (_e, q: AssetQuery) => queryAssets(q ?? {}))
+
+  ipcMain.handle('assets:get', (_e, id: string) => getAssetById(id))
 
   ipcMain.handle('asset:paths', (_e, id: string) => assetPaths(id))
 

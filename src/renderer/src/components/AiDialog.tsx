@@ -35,6 +35,8 @@ export default function AiDialog({
   const [progress, setProgress] = useState<{ done: number; total: number; failed: number } | null>(null)
   const [result, setResult] = useState<AiProcessResult | null>(null)
   const [revertIds, setRevertIds] = useState<Set<string>>(new Set())
+  /** 已撤销条数(空列表文案区分「用户撤销」与「AI 无变化」) */
+  const [reverted, setReverted] = useState(0)
 
   // 范围切换时统计候选数
   useEffect(() => {
@@ -81,15 +83,14 @@ export default function AiDialog({
     }
     if (item.addedTags.length > 0) {
       // 读取当前标签,移除 AI 新增的
-      const cur = await window.api.queryAssets({ limit: 1 })
-      const asset = (await window.api.queryAssets({ limit: 100000 })).find((a) => a.id === item.id)
+      const asset = await window.api.getAsset(item.id)
       if (asset) {
         const remaining = asset.tagNames.filter((t) => !item.addedTags.includes(t))
         await window.api.setAssetTags(item.id, remaining)
       }
-      void cur
     }
     // 更新本地结果状态
+    setReverted((n) => n + 1)
     setResult((prev) => {
       if (!prev || !prev.items) return prev
       return { ...prev, items: prev.items.filter((it) => it.id !== item.id) }
@@ -309,7 +310,11 @@ export default function AiDialog({
               ))}
               {(!result.items || result.items.length === 0) && (
                 <p className="py-8 text-center text-[12px] text-[var(--text-faint)]">
-                  {result.processed > 0 ? '处理完成，无变化（AI 判断原名/标签已合适）' : '没有可处理的变化'}
+                  {reverted > 0
+                    ? `已撤销 ${reverted} 条 AI 处理更改`
+                    : result.processed > 0
+                      ? '处理完成，无变化（AI 判断原名/标签已合适）'
+                      : '没有可处理的变化'}
                 </p>
               )}
             </div>
