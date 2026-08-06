@@ -1,7 +1,16 @@
 import { readFileSync } from 'fs'
-import { assetPaths, getAssetById, listTags, updateAsset, addTagToAssets } from './repository'
+import {
+  assetPaths,
+  getAssetById,
+  listTags,
+  updateAsset,
+  createTag,
+  createTagGroup,
+  assignTagToGroup
+} from './repository'
+import { getDb } from './db'
 import { logger } from './logger'
-import type { AiProcessResult } from '../shared/types'
+import type { AiProcessItem, AiProcessOptions, AiProcessResult } from '../shared/types'
 
 export interface AiConfig {
   baseUrl: string
@@ -116,18 +125,36 @@ async function suggestForAsset(id: string, cfg: AiConfig): Promise<AiSuggestion>
 }
 
 /**
+ * 确保 AI 标签分组存在（同名返回已有组），返回组 id。
+ * AI 生成的标签统一归入此组，侧栏标签面板不混乱。
+ */
+function ensureAiTagGroup(name: string): number {
+  const group = createTagGroup(name)
+  return group.id
+}
+
+/**
  * 批量 AI 处理：并发调 API + 直接应用（改名 + 追加标签）。
- * 对标 Eagle：无预览，直接应用（标签追加式，改名可撤销）。
+ * 标签按名称聚合后一次批量打给所有素材，并统一归入「AI 标签」分组。
  */
 export async function aiProcessBatch(
   ids: string[],
   cfg: AiConfig,
+  options: AiProcessOptions,
   onProgress: (done: number, total: number, failed: number) => void
 ): Promise<AiProcessResult> {
   const total = ids.length
   let done = 0
   let failed = 0
   const failedIds: string[] = []
+  const items: AiProcessItem[] = []
+  const rename = options.rename !== false
+  const tag = options.tag !== false
+  const maxTags = options.maxTags ?? 5
+  const tagGroupName = options.tagGroupName || 'AI 标签'
+
+  // 标签聚合：tagName -> assetIds（一次 AI 返回的标签先收集，最后统一批量打标）
+  const tagMap = new Map<string, string[]>()
 
   await mapWithConcurrency(ids, 3, async (id) => {
     try {
@@ -135,19 +162,28 @@ export async function aiProcessBatch(
       const asset = getAssetById(id)
       if (!asset) throw new Error('素材不存在')
 
+      const item: AiProcessItem = { id, oldName: asset.name, newName: asset.name, addedTags: [] }
+
       // 改名（保留扩展名）
-      if (suggestion.name) {
+      if (rename && suggestion.name) {
         const newName = `${suggestion.name}.${asset.ext}`
         if (newName !== asset.name) {
           updateAsset(id, { name: newName })
+          item.newName = newName
         }
       }
-      // 追加标签（addTagToAssets 自动创建不存在的标签）
-      if (suggestion.tags.length > 0) {
-        for (const tag of suggestion.tags) {
-          addTagToAssets([id], tag)
+      // 收集标签（限 maxTags 个）
+      if (tag) {
+        for (const t of suggestion.tags.slice(0, maxTags)) {
+          if (!asset.tagNames.includes(t)) {
+            const list = tagMap.get(t) ?? []
+            list.push(id)
+            tagMap.set(t, list)
+            item.addedTags.push(t)
+          }
         }
       }
+      items.push(item)
     } catch (e) {
       failed++
       failedIds.push(id)
@@ -158,9 +194,21 @@ export async function aiProcessBatch(
     }
   })
 
+  // 标签统一落库：按标签名聚合批量打给所有素材 + 归入 AI 标签组
+  if (tag && tagMap.size > 0) {
+    const groupId = ensureAiTagGroup(tagGroupName)
+    const ins = getDb().prepare('INSERT OR IGNORE INTO asset_tags (asset_id, tag_id) VALUES (?, ?)')
+    for (const [tagName, assetIds] of tagMap) {
+      const tagRow = createTag(tagName)
+      // 归入 AI 标签组（已是该组的跳过）
+      if (tagRow.groupId !== groupId) assignTagToGroup(tagRow.id, groupId)
+      for (const id of assetIds) ins.run(id, tagRow.id)
+    }
+  }
+
   const processed = total - failed
-  logger.info('[ai]', `批量处理完成：${processed}/${total} 成功，${failed} 失败`)
-  return { processed, failed, failedIds }
+  logger.info('[ai]', `批量处理完成：${processed}/${total} 成功，${failed} 失败，新增标签 ${tagMap.size} 个`)
+  return { processed, failed, failedIds, items }
 }
 
 /** 测试 API 连通性（发一个最小文本请求） */

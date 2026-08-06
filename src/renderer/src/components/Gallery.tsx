@@ -400,17 +400,9 @@ export default function Gallery() {
     const s = useLibraryStore.getState()
     const ids = selection.includes(menu!.id) ? selection : [menu!.id]
     setMenu(null)
-    try {
-      const r = await window.api.aiProcess(ids)
-      s.showToast(
-        r.failed > 0
-          ? `已处理 ${r.processed} 张，失败 ${r.failed} 张`
-          : `已处理 ${r.processed} 张（改名+打标签）`
-      )
-      await s.refreshAll()
-    } catch (e) {
-      s.showToast(`AI 处理失败：${(e as Error).message}`)
-    }
+    // 打开 AI 处理对话框（以当前选中/右键目标为默认范围）
+    s.setSelection(ids)
+    s.openAiDialog()
   }
 
   if (assets.length === 0) {

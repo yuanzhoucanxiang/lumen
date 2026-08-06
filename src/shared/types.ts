@@ -129,11 +129,39 @@ export interface AiProgress {
   failed: number
 }
 
+/** AI 处理选项 */
+export interface AiProcessOptions {
+  /** 是否改名 */
+  rename: boolean
+  /** 是否打标签 */
+  tag: boolean
+  /** 标签数量上限 */
+  maxTags?: number
+  /** 标签归组名（默认 'AI 标签'） */
+  tagGroupName?: string
+}
+
+/** AI 处理范围（筛选候选素材） */
+export type AiScope =
+  | { type: 'selection'; ids: string[] }
+  | { type: 'all' }
+  | { type: 'untagged' }
+  | { type: 'unnamed' }
+
+/** AI 处理单条结果明细（供结果列表展示/撤销） */
+export interface AiProcessItem {
+  id: string
+  oldName: string
+  newName: string
+  addedTags: string[]
+}
+
 /** AI 批量处理结果 */
 export interface AiProcessResult {
   processed: number
   failed: number
   failedIds: string[]
+  items?: AiProcessItem[]
 }
 
 export interface LibraryInfo {

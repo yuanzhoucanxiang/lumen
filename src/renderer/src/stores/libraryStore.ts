@@ -78,6 +78,10 @@ interface LibraryState {
   setSimilarTo: (v: { id: string; name: string } | null) => void
   openPreview: (id: string | null) => void
   openEditor: (id: string | null) => void
+  /** AI 处理对话框开关 */
+  aiDialogOpen: boolean
+  openAiDialog: () => void
+  closeAiDialog: () => void
   showToast: (msg: string) => void
   undoLast: () => Promise<void>
 }
@@ -93,7 +97,10 @@ async function autoAiAfterImport(importedCount: number): Promise<void> {
   const fresh = await window.api.queryAssets({ sortBy: 'imported', sortDesc: true, limit: importedCount })
   if (fresh.length === 0) return
   try {
-    const r = await window.api.aiProcess(fresh.map((a) => a.id))
+    const r = await window.api.aiProcess(
+      fresh.map((a) => a.id),
+      { rename: true, tag: true, maxTags: 5, tagGroupName: 'AI 标签' }
+    )
     useLibraryStore.getState().showToast(
       r.failed > 0
         ? `AI 自动处理：${r.processed} 张成功，${r.failed} 张失败`
@@ -130,6 +137,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   anchorId: null,
   previewId: null,
   editorId: null,
+  aiDialogOpen: false,
   toast: null,
   similarTo: null,
   history: [],
@@ -331,6 +339,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
   openPreview: (previewId) => set({ previewId }),
   openEditor: (editorId) => set({ editorId }),
+  openAiDialog: () => set({ aiDialogOpen: true }),
+  closeAiDialog: () => set({ aiDialogOpen: false }),
 
   showToast: (msg) => {
     if (toastTimer) clearTimeout(toastTimer)

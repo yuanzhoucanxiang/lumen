@@ -193,6 +193,17 @@ export function queryAssets(q: AssetQuery): Asset[] {
   return assets
 }
 
+/** 判断文件名是否为「未命名」：相机默认名 / 日期串 / 纯数字 / 短名 */
+export function isUnnamedName(name: string): boolean {
+  const base = name.replace(/\.[^.]+$/, '') // 去扩展名
+  if (base.length < 6) return true // 短名视为未命名
+  if (/^IMG[_\-]?\d+$/i.test(base)) return true // IMG_123
+  if (/^DSC[_\-]?\d+$/i.test(base)) return true // DSC_123
+  if (/^[0-9_\-]+$/.test(base)) return true // 纯数字/日期串 20260731-123
+  if (/^(screenshot|微信图片|图片|image|photo)[_-]?\d*$/i.test(base)) return true
+  return false
+}
+
 /** 查单个素材（含标签），供 AI 处理等需要完整元数据的场景使用 */
 export function getAssetById(id: string): Asset | null {
   const row = getDb().prepare('SELECT * FROM assets WHERE id = ?').get(id) as AssetRow | undefined

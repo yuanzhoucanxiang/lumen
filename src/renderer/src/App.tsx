@@ -9,6 +9,7 @@ import Editor from './components/Editor'
 import ScrambleText from './components/ScrambleText'
 import ConfirmDialog from './components/ConfirmDialog'
 import UpdateNotes from './components/UpdateNotes'
+import AiDialog from './components/AiDialog'
 import type { UpdateStatus } from '@shared/types'
 
 let clipListenerRegistered = false
@@ -19,6 +20,8 @@ export default function App() {
   const toast = useLibraryStore((s) => s.toast)
   const previewId = useLibraryStore((s) => s.previewId)
   const editorId = useLibraryStore((s) => s.editorId)
+  const aiDialogOpen = useLibraryStore((s) => s.aiDialogOpen)
+  const selection = useLibraryStore((s) => s.selection)
   const [dragOver, setDragOver] = useState(false)
   const [upd, setUpd] = useState<UpdateStatus | null>(null)
   const [updDismissed, setUpdDismissed] = useState(false)
@@ -160,6 +163,12 @@ export default function App() {
 
       {previewId && <Preview />}
       {editorId && <Editor />}
+      {aiDialogOpen && (
+        <AiDialog
+          selectionIds={selection}
+          onClose={() => useLibraryStore.getState().closeAiDialog()}
+        />
+      )}
       {dragOver && (
         <div className="drag-over-overlay">
           <div className="drag-over-card flex flex-col items-center gap-3 rounded-2xl px-12 py-8 text-[15px] font-medium text-[var(--accent-text)]">
