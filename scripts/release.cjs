@@ -11,7 +11,7 @@
  * 流程：版本 bump → notes 生成/校验 → npm run build:win → gh release create → git tag + push
  */
 const { execSync } = require('child_process')
-const { existsSync, readFileSync, writeFileSync } = require('fs')
+const { existsSync, readFileSync, writeFileSync, rmSync } = require('fs')
 const { join } = require('path')
 
 const ROOT = join(__dirname, '..')
@@ -121,6 +121,12 @@ if (dryRun) {
 console.log('发布中…')
 execSync(cmd, { cwd: ROOT, stdio: 'inherit' })
 ok(`GitHub Release 已创建: ${tag}`)
+
+// 默认 notes.md 已用尽,删除避免下次发布复用旧内容(自定义 --notes 文件保留)
+if (!notesArg && existsSync(NOTES_FILE)) {
+  rmSync(NOTES_FILE, { force: true })
+  ok('notes.md 已清理（下次发布从工作日志重新生成）')
+}
 
 /* ---------------- 6. git tag + push ---------------- */
 if (!noGit) {
