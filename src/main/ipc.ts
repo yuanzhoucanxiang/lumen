@@ -46,8 +46,15 @@ import {
   updateSmartFolder
 } from './repository'
 import { applyEdit, revertEdit } from './editor'
-import { aiProcessBatch, testAiConnection } from './aiRename'
-import type { AiProcessOptions, AiProcessResult, AiScope, AssetQuery, LibraryInfo } from '../shared/types'
+import { aiProcessBatch, aiSuggestBatch, aiApplySuggestions, testAiConnection } from './aiRename'
+import type {
+  AiApplyRequest,
+  AiProcessOptions,
+  AiProcessResult,
+  AiScope,
+  AssetQuery,
+  LibraryInfo
+} from '../shared/types'
 import { syncWatchers } from './watcher'
 
 export function registerIpc(getWindow: () => BrowserWindow | null): void {
@@ -214,6 +221,23 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       options ?? { rename: true, tag: true },
       (done, total, failed) => getWindow()?.webContents.send('ai:progress', { done, total, failed })
     )
+  })
+
+  // 阶段一：只生成建议（不写 DB），供预览审核模式用
+  ipcMain.handle('ai:suggest', async (_e, ids: string[], options: AiProcessOptions) => {
+    const cfg = loadConfig()
+    if (!cfg.aiApiKey) throw new Error('未配置 AI API Key，请在设置页填写')
+    return aiSuggestBatch(
+      ids,
+      { baseUrl: cfg.aiBaseUrl ?? 'https://open.bigmodel.cn/api/paas/v4', apiKey: cfg.aiApiKey, model: cfg.aiModel ?? 'glm-4v' },
+      options ?? { rename: true, tag: true },
+      (done, total, failed) => getWindow()?.webContents.send('ai:progress', { done, total, failed })
+    )
+  })
+
+  // 阶段二：应用用户审核后的建议（改名 + 打标签 + 分类归组）
+  ipcMain.handle('ai:apply', (_e, request: AiApplyRequest): Promise<AiProcessResult> => {
+    return aiApplySuggestions(request.items, request.options)
   })
 
   // 统计 AI 候选素材数（对话框显示"将处理 N 个素材"）

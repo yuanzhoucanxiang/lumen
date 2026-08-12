@@ -1,9 +1,34 @@
 import { useEffect, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
-import type { AiProcessItem, AiProcessOptions, AiProcessResult, AiScope } from '@shared/types'
+import type {
+  AiProcessItem,
+  AiProcessOptions,
+  AiProcessResult,
+  AiScope,
+  AiSuggestionItem,
+  AiTagCategory
+} from '@shared/types'
 
-type Phase = 'config' | 'processing' | 'result'
+type Phase = 'config' | 'processing' | 'preview' | 'result'
+
+/** 分类 -> 标签 chip 颜色 */
+const CATEGORY_COLORS: Record<AiTagCategory, string> = {
+  scene: 'bg-blue-500/20 text-blue-300',
+  style: 'bg-purple-500/20 text-purple-300',
+  subject: 'bg-cyan-500/20 text-cyan-300',
+  color: 'bg-orange-500/20 text-orange-300',
+  other: 'bg-[var(--bg-hover)] text-[var(--text-dim)]'
+}
+
+/** 分类 -> 中文标签 */
+const CATEGORY_LABELS: Record<AiTagCategory, string> = {
+  scene: '场景',
+  style: '风格',
+  subject: '主体',
+  color: '色调',
+  other: '其他'
+}
 
 interface ScopeOption {
   key: AiScope['type']
@@ -37,6 +62,12 @@ export default function AiDialog({
   const [revertIds, setRevertIds] = useState<Set<string>>(new Set())
   /** 已撤销条数(空列表文案区分「用户撤销」与「AI 无变化」) */
   const [reverted, setReverted] = useState(0)
+  /** 预览阶段:AI 生成的建议列表(用户可编辑) */
+  const [suggestions, setSuggestions] = useState<AiSuggestionItem[]>([])
+  /** 预览阶段:用户勾选要应用的素材 id(默认全选) */
+  const [applyIds, setApplyIds] = useState<Set<string>>(new Set())
+  /** 预览阶段:生成时的失败数(展示用) */
+  const [suggestFailed, setSuggestFailed] = useState(0)
 
   // 范围切换时统计候选数
   useEffect(() => {
@@ -67,13 +98,64 @@ export default function AiDialog({
         maxTags,
         tagGroupName: 'AI 标签'
       }
-      const r = await window.api.aiProcess(ids, options)
-      setResult(r)
-      setPhase('result')
+      // 阶段一:只生成建议,不写 DB -> 进入预览审核
+      const r = await window.api.aiSuggest(ids, options)
+      setSuggestions(r.items)
+      setApplyIds(new Set(r.items.map((it) => it.id)))
+      setSuggestFailed(r.failed)
+      setPhase('preview')
     } catch (e) {
       useLibraryStore.getState().showToast(`AI 处理失败：${(e as Error).message}`)
       onClose()
     }
+  }
+
+  /** 阶段二:应用用户审核后的建议 */
+  const applySuggestions = async () => {
+    const selected = suggestions.filter((it) => applyIds.has(it.id))
+    if (selected.length === 0) {
+      useLibraryStore.getState().showToast('未选择任何素材')
+      return
+    }
+    try {
+      const options: AiProcessOptions = {
+        rename: doRename,
+        tag: doTag,
+        maxTags,
+        tagGroupName: 'AI 标签'
+      }
+      const r = await window.api.aiApply({ items: selected, options })
+      setResult(r)
+      setPhase('result')
+    } catch (e) {
+      useLibraryStore.getState().showToast(`应用失败：${(e as Error).message}`)
+    }
+  }
+
+  /** 预览阶段:删除某素材的某个标签 */
+  const removeTag = (itemId: string, tagName: string) => {
+    setSuggestions((prev) =>
+      prev.map((it) =>
+        it.id === itemId ? { ...it, tags: it.tags.filter((t) => t.name !== tagName) } : it
+      )
+    )
+  }
+
+  /** 预览阶段:修改某素材的建议文件名 */
+  const renameSuggestion = (itemId: string, name: string) => {
+    setSuggestions((prev) =>
+      prev.map((it) => (it.id === itemId ? { ...it, suggestedName: name } : it))
+    )
+  }
+
+  /** 预览阶段:切换某素材的选中状态 */
+  const toggleApply = (itemId: string) => {
+    setApplyIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(itemId)) next.delete(itemId)
+      else next.add(itemId)
+      return next
+    })
   }
 
   // 撤销单条:恢复旧名 + 移除新增标签(用 setAssetTags 替换回处理前标签)
@@ -233,7 +315,7 @@ export default function AiDialog({
         {/* ===== 处理阶段 ===== */}
         {phase === 'processing' && (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4">
-            <p className="text-[13px] text-[var(--text-dim)]">AI 正在处理素材…</p>
+            <p className="text-[13px] text-[var(--text-dim)]">AI 正在分析素材…</p>
             <p className="mono tnum text-[12px] text-[var(--text-faint)]">
               {progress?.done ?? 0} / {progress?.total ?? 0}
               {progress && progress.failed > 0 && (
@@ -248,8 +330,79 @@ export default function AiDialog({
                 }}
               />
             </div>
-            <p className="text-[11px] text-[var(--text-faint)]">处理中请勿关闭窗口</p>
+            <p className="text-[11px] text-[var(--text-faint)]">生成建议中,完成后可预览审核</p>
           </div>
+        )}
+
+        {/* ===== 预览审核阶段 ===== */}
+        {phase === 'preview' && (
+          <>
+            <p className="mb-3 text-[12px] text-[var(--text-dim)]">
+              已生成 <span className="mono tnum">{suggestions.length}</span> 条建议
+              {suggestFailed > 0 && <span className="ml-2 text-red-400">失败 {suggestFailed}</span>}
+              <span className="ml-2 text-[var(--text-faint)]">勾选要应用的,可删标签/改文件名</span>
+            </p>
+            <div className="modal-scroll min-h-0 flex-1 space-y-1.5 overflow-y-auto">
+              {suggestions.map((item) => {
+                const checked = applyIds.has(item.id)
+                return (
+                  <div
+                    key={item.id}
+                    className={`flex items-start gap-2.5 rounded-lg border px-2.5 py-2 transition-colors duration-100 ${
+                      checked
+                        ? 'border-[var(--border)] bg-[var(--bg-base)]'
+                        : 'border-[var(--border)] bg-[var(--bg-raised)] opacity-50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleApply(item.id)}
+                      className="mt-1 shrink-0"
+                    />
+                    <img
+                      src={`${window.api.thumbnailUrl(item.id)}&e=0`}
+                      className="h-10 w-10 shrink-0 rounded-sm object-cover"
+                      alt=""
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[11px] text-[var(--text-faint)]">
+                        {item.oldName}
+                      </div>
+                      {doRename && (
+                        <input
+                          type="text"
+                          value={item.suggestedName}
+                          onChange={(e) => renameSuggestion(item.id, e.target.value)}
+                          placeholder="不改名"
+                          className="mt-0.5 w-full rounded-sm border border-[var(--border)] bg-[var(--bg-input)] px-1.5 py-0.5 text-[12px] text-[var(--accent-text)] outline-none focus:border-[var(--accent)]"
+                        />
+                      )}
+                      {item.tags.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {item.tags.map((t) => (
+                            <button
+                              key={t.name}
+                              title={`${CATEGORY_LABELS[t.category]}: ${t.name}（点击移除）`}
+                              className={`rounded-sm px-1.5 py-px text-[10px] transition-opacity duration-100 hover:opacity-40 ${CATEGORY_COLORS[t.category]}`}
+                              onClick={() => removeTag(item.id, t.name)}
+                            >
+                              {t.name} ×
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+              {suggestions.length === 0 && (
+                <p className="py-8 text-center text-[12px] text-[var(--text-faint)]">
+                  AI 未生成任何建议（可能原名/标签已合适）
+                </p>
+              )}
+            </div>
+          </>
         )}
 
         {/* ===== 结果阶段 ===== */}
@@ -260,7 +413,7 @@ export default function AiDialog({
               {result.failed > 0 && <span className="ml-2 text-red-400">失败 {result.failed} 个</span>}
               {result.items && result.items.length > 0 && (
                 <span className="ml-2 text-[var(--accent-text)]">
-                  新增标签归入「AI 标签」分组
+                  标签按分类归入 AI 子组
                 </span>
               )}
             </p>
@@ -330,6 +483,20 @@ export default function AiDialog({
               </button>
               <button className="btn-primary disabled:opacity-40" disabled={count === 0} onClick={() => void start()}>
                 开始处理（{count} 个）
+              </button>
+            </>
+          )}
+          {phase === 'preview' && (
+            <>
+              <button className="btn-ghost" onClick={() => setPhase('config')}>
+                返回
+              </button>
+              <button
+                className="btn-primary disabled:opacity-40"
+                disabled={applyIds.size === 0}
+                onClick={() => void applySuggestions()}
+              >
+                应用所选（{applyIds.size}）
               </button>
             </>
           )}

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Asset, AssetQuery, AiProcessOptions, AiProcessResult, AiScope, AppSettings, DupeGroup, Folder, ImportResult, LibraryInfo, Tag, TagGroup, UpdateStatus } from '../shared/types'
+import type { Asset, AssetQuery, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSuggestionItem, AppSettings, DupeGroup, Folder, ImportResult, LibraryInfo, Tag, TagGroup, UpdateStatus } from '../shared/types'
 
 const api = {
   /* 库管理 */
@@ -51,6 +51,12 @@ const api = {
   /* AI 智能处理（改名+打标签） */
   aiProcess: (ids: string[], options?: AiProcessOptions): Promise<AiProcessResult> =>
     ipcRenderer.invoke('ai:process', ids, options),
+  /** 阶段一：生成建议（不写 DB），供预览审核 */
+  aiSuggest: (ids: string[], options: AiProcessOptions): Promise<{ items: AiSuggestionItem[]; failed: number; failedIds: string[] }> =>
+    ipcRenderer.invoke('ai:suggest', ids, options),
+  /** 阶段二：应用用户审核后的建议 */
+  aiApply: (request: AiApplyRequest): Promise<AiProcessResult> =>
+    ipcRenderer.invoke('ai:apply', request),
   aiCountCandidates: (scope: AiScope): Promise<number> =>
     ipcRenderer.invoke('ai:countCandidates', scope),
   aiResolveScope: (scope: AiScope): Promise<string[]> =>

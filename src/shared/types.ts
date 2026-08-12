@@ -164,6 +164,31 @@ export interface AiProcessResult {
   items?: AiProcessItem[]
 }
 
+/** AI 标签分类 */
+export type AiTagCategory = 'scene' | 'style' | 'subject' | 'color' | 'other'
+
+/** AI 建议的单个标签（含分类，预览阶段可删减） */
+export interface AiTagSuggestion {
+  name: string
+  category: AiTagCategory
+}
+
+/** AI 建议单条（预览阶段可编辑：改名、删标签、取消勾选） */
+export interface AiSuggestionItem {
+  id: string
+  oldName: string
+  /** AI 建议新名（用户可改；空 = 不改名） */
+  suggestedName: string
+  /** AI 建议标签（已清洗归并；用户可删减） */
+  tags: AiTagSuggestion[]
+}
+
+/** 应用请求：用户审核后提交的（可能已修改的）建议 */
+export interface AiApplyRequest {
+  items: AiSuggestionItem[]
+  options: AiProcessOptions
+}
+
 export interface LibraryInfo {
   path: string
   assetCount: number
