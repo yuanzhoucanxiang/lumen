@@ -159,12 +159,12 @@ function generateDraftFromLog() {
   }
   if (!last) return ''
 
-  // 去掉「发布 vX.Y.Z」尾巴
-  last = last.replace(/；发布 v[\d.]+$/, '').trim()
+  // 去掉「发布 vX.Y.Z」尾巴（兼容全角/半角分号 + 行尾可能的 | ）
+  last = last.replace(/[；;]?\s*发布 v[\d.]+\s*\|?\s*$/, '').trim()
 
-  // 按分隔符切成条目
+  // 按分隔符切成条目（兼容全角/半角分号）
   const segments = last
-    .split(/[；。]/)
+    .split(/[；;。]/)
     .map((s) => s.trim())
     .filter(Boolean)
     .filter((s) => !/发布 v[\d.]+$/.test(s)) // 去掉「发布 vX.Y.Z」残留
