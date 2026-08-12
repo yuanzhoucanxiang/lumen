@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 import type {
@@ -68,6 +68,12 @@ export default function AiDialog({
   const [applyIds, setApplyIds] = useState<Set<string>>(new Set())
   /** 预览阶段:生成时的失败数(展示用) */
   const [suggestFailed, setSuggestFailed] = useState(0)
+
+  /** 用户标记的优先标签名集合（预览中 ⭐ 高亮） */
+  const priorityTagNames = useMemo(
+    () => new Set(useLibraryStore.getState().tags.filter((t) => t.priority === 1).map((t) => t.name)),
+    []
+  )
 
   // 范围切换时统计候选数
   useEffect(() => {
@@ -380,16 +386,20 @@ export default function AiDialog({
                       )}
                       {item.tags.length > 0 && (
                         <div className="mt-1 flex flex-wrap gap-1">
-                          {item.tags.map((t) => (
-                            <button
-                              key={t.name}
-                              title={`${CATEGORY_LABELS[t.category]}: ${t.name}（点击移除）`}
-                              className={`rounded-sm px-1.5 py-px text-[10px] transition-opacity duration-100 hover:opacity-40 ${CATEGORY_COLORS[t.category]}`}
-                              onClick={() => removeTag(item.id, t.name)}
-                            >
-                              {t.name} ×
-                            </button>
-                          ))}
+                          {item.tags.map((t) => {
+                            const isPriority = priorityTagNames.has(t.name)
+                            return (
+                              <button
+                                key={t.name}
+                                title={`${CATEGORY_LABELS[t.category]}: ${t.name}${isPriority ? '（优先标签）' : ''}（点击移除）`}
+                                className={`rounded-sm px-1.5 py-px text-[10px] transition-opacity duration-100 hover:opacity-40 ${CATEGORY_COLORS[t.category]}`}
+                                onClick={() => removeTag(item.id, t.name)}
+                              >
+                                {isPriority && <span className="mr-0.5 text-[var(--accent)]">⭐</span>}
+                                {t.name} ×
+                              </button>
+                            )
+                          })}
                         </div>
                       )}
                     </div>

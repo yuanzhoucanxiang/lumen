@@ -104,7 +104,8 @@ function migrate(d: Database.Database): void {
     conditions: "TEXT NOT NULL DEFAULT '{}'"
   })
   ensureColumns(d, 'tags', {
-    group_id: 'INTEGER'
+    group_id: 'INTEGER',
+    priority: 'INTEGER NOT NULL DEFAULT 0'
   })
 
   // 回填迁移:把当前回收站里的软删记录一次性写入 tombstone,

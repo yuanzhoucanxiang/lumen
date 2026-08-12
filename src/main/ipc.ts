@@ -42,6 +42,8 @@ import {
   restoreAssets,
   setAssetTags,
   setTagColor,
+  setTagPriority,
+  mergeTags,
   updateAsset,
   updateSmartFolder
 } from './repository'
@@ -277,6 +279,8 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('tags:create', (_e, name: string, color?: string) => createTag(name, color))
   ipcMain.handle('tags:rename', (_e, id: number, name: string) => renameTag(id, name))
   ipcMain.handle('tags:setColor', (_e, id: number, color: string) => setTagColor(id, color))
+  ipcMain.handle('tags:setPriority', (_e, id: number, priority: number) => setTagPriority(id, priority))
+  ipcMain.handle('tags:merge', (_e, sourceId: number, targetId: number) => mergeTags(sourceId, targetId))
   ipcMain.handle('tags:delete', (_e, id: number) => deleteTag(id))
 
   /* ---------------- 标签组 ---------------- */

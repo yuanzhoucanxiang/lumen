@@ -17,7 +17,8 @@ import type {
   AiProcessResult,
   AiSuggestionItem,
   AiTagCategory,
-  AiTagSuggestion
+  AiTagSuggestion,
+  Tag
 } from '../shared/types'
 
 export interface AiConfig {
@@ -107,17 +108,20 @@ function extractJson(text: string, wantName: boolean): AiRawSuggestion | null {
  * 清洗 + 归并标签：
  * - 去空格/括号/引号、全角转半角
  * - 过滤过短/无意义词
- * - 同义词归并：匹配已有标签库（大小写不敏感 + 去空格后比对），用已有标签的规范写法
+ * - 同义词归并：先匹配优先标签（用户标记 priority=1，强制归并到优先标签），
+ *   未命中再匹配常规标签库（大小写不敏感 + 去空格后比对），用已有标签的规范写法
  * - 去重（同 name 只保留第一个）
  */
-function cleanTags(raw: AiTagSuggestion[], existingTags: string[]): AiTagSuggestion[] {
+function cleanTags(raw: AiTagSuggestion[], existingTags: Tag[]): AiTagSuggestion[] {
   const seen = new Set<string>()
   const out: AiTagSuggestion[] = []
-  // 预处理已有标签库：去空格 + 小写 -> 规范写法
+  // 预处理：优先标签（priority=1）优先匹配；去空格 + 小写 -> 规范写法
+  const priorityMap = new Map<string, string>()
   const existingMap = new Map<string, string>()
-  for (const e of existingTags) {
-    const key = e.replace(/\s+/g, '').toLowerCase()
-    if (!existingMap.has(key)) existingMap.set(key, e)
+  for (const t of existingTags) {
+    const key = t.name.replace(/\s+/g, '').toLowerCase()
+    if (!existingMap.has(key)) existingMap.set(key, t.name)
+    if (t.priority === 1 && !priorityMap.has(key)) priorityMap.set(key, t.name)
   }
   for (const t of raw) {
     let name = t.name
@@ -130,9 +134,10 @@ function cleanTags(raw: AiTagSuggestion[], existingTags: string[]): AiTagSuggest
     // 过滤过短/无意义
     if (name.length < 1 || name.length > 20) continue
     if (/^(无|未知|图片|image|photo|截图|screenshot|未分类|其他)$/i.test(name)) continue
-    // 同义词归并：匹配已有标签库
+    // 同义词归并：优先标签最优先，其次常规标签库
     const key = name.toLowerCase()
-    const matched = existingMap.get(key)
+    const matchedPriority = priorityMap.get(key)
+    const matched = matchedPriority ?? existingMap.get(key)
     if (matched) name = matched
     // 去重
     if (seen.has(key)) continue
@@ -146,7 +151,8 @@ function cleanTags(raw: AiTagSuggestion[], existingTags: string[]): AiTagSuggest
 async function suggestForAsset(
   id: string,
   cfg: AiConfig,
-  options: AiProcessOptions
+  options: AiProcessOptions,
+  allTags: Tag[]
 ): Promise<AiRawSuggestion> {
   const paths = assetPaths(id)
   if (!paths || !paths.thumbnail) throw new Error('素材文件不存在')
@@ -161,11 +167,18 @@ async function suggestForAsset(
     ? `原名=${asset.name},尺寸=${asset.width}x${asset.height},已有标签=${asset.tagNames.join('/')}`
     : `id=${id}`
 
+  // 用户标记的优先标签单独列出（最高优先级，只要内容匹配就强制选用）
+  const priorityTags = allTags.filter((t) => t.priority === 1)
+  const priorityHint =
+    priorityTags.length > 0
+      ? `优先标签：${priorityTags.map((t) => t.name).join(',')}。这些是用户最常用的标签，只要内容匹配就优先选用它们。\n`
+      : ''
+
   // 取已有标签库，让 AI 优先复用（避免同义标签泛滥）
-  const allTags = listTags().map((t) => t.name)
+  const tagNames = allTags.map((t) => t.name)
   const tagLibHint =
-    allTags.length > 0
-      ? `已有标签库：${allTags.slice(0, 100).join(',')}。优先从中选用匹配的标签，不足时再新建（避免同义重复）。\n`
+    tagNames.length > 0
+      ? `已有标签库：${tagNames.slice(0, 100).join(',')}。优先从中选用匹配的标签，不足时再新建（避免同义重复）。\n`
       : ''
 
   const maxTags = options.maxTags ?? 5
@@ -179,6 +192,7 @@ async function suggestForAsset(
     `- cat 分类:scene(场景/环境)、style(风格/画风)、subject(主体/对象)、color(色调/氛围)\n` +
     `- 优先复用已有标签库中的标签\n` +
     `- 标签简洁,避免同义重复\n\n` +
+    `${priorityHint}` +
     `${tagLibHint}` +
     `参考信息:${meta}\n\n` +
     `示例:\n` +
@@ -244,12 +258,12 @@ export async function aiSuggestBatch(
   const rename = options.rename !== false
   const tag = options.tag !== false
 
-  // 已有标签库（用于 cleanTags 同义词归并）
-  const existingTags = listTags().map((t) => t.name)
+  // 已有标签库：一次查询复用（含 priority，供 cleanTags 优先归并 + prompt 优先标签 hint）
+  const existingTags = listTags()
 
   await mapWithConcurrency(ids, 3, async (id) => {
     try {
-      const raw = await suggestForAsset(id, cfg, options)
+      const raw = await suggestForAsset(id, cfg, options, existingTags)
       const asset = getAssetById(id)
       if (!asset) throw new Error('素材不存在')
 

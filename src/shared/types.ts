@@ -31,6 +31,8 @@ export interface Tag {
   count: number
   /** 所属标签组，null = 未分组 */
   groupId: number | null
+  /** 用户标记的优先级：1=优先（AI 打标签时优先选用），0=普通 */
+  priority: number
 }
 
 export interface TagGroup {

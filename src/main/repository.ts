@@ -313,7 +313,7 @@ export function emptyTrash(): void {
 export function listTags(): Tag[] {
   return getDb()
     .prepare(
-      `SELECT t.id, t.name, t.color, t.group_id AS groupId,
+      `SELECT t.id, t.name, t.color, t.group_id AS groupId, t.priority,
               (SELECT COUNT(*) FROM asset_tags at WHERE at.tag_id = t.id AND at.asset_id IN
                 (SELECT id FROM assets WHERE deleted_at IS NULL)) AS count
        FROM tags t ORDER BY t.name COLLATE NOCASE`
@@ -323,12 +323,12 @@ export function listTags(): Tag[] {
 
 export function createTag(name: string, color = ''): Tag {
   const db = getDb()
-  const existing = db.prepare('SELECT id, name, color, group_id AS groupId FROM tags WHERE name = ?').get(name) as
-    | Tag
-    | undefined
+  const existing = db
+    .prepare('SELECT id, name, color, group_id AS groupId, priority FROM tags WHERE name = ?')
+    .get(name) as Tag | undefined
   if (existing) return { ...existing, count: 0 }
   const info = db.prepare('INSERT INTO tags (name, color) VALUES (?, ?)').run(name, color)
-  return { id: Number(info.lastInsertRowid), name, color, count: 0, groupId: null }
+  return { id: Number(info.lastInsertRowid), name, color, count: 0, groupId: null, priority: 0 }
 }
 
 export function renameTag(id: number, name: string): void {
@@ -337,6 +337,11 @@ export function renameTag(id: number, name: string): void {
 
 export function setTagColor(id: number, color: string): void {
   getDb().prepare('UPDATE tags SET color = ? WHERE id = ?').run(color, id)
+}
+
+/** 设置标签优先级：1 = 优先（AI 打标签时优先选用），0 = 普通 */
+export function setTagPriority(id: number, priority: number): void {
+  getDb().prepare('UPDATE tags SET priority = ? WHERE id = ?').run(priority, id)
 }
 
 /* ---------------- 标签组 ---------------- */
@@ -375,6 +380,25 @@ export function deleteTag(id: number): void {
   const db = getDb()
   db.prepare('DELETE FROM asset_tags WHERE tag_id = ?').run(id)
   db.prepare('DELETE FROM tags WHERE id = ?').run(id)
+}
+
+/**
+ * 合并标签：把 sourceId 的素材全部打上 targetId 标签，再删除 sourceId。
+ * 用于清理历史同义标签（如「夜景」+「夜晚场景」并存）。事务原子完成。
+ */
+export function mergeTags(sourceId: number, targetId: number): void {
+  if (sourceId === targetId) return
+  const db = getDb()
+  const run = db.transaction(() => {
+    const rows = db.prepare('SELECT asset_id FROM asset_tags WHERE tag_id = ?').all(sourceId) as {
+      asset_id: string
+    }[]
+    const ins = db.prepare('INSERT OR IGNORE INTO asset_tags (asset_id, tag_id) VALUES (?, ?)')
+    for (const r of rows) ins.run(r.asset_id, targetId)
+    db.prepare('DELETE FROM asset_tags WHERE tag_id = ?').run(sourceId)
+    db.prepare('DELETE FROM tags WHERE id = ?').run(sourceId)
+  })
+  run()
 }
 
 /** 设置素材的标签（按名称，不存在则创建） */

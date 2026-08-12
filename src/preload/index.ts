@@ -75,6 +75,10 @@ const api = {
     ipcRenderer.invoke('tags:rename', id, name),
   setTagColor: (id: number, color: string): Promise<void> =>
     ipcRenderer.invoke('tags:setColor', id, color),
+  setTagPriority: (id: number, priority: number): Promise<void> =>
+    ipcRenderer.invoke('tags:setPriority', id, priority),
+  mergeTags: (sourceId: number, targetId: number): Promise<void> =>
+    ipcRenderer.invoke('tags:merge', sourceId, targetId),
   deleteTag: (id: number): Promise<void> => ipcRenderer.invoke('tags:delete', id),
   setAssetTags: (assetId: string, tagNames: string[]): Promise<void> =>
     ipcRenderer.invoke('asset:setTags', assetId, tagNames),

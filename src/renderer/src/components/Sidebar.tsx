@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import SmartFolderDialog from './SmartFolderDialog'
 import SettingsModal from './SettingsModal'
+import MergeTagDialog from './MergeTagDialog'
 import Icon from './Icon'
 import ScrambleText from './ScrambleText'
 import type { IconName } from './Icon'
@@ -19,6 +20,7 @@ function NavItem({
   label,
   count,
   dot,
+  priority,
   onClick,
   onContextMenu
 }: {
@@ -28,6 +30,8 @@ function NavItem({
   count?: number
   /** 颜色点（标签颜色），设置时替代默认图标 */
   dot?: string
+  /** 优先标签标记（⭐） */
+  priority?: boolean
   onClick: () => void
   onContextMenu?: (e: React.MouseEvent) => void
 }) {
@@ -62,6 +66,11 @@ function NavItem({
         />
       )}
       <span className="min-w-0 flex-1 truncate">{label}</span>
+      {priority && (
+        <span aria-label="优先标签" title="优先标签" className="text-[10px] text-[var(--accent)]">
+          ⭐
+        </span>
+      )}
       {count !== undefined && count > 0 && (
         <span className="tnum mono text-[10px] text-[var(--text-faint)]">{count}</span>
       )}
@@ -135,6 +144,8 @@ export default function Sidebar() {
   const [pendingAssign, setPendingAssign] = useState<number | null>(null) // 等待新建分组并移入的标签 id
   const [groupInput, setGroupInput] = useState('')
   const [menu, setMenu] = useState<{ x: number; y: number; kind: 'folder' | 'tag' | 'tagGroup'; id: number } | null>(null)
+  /** 待合并的源标签 id（打开 MergeTagDialog） */
+  const [mergeSource, setMergeSource] = useState<number | null>(null)
   const [smartDialog, setSmartDialog] = useState<{ open: boolean; edit: Folder | null }>({ open: false, edit: null })
   const [libs, setLibs] = useState<{ libraries: { name: string; path: string }[]; current: string } | null>(null)
   const [libMenuOpen, setLibMenuOpen] = useState(false)
@@ -438,6 +449,7 @@ export default function Sidebar() {
         icon="tag"
         dot={t.color || undefined}
         label={t.name}
+        priority={t.priority === 1}
         count={t.count}
         onClick={() => setView({ type: 'tag', id: t.id })}
         onContextMenu={(e) => openMenu(e, 'tag', t.id)}
@@ -748,6 +760,28 @@ export default function Sidebar() {
               >
                 重命名
               </button>
+              <button
+                role="menuitem"
+                className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                onClick={async () => {
+                  const cur = tags.find((t) => t.id === menu.id)
+                  await window.api.setTagPriority(menu.id, cur?.priority === 1 ? 0 : 1)
+                  await useLibraryStore.getState().refreshTags()
+                  setMenu(null)
+                }}
+              >
+                {tags.find((t) => t.id === menu.id)?.priority === 1 ? '取消优先' : '设为优先标签 ⭐'}
+              </button>
+              <button
+                role="menuitem"
+                className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                onClick={() => {
+                  setMergeSource(menu.id)
+                  setMenu(null)
+                }}
+              >
+                合并到其他标签…
+              </button>
               <div className="relative group/tg">
                 <button
                   role="menuitem"
@@ -916,6 +950,12 @@ export default function Sidebar() {
       </footer>
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      {mergeSource !== null && (
+        <MergeTagDialog
+          sourceId={mergeSource}
+          onClose={() => setMergeSource(null)}
+        />
+      )}
     </nav>
   )
 }
