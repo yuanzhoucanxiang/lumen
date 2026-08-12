@@ -100,7 +100,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-label="设置"
-        className="anim-dialog dialog w-[480px] p-5"
+        className="anim-dialog dialog flex max-h-[85vh] w-[480px] flex-col p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
@@ -114,8 +114,10 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
+        {/* 可滚动内容区（高度超出时内部滚动，标题与底部按钮固定） */}
+        <div className="modal-scroll min-h-0 flex-1 space-y-5 overflow-y-auto">
         {/* 导入模式 */}
-        <div className="mb-5">
+        <div>
           <div className="section-title mb-2">导入方式</div>
           <div className="flex gap-2" role="radiogroup" aria-label="导入方式">
             <button
@@ -148,7 +150,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* 监控文件夹 */}
-        <div className="mb-2">
+        <div>
           <div className="mb-2 flex items-center justify-between">
             <div className="section-title">监控文件夹（自动导入）</div>
             <button
@@ -187,7 +189,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* 备份 */}
-        <div className="mt-5 border-t border-[var(--border)] pt-4">
+        <div className="border-t border-[var(--border)] pt-4">
           <div className="section-title mb-2">备份</div>
           <div className="mb-2 text-[11px] text-[var(--text-dim)]">
             启动时已自动备份数据库；也可手动备份数据库或导出完整库（含原图）为 ZIP。
@@ -211,7 +213,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* AI 智能处理 */}
-        <div className="mt-5 border-t border-[var(--border)] pt-4">
+        <div className="border-t border-[var(--border)] pt-4">
           <div className="section-title mb-2">AI 智能处理</div>
           <div className="mb-2 text-[11px] text-[var(--text-dim)]">
             配置后可批量为素材自动生成文件名和标签（OpenAI 兼容格式，支持智谱 GLM-4V / 通义 / Ollama 等）。
@@ -267,7 +269,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* 关于 / 更新 */}
-        <div className="mt-5 flex items-center justify-between border-t border-[var(--border)] pt-4">
+        <div className="flex items-center justify-between border-t border-[var(--border)] pt-4">
           <div>
             <div className="section-title mb-1">关于</div>
             <div className="mono text-[12px] text-[var(--text-dim)]">
@@ -282,8 +284,9 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             {checking ? '检查中…' : '检查更新'}
           </button>
         </div>
+        </div>
 
-        <div className="mt-5 flex justify-end">
+        <div className="mt-4 flex justify-end border-t border-[var(--border)] pt-4">
           <button className="btn-primary" onClick={onClose}>
             完成
           </button>
