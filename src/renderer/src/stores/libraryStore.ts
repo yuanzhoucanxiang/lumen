@@ -385,6 +385,7 @@ const VIDEO_EXTS = ['mp4', 'webm', 'mov', 'mkv', 'avi', 'wmv', 'm4v']
  */
 export function assetThumbUrl(a: { id: string; ext: string; edited?: number }): string {
   const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'tiff', 'tif', 'psd',
+    'heic', 'heif', 'ai',
     'ttf', 'otf', 'ttc', 'woff', 'woff2']
   if (VIDEO_EXTS.includes(a.ext)) {
     // 视频封面 = 故事板四宫格（无故事板的短视频由 onError 回退到首帧缩略图）
