@@ -3,6 +3,7 @@ import { useLibraryStore } from '@renderer/stores/libraryStore'
 import SmartFolderDialog from './SmartFolderDialog'
 import SettingsModal from './SettingsModal'
 import MergeTagDialog from './MergeTagDialog'
+import TagManagerDialog from './TagManagerDialog'
 import Icon from './Icon'
 import ScrambleText from './ScrambleText'
 import type { IconName } from './Icon'
@@ -82,12 +83,16 @@ function SectionHeader({
   title,
   onAdd,
   addLabel,
+  onManage,
+  manageLabel,
   collapsed,
   onToggle
 }: {
   title: string
   onAdd?: () => void
   addLabel?: string
+  onManage?: () => void
+  manageLabel?: string
   /** 折叠态（整区可点击折叠） */
   collapsed: boolean
   onToggle: () => void
@@ -110,6 +115,19 @@ function SectionHeader({
           {title}
         </h3>
       </button>
+      {onManage && (
+        <button
+          aria-label={manageLabel ?? `管理${title}`}
+          title={manageLabel ?? `管理${title}`}
+          className="flex h-5 w-5 items-center justify-center text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
+          onClick={(e) => {
+            e.stopPropagation()
+            onManage()
+          }}
+        >
+          <Icon name="settings" size={12} />
+        </button>
+      )}
       {onAdd && (
         <button
           aria-label={addLabel ?? `新建${title}`}
@@ -146,6 +164,8 @@ export default function Sidebar() {
   const [menu, setMenu] = useState<{ x: number; y: number; kind: 'folder' | 'tag' | 'tagGroup'; id: number } | null>(null)
   /** 待合并的源标签 id（打开 MergeTagDialog） */
   const [mergeSource, setMergeSource] = useState<number | null>(null)
+  /** 标签管理对话框开关 */
+  const [tagManagerOpen, setTagManagerOpen] = useState(false)
   const [smartDialog, setSmartDialog] = useState<{ open: boolean; edit: Folder | null }>({ open: false, edit: null })
   const [libs, setLibs] = useState<{ libraries: { name: string; path: string }[]; current: string } | null>(null)
   const [libMenuOpen, setLibMenuOpen] = useState(false)
@@ -558,6 +578,8 @@ export default function Sidebar() {
           addLabel="新建标签"
           collapsed={sectionFold.tags}
           onToggle={() => toggleSection('tags')}
+          onManage={() => setTagManagerOpen(true)}
+          manageLabel="管理标签"
           onAdd={() => {
             setAddingTag(true)
             setAddingFolder(false)
@@ -956,6 +978,7 @@ export default function Sidebar() {
           onClose={() => setMergeSource(null)}
         />
       )}
+      {tagManagerOpen && <TagManagerDialog onClose={() => setTagManagerOpen(false)} />}
     </nav>
   )
 }
