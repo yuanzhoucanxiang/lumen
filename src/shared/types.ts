@@ -131,6 +131,13 @@ export interface AiProgress {
   failed: number
 }
 
+/** AI 搜索进度（主进程推送，phase 为中文阶段描述） */
+export interface AiSearchProgress {
+  phase: string
+  done: number
+  total: number
+}
+
 /** AI 处理选项 */
 export interface AiProcessOptions {
   /** 是否改名 */

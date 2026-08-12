@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Asset, AssetQuery, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSuggestionItem, AppSettings, DupeGroup, Folder, ImportResult, LibraryInfo, Tag, TagGroup, UpdateStatus } from '../shared/types'
+import type { Asset, AssetQuery, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSearchProgress, AiSuggestionItem, AppSettings, DupeGroup, Folder, ImportResult, LibraryInfo, Tag, TagGroup, UpdateStatus } from '../shared/types'
 
 const api = {
   /* 库管理 */
@@ -65,6 +65,11 @@ const api = {
     ipcRenderer.invoke('ai:testKey', cfg),
   onAiProgress: (cb: (p: { done: number; total: number; failed: number }) => void): void => {
     ipcRenderer.on('ai:progress', (_e, p) => cb(p))
+  },
+  /** AI 智能搜索：自然语言找图，返回匹配素材（按相关性排序） */
+  aiSearch: (query: string): Promise<Asset[]> => ipcRenderer.invoke('ai:search', query),
+  onAiSearchProgress: (cb: (p: AiSearchProgress) => void): void => {
+    ipcRenderer.on('ai:searchProgress', (_e, p) => cb(p))
   },
 
   /* 标签 */

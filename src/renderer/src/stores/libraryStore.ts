@@ -43,6 +43,8 @@ interface LibraryState {
   toast: string | null
   /** 以图搜图模式：非空时图库显示与该图相似的素材 */
   similarTo: { id: string; name: string } | null
+  /** AI 智能搜索模式：非空时图库显示 AI 搜索结果（与相似搜索互斥） */
+  aiSearch: { query: string } | null
   history: { type: 'delete'; ids: string[] }[]
 
   setView: (v: ViewType) => void
@@ -76,6 +78,9 @@ interface LibraryState {
   /** Windows 式 Shift 范围多选：选中锚点到目标之间的连续素材 */
   selectRange: (id: string) => void
   setSimilarTo: (v: { id: string; name: string } | null) => void
+  /** 设置 AI 搜索结果（直接写入 assets，不清会保持） */
+  setAiSearchResults: (query: string, assets: Asset[]) => void
+  clearAiSearch: () => void
   openPreview: (id: string | null) => void
   openEditor: (id: string | null) => void
   /** AI 处理对话框开关 */
@@ -140,10 +145,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   aiDialogOpen: false,
   toast: null,
   similarTo: null,
+  aiSearch: null,
   history: [],
 
   setView: (view) => {
-    set({ view, selection: [], previewId: null, similarTo: null })
+    set({ view, selection: [], previewId: null, similarTo: null, aiSearch: null })
     void get().refreshAssets()
   },
   setKeyword: (keyword) => {
@@ -186,6 +192,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     const s = get()
     set({ loading: true })
     try {
+      // AI 搜索模式：结果已直接写入 assets，任何筛选/刷新都不覆盖（退出搜索才恢复）
+      if (s.aiSearch) {
+        set({ loading: false })
+        return
+      }
       // 以图搜图模式：走相似度查询，忽略常规筛选
       if (s.similarTo) {
         const assets = await window.api.findSimilar(s.similarTo.id)
@@ -310,7 +321,15 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   setSelection: (selection) => set({ selection }),
   setSimilarTo: (similarTo) => {
-    set({ similarTo, selection: [], previewId: null })
+    set({ similarTo, selection: [], previewId: null, aiSearch: null })
+    void get().refreshAssets()
+  },
+  /** AI 搜索结果直接写入 assets（与相似搜索互斥） */
+  setAiSearchResults: (query, assets) => {
+    set({ aiSearch: { query }, assets, similarTo: null, selection: [], previewId: null, loading: false })
+  },
+  clearAiSearch: () => {
+    set({ aiSearch: null })
     void get().refreshAssets()
   },
   toggleSelect: (id, multi) => {

@@ -193,6 +193,36 @@ export function queryAssets(q: AssetQuery): Asset[] {
   return assets
 }
 
+/**
+ * 宽松搜索（OR 语义）：任一标签命中，或 name/comment 包含任一关键词。
+ * 供 AI 智能搜索阶段 2 使用（queryAssets 的 tagIds 是 AND 语义，不适用）。
+ * 只返回活跃素材（deleted_at IS NULL）。
+ */
+export function searchAssets(anyTagIds: number[], keywords: string[], limit = 500): Asset[] {
+  const db = getDb()
+  const where: string[] = []
+  const params: unknown[] = []
+
+  if (anyTagIds.length > 0) {
+    where.push(`id IN (SELECT asset_id FROM asset_tags WHERE tag_id IN (${anyTagIds.map(() => '?').join(',')}))`)
+    params.push(...anyTagIds)
+  }
+  for (const kw of keywords) {
+    if (!kw.trim()) continue
+    where.push('(name LIKE ? OR comment LIKE ?)')
+    const like = `%${kw.trim()}%`
+    params.push(like, like)
+  }
+  if (where.length === 0) return []
+
+  const rows = db
+    .prepare(`SELECT * FROM assets WHERE deleted_at IS NULL AND (${where.join(' OR ')}) LIMIT ?`)
+    .all(...params, limit) as unknown as AssetRow[]
+  const assets = rows.map(rowToAsset)
+  attachTags(assets)
+  return assets
+}
+
 /** 判断文件名是否为「未命名」：相机默认名 / 日期串 / 纯数字 / 短名 */
 export function isUnnamedName(name: string): boolean {
   const base = name.replace(/\.[^.]+$/, '') // 去扩展名

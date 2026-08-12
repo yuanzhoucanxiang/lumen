@@ -259,6 +259,8 @@ export default function Gallery() {
   const layoutMode = useLibraryStore((s) => s.layout)
   const similarTo = useLibraryStore((s) => s.similarTo)
   const setSimilarTo = useLibraryStore((s) => s.setSimilarTo)
+  const aiSearch = useLibraryStore((s) => s.aiSearch)
+  const clearAiSearch = useLibraryStore((s) => s.clearAiSearch)
   const view = useLibraryStore((s) => s.view)
   const folders = useLibraryStore((s) => s.folders)
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null)
@@ -457,6 +459,23 @@ export default function Gallery() {
           <button
             className="ml-auto flex items-center gap-1 text-[var(--text-dim)] transition-colors duration-100 hover:text-[var(--text-main)]"
             onClick={() => setSimilarTo(null)}
+          >
+            <Icon name="close" size={11} />
+            退出
+          </button>
+        </div>
+      )}
+
+      {/* AI 智能搜索横幅 */}
+      {aiSearch && (
+        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--bg-panel)] px-3 text-[12px]">
+          <Icon name="sparkles" size={12} className="text-[var(--accent)]" />
+          <span className="text-[var(--text-dim)]">AI 搜索：</span>
+          <span className="max-w-56 truncate font-medium text-[var(--accent-text)]">{aiSearch.query}</span>
+          <span className="mono text-[10px] text-[var(--text-faint)]">{assets.length} 个结果</span>
+          <button
+            className="ml-auto flex items-center gap-1 text-[var(--text-dim)] transition-colors duration-100 hover:text-[var(--text-main)]"
+            onClick={clearAiSearch}
           >
             <Icon name="close" size={11} />
             退出

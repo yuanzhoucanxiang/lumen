@@ -49,6 +49,7 @@ import {
 } from './repository'
 import { applyEdit, revertEdit } from './editor'
 import { aiProcessBatch, aiSuggestBatch, aiApplySuggestions, testAiConnection } from './aiRename'
+import { aiSearch } from './aiSearch'
 import type {
   AiApplyRequest,
   AiProcessOptions,
@@ -272,6 +273,18 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   // 测试连通性：用户在设置页填完 key 后点「测试连接」
   ipcMain.handle('ai:testKey', async (_e, cfg: { baseUrl: string; apiKey: string; model: string }) => {
     return testAiConnection(cfg)
+  })
+
+  // AI 智能搜索：自然语言找图（语义扩展 -> SQL 候选 -> 视觉精排）
+  ipcMain.handle('ai:search', async (_e, query: string) => {
+    const cfg = loadConfig()
+    if (!cfg.aiApiKey) throw new Error('未配置 AI API Key，请在设置页填写')
+    if (!query?.trim()) return []
+    return aiSearch(
+      query,
+      { baseUrl: cfg.aiBaseUrl ?? 'https://open.bigmodel.cn/api/paas/v4', apiKey: cfg.aiApiKey, model: cfg.aiModel ?? 'glm-4v' },
+      (phase, done, total) => getWindow()?.webContents.send('ai:searchProgress', { phase, done, total })
+    )
   })
 
   /* ---------------- 标签 ---------------- */

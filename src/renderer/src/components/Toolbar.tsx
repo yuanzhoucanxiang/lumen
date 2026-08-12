@@ -135,6 +135,53 @@ export default function Toolbar() {
   const [confirm, setConfirm] = useState<{ type: 'deleteSel' | 'emptyTrash' } | null>(null)
   const colorDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  /* ---------- AI 智能搜索 ---------- */
+  const [aiMode, setAiMode] = useState(false)
+  const [aiQuery, setAiQuery] = useState('')
+  const [aiSearching, setAiSearching] = useState(false)
+  const [aiProgressText, setAiProgressText] = useState('')
+  const aiSearchInputRef = useRef<HTMLInputElement>(null)
+
+  // 订阅搜索进度推送
+  useEffect(() => {
+    window.api.onAiSearchProgress((p) => {
+      setAiProgressText(p.total > 1 ? `${p.phase} ${p.done}/${p.total}` : p.phase)
+    })
+  }, [])
+
+  /** 执行 AI 搜索 */
+  const runAiSearch = async () => {
+    const q = aiQuery.trim()
+    if (!q || aiSearching) return
+    setAiSearching(true)
+    setAiProgressText('分析搜索词…')
+    try {
+      const results = await window.api.aiSearch(q)
+      useLibraryStore.getState().setAiSearchResults(q, results)
+      if (results.length === 0) {
+        useLibraryStore.getState().showToast('AI 没有找到匹配的素材，换个说法试试')
+      }
+    } catch (e) {
+      useLibraryStore.getState().showToast(`AI 搜索失败：${(e as Error).message}`)
+    } finally {
+      setAiSearching(false)
+      setAiProgressText('')
+    }
+  }
+
+  /** 切换 AI 搜索模式（退出时清结果恢复常规视图） */
+  const toggleAiMode = () => {
+    if (aiMode) {
+      setAiMode(false)
+      setAiProgressText('')
+      useLibraryStore.getState().clearAiSearch()
+    } else {
+      setAiMode(true)
+      // 聚焦输入框
+      setTimeout(() => aiSearchInputRef.current?.focus(), 0)
+    }
+  }
+
   /** 一键 AI 智能处理：打开配置对话框 */
   const doAiProcess = async () => {
     useLibraryStore.getState().openAiDialog()
@@ -167,20 +214,46 @@ export default function Toolbar() {
         导入
       </button>
 
-      {/* 搜索 */}
+      {/* 搜索 / AI 智能搜索 */}
       <div className="relative w-56 min-w-[110px] shrink">
         <Icon
-          name="search"
+          name={aiMode ? 'sparkles' : 'search'}
           size={13}
-          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-faint)]"
+          className={`pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 ${
+            aiMode ? 'text-[var(--accent)]' : 'text-[var(--text-faint)]'
+          }`}
         />
         <input
-          aria-label="搜索素材"
-          className="field-input w-full pl-8"
-          placeholder="搜索名称或注释…"
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
+          ref={aiSearchInputRef}
+          aria-label={aiMode ? 'AI 智能搜索' : '搜索素材'}
+          className={`field-input w-full ${aiMode ? 'border-[var(--accent)] pl-8 pr-8' : 'pl-8 pr-8'}`}
+          placeholder={aiMode ? '描述画面，如「暗黑城堡带雾」…' : '搜索名称或注释…'}
+          value={aiMode ? aiQuery : keyword}
+          onChange={(e) => (aiMode ? setAiQuery(e.target.value) : setKeyword(e.target.value))}
+          onKeyDown={(e) => {
+            if (aiMode && e.key === 'Enter') void runAiSearch()
+            if (aiMode && e.key === 'Escape') toggleAiMode()
+          }}
         />
+        <button
+          aria-label={aiMode ? '退出 AI 搜索' : 'AI 智能搜索'}
+          aria-pressed={aiMode}
+          title={aiMode ? '退出 AI 搜索' : 'AI 智能搜索（自然语言找图）'}
+          className={`absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm transition-colors duration-100 ${
+            aiMode
+              ? 'bg-[var(--accent-soft)] text-[var(--accent)]'
+              : 'text-[var(--text-faint)] hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]'
+          }`}
+          onClick={toggleAiMode}
+        >
+          <Icon name={aiSearching ? 'rotate' : 'sparkles'} size={13} className={aiSearching ? 'animate-spin' : ''} />
+        </button>
+        {/* 进度行（搜索中显示） */}
+        {aiMode && aiProgressText && (
+          <div className="pointer-events-none absolute left-0 top-full z-10 mt-1 whitespace-nowrap rounded-sm border border-[var(--border)] bg-[var(--bg-panel)] px-2 py-0.5 text-[11px] text-[var(--accent-text)] shadow-sm">
+            {aiProgressText}
+          </div>
+        )}
       </div>
 
       {/* 格式筛选 */}
