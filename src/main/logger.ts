@@ -65,3 +65,8 @@ export function initLogger(): void {
 
   logger.info('[logger]', `日志系统启动,文件: ${logFile}`)
 }
+
+/** 当前日志文件路径(供导出日志功能使用) */
+export function logFilePath(): string {
+  return logFile
+}

@@ -343,7 +343,7 @@ export function emptyTrash(): void {
 export function listTags(): Tag[] {
   return getDb()
     .prepare(
-      `SELECT t.id, t.name, t.color, t.group_id AS groupId, t.priority,
+      `SELECT t.id, t.name, t.color, t.group_id AS groupId, t.priority, t.excluded,
               (SELECT COUNT(*) FROM asset_tags at WHERE at.tag_id = t.id AND at.asset_id IN
                 (SELECT id FROM assets WHERE deleted_at IS NULL)) AS count
        FROM tags t ORDER BY t.name COLLATE NOCASE`
@@ -354,11 +354,11 @@ export function listTags(): Tag[] {
 export function createTag(name: string, color = ''): Tag {
   const db = getDb()
   const existing = db
-    .prepare('SELECT id, name, color, group_id AS groupId, priority FROM tags WHERE name = ?')
+    .prepare('SELECT id, name, color, group_id AS groupId, priority, excluded FROM tags WHERE name = ?')
     .get(name) as Tag | undefined
   if (existing) return { ...existing, count: 0 }
   const info = db.prepare('INSERT INTO tags (name, color) VALUES (?, ?)').run(name, color)
-  return { id: Number(info.lastInsertRowid), name, color, count: 0, groupId: null, priority: 0 }
+  return { id: Number(info.lastInsertRowid), name, color, count: 0, groupId: null, priority: 0, excluded: 0 }
 }
 
 export function renameTag(id: number, name: string): void {
@@ -372,6 +372,11 @@ export function setTagColor(id: number, color: string): void {
 /** 设置标签优先级：1 = 优先（AI 打标签时优先选用），0 = 普通 */
 export function setTagPriority(id: number, priority: number): void {
   getDb().prepare('UPDATE tags SET priority = ? WHERE id = ?').run(priority, id)
+}
+
+/** 设置标签排除：1 = 排除（AI 打标签时绝不使用），0 = 正常 */
+export function setTagExcluded(id: number, excluded: number): void {
+  getDb().prepare('UPDATE tags SET excluded = ? WHERE id = ?').run(excluded, id)
 }
 
 /* ---------------- 标签组 ---------------- */

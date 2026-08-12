@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Asset, AssetQuery, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSearchProgress, AiSuggestionItem, AppSettings, DupeGroup, Folder, ImportResult, LibraryInfo, Tag, TagGroup, UpdateStatus } from '../shared/types'
+import type { Asset, AssetQuery, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSearchProgress, AiSuggestionItem, AppSettings, DupeGroup, ExportOptions, Folder, ImportResult, LibraryInfo, Tag, TagGroup, UpdateStatus } from '../shared/types'
 
 const api = {
   /* 库管理 */
@@ -15,6 +15,7 @@ const api = {
 
   /* 备份 */
   backupDatabase: (): Promise<string> => ipcRenderer.invoke('library:backupDb'),
+  exportLogs: (): Promise<string | null> => ipcRenderer.invoke('logs:export'),
   backupLibraryToZip: (): Promise<{ count: number; target: string } | null> =>
     ipcRenderer.invoke('library:backupZip'),
 
@@ -82,6 +83,8 @@ const api = {
     ipcRenderer.invoke('tags:setColor', id, color),
   setTagPriority: (id: number, priority: number): Promise<void> =>
     ipcRenderer.invoke('tags:setPriority', id, priority),
+  setTagExcluded: (id: number, excluded: number): Promise<void> =>
+    ipcRenderer.invoke('tags:setExcluded', id, excluded),
   mergeTags: (sourceId: number, targetId: number): Promise<void> =>
     ipcRenderer.invoke('tags:merge', sourceId, targetId),
   deleteTag: (id: number): Promise<void> => ipcRenderer.invoke('tags:delete', id),
@@ -117,8 +120,8 @@ const api = {
   showInFolder: (id: string): Promise<void> => ipcRenderer.invoke('shell:showItem', id),
   copyImage: (id: string): Promise<boolean> => ipcRenderer.invoke('asset:copyImage', id),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('shell:openExternal', url),
-  exportAssets: (ids: string[], mode: 'folder' | 'zip'): Promise<{ exported: number; target: string } | null> =>
-    ipcRenderer.invoke('assets:export', ids, mode),
+  exportAssets: (ids: string[], mode: 'folder' | 'zip', opts?: ExportOptions): Promise<{ exported: number; target: string } | null> =>
+    ipcRenderer.invoke('assets:export', ids, mode, opts),
 
   /* URL 辅助 */
   thumbnailUrl: (id: string): string => `asset://${id}/file?t=t`,

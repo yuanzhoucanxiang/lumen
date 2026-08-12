@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { assetThumbUrl, useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
+import Markdown from './Markdown'
 
 function fmtSize(n: number): string {
   if (n < 1024) return `${n} B`
@@ -20,6 +21,8 @@ export default function Inspector() {
   const [tagInput, setTagInput] = useState('')
   const [comment, setComment] = useState('')
   const [batchTag, setBatchTag] = useState('')
+  /** 注释编辑/预览切换 */
+  const [commentView, setCommentView] = useState<'edit' | 'preview'>('edit')
 
   /** AI 智能处理：打开配置对话框 */
   const applyAiProcess = async () => {
@@ -252,24 +255,62 @@ export default function Inspector() {
             </div>
           </div>
 
-          {/* 注释 */}
+          {/* 注释（Markdown 编辑 + 预览） */}
           <div className="mb-4">
-            <label htmlFor="asset-comment" className="section-title mb-1.5 block">
-              注释
-            </label>
-            <textarea
-              id="asset-comment"
-              className="field-input h-16 w-full resize-none text-[12px]"
-              placeholder="添加注释…"
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              onBlur={() => {
-                if (comment !== asset.comment) {
-                  void window.api.updateAsset(asset.id, { comment })
-                  useLibraryStore.getState().updateAssetLocal(asset.id, { comment })
-                }
-              }}
-            />
+            <div className="mb-1.5 flex items-center justify-between">
+              <label htmlFor="asset-comment" className="section-title">
+                注释
+              </label>
+              {asset.comment && (
+                <div className="flex gap-1">
+                  <button
+                    aria-label="编辑注释"
+                    aria-pressed={commentView === 'edit'}
+                    title="编辑"
+                    className={`flex h-5 w-5 items-center justify-center rounded-sm transition-colors duration-100 ${
+                      commentView === 'edit' ? 'bg-[var(--bg-active)] text-[var(--accent-text)]' : 'text-[var(--text-faint)] hover:bg-[var(--bg-hover)]'
+                    }`}
+                    onClick={() => setCommentView('edit')}
+                  >
+                    <Icon name="pencil" size={11} />
+                  </button>
+                  <button
+                    aria-label="预览注释"
+                    aria-pressed={commentView === 'preview'}
+                    title="预览"
+                    className={`flex h-5 w-5 items-center justify-center rounded-sm transition-colors duration-100 ${
+                      commentView === 'preview' ? 'bg-[var(--bg-active)] text-[var(--accent-text)]' : 'text-[var(--text-faint)] hover:bg-[var(--bg-hover)]'
+                    }`}
+                    onClick={() => setCommentView('preview')}
+                  >
+                    <Icon name="eye" size={11} />
+                  </button>
+                </div>
+              )}
+            </div>
+            {commentView === 'edit' ? (
+              <textarea
+                id="asset-comment"
+                className="field-input h-20 w-full resize-none text-[12px]"
+                placeholder={'添加注释…支持 Markdown（# 标题、**加粗**、- 列表、[链接](url)）'}
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                onBlur={() => {
+                  if (comment !== asset.comment) {
+                    void window.api.updateAsset(asset.id, { comment })
+                    useLibraryStore.getState().updateAssetLocal(asset.id, { comment })
+                  }
+                }}
+              />
+            ) : (
+              <div className="max-h-40 overflow-y-auto rounded-sm border border-[var(--border)] bg-[var(--bg-base)] px-2 py-1.5">
+                {asset.comment ? (
+                  <Markdown text={asset.comment} />
+                ) : (
+                  <span className="text-[11px] text-[var(--text-faint)]">无注释</span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 色板 */}

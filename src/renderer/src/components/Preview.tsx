@@ -22,6 +22,7 @@ export default function Preview() {
   const [zoom, setZoom] = useState<ZoomState>(ZOOM_RESET)
   const [panning, setPanning] = useState(false)
   const stageRef = useRef<HTMLDivElement>(null)
+  const imgRef = useRef<HTMLImageElement>(null)
   const panRef = useRef<{ startX: number; startY: number; zx: number; zy: number } | null>(null)
 
   useEffect(() => {
@@ -80,6 +81,19 @@ export default function Preview() {
   const onPointerUp = () => {
     panRef.current = null
     setPanning(false)
+  }
+
+  /** 100% 像素(1:1)：图片实际像素与屏幕像素一致；已是 1:1 时再点复位 */
+  const toggleOneToOne = () => {
+    const img = imgRef.current
+    if (!img || !img.naturalWidth || !img.clientWidth) return
+    const oneOne = img.naturalWidth / img.clientWidth
+    const isOneOne = Math.abs(zoom.s - oneOne) / oneOne < 0.03
+    if (isOneOne) {
+      setZoom(ZOOM_RESET)
+    } else {
+      setZoom({ s: Math.min(8, oneOne), x: 0, y: 0 })
+    }
   }
 
   return (
@@ -143,6 +157,7 @@ export default function Preview() {
       >
         {isImage ? (
           <img
+            ref={imgRef}
             src={`${window.api.originalUrl(asset.id)}&e=${asset.edited ?? 0}`}
             className="anim-fade max-h-full max-w-full border border-[var(--border-strong)] object-contain shadow-[0_24px_80px_rgba(0,0,0,0.65)]"
             style={{
@@ -210,10 +225,29 @@ export default function Preview() {
           </button>
         )}
 
-        {/* 缩放指示 */}
-        {zoom.s > 1 && (
-          <div className="mono absolute bottom-3 right-3 bg-black/60 px-2 py-1 text-[10px] tracking-[0.1em] text-white/70">
-            {Math.round(zoom.s * 100)}% · 双击复位
+        {/* 缩放指示 + 1:1 按钮 */}
+        {isImage && (
+          <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
+            {zoom.s > 1 && (
+              <span className="mono bg-black/60 px-2 py-1 text-[10px] tracking-[0.1em] text-white/70">
+                {Math.round(zoom.s * 100)}% · 双击复位
+              </span>
+            )}
+            <button
+              aria-label="100% 像素显示"
+              title="100% 像素（1:1）"
+              className={`rounded-sm border px-1.5 py-1 text-[10px] transition-colors duration-100 ${
+                zoom.s > 1.01
+                  ? 'border-[var(--accent)] bg-black/60 text-[var(--accent)]'
+                  : 'border-white/20 bg-black/60 text-white/70 hover:text-white'
+              }`}
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleOneToOne()
+              }}
+            >
+              1:1
+            </button>
           </div>
         )}
       </div>

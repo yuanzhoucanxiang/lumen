@@ -33,6 +33,8 @@ export interface Tag {
   groupId: number | null
   /** 用户标记的优先级：1=优先（AI 打标签时优先选用），0=普通 */
   priority: number
+  /** 用户排除标记：1=排除（AI 打标签时绝不使用） */
+  excluded: number
 }
 
 export interface TagGroup {
@@ -136,6 +138,17 @@ export interface AiSearchProgress {
   phase: string
   done: number
   total: number
+}
+
+/** 导出命名模板 */
+export type ExportNaming = 'original' | 'tag_name' | 'tag_index' | 'name_index'
+
+/** 导出选项 */
+export interface ExportOptions {
+  /** 命名模板 */
+  naming: ExportNaming
+  /** 按第一个标签分文件夹（无标签归入「未分类」） */
+  groupByTag: boolean
 }
 
 /** AI 处理选项 */

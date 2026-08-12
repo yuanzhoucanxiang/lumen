@@ -1,7 +1,52 @@
 import { useEffect, useState } from 'react'
 import Icon from './Icon'
 import { useLibraryStore } from '../stores/libraryStore'
+import { SHORTCUT_DEFS, eventToKeys, loadShortcuts, saveShortcut } from '../shortcuts'
 import type { AppSettings } from '@shared/types'
+
+/** 快捷键录制按钮：点击后按新键位保存，Esc 取消 */
+function ShortcutRecorder({ actionId }: { actionId: string }) {
+  const [binding, setBinding] = useState('')
+  const [recording, setRecording] = useState(false)
+
+  useEffect(() => {
+    setBinding(loadShortcuts()[actionId] ?? '')
+  }, [actionId])
+
+  useEffect(() => {
+    if (!recording) return
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === 'Escape') {
+        setRecording(false)
+        return
+      }
+      // 忽略纯修饰键
+      if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return
+      const keys = eventToKeys(e)
+      saveShortcut(actionId, keys)
+      setBinding(keys)
+      setRecording(false)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [recording, actionId])
+
+  return (
+    <button
+      aria-label={`修改快捷键 ${SHORTCUT_DEFS.find((d) => d.id === actionId)?.label}`}
+      className={`rounded-sm border px-2 py-0.5 font-mono text-[11px] transition-colors duration-100 ${
+        recording
+          ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-text)]'
+          : 'border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--border-strong)] hover:text-[var(--text-main)]'
+      }`}
+      onClick={() => setRecording(true)}
+    >
+      {recording ? '按下新键位…' : binding}
+    </button>
+  )
+}
 
 export default function SettingsModal({ onClose }: { onClose: () => void }) {
   const [settings, setSettings] = useState<AppSettings | null>(null)
@@ -194,7 +239,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <div className="mb-2 text-[11px] text-[var(--text-dim)]">
             启动时已自动备份数据库；也可手动备份数据库或导出完整库（含原图）为 ZIP。
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               className="btn-ghost disabled:opacity-40"
               disabled={backing}
@@ -208,6 +253,15 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
               onClick={() => void backupZip()}
             >
               {backing ? '处理中…' : '导出完整库 ZIP'}
+            </button>
+            <button
+              className="btn-ghost"
+              onClick={async () => {
+                const p = await window.api.exportLogs()
+                if (p) useLibraryStore.getState().showToast(`日志已导出到 ${p}`)
+              }}
+            >
+              导出运行日志
             </button>
           </div>
         </div>
@@ -265,6 +319,19 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             >
               {aiTesting ? '测试中…' : '测试连接'}
             </button>
+          </div>
+        </div>
+
+        {/* 快捷键 */}
+        <div className="border-t border-[var(--border)] pt-4">
+          <div className="section-title mb-2">快捷键</div>
+          <div className="space-y-1.5">
+            {SHORTCUT_DEFS.map((d) => (
+              <div key={d.id} className="flex items-center justify-between text-[12px]">
+                <span className="text-[var(--text-dim)]">{d.label}</span>
+                <ShortcutRecorder actionId={d.id} />
+              </div>
+            ))}
           </div>
         </div>
 

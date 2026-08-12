@@ -22,6 +22,7 @@ function NavItem({
   count,
   dot,
   priority,
+  excluded,
   onClick,
   onContextMenu
 }: {
@@ -33,6 +34,8 @@ function NavItem({
   dot?: string
   /** 优先标签标记（⭐） */
   priority?: boolean
+  /** 排除标签（AI 不使用，置灰 + ⊘） */
+  excluded?: boolean
   onClick: () => void
   onContextMenu?: (e: React.MouseEvent) => void
 }) {
@@ -66,7 +69,14 @@ function NavItem({
           className={active ? 'text-[var(--accent-text)]' : 'text-[var(--text-dim)]'}
         />
       )}
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className={`min-w-0 flex-1 truncate ${excluded ? 'opacity-50' : ''}`}>
+        {excluded && (
+          <span className="mr-1 text-[10px] text-[var(--text-faint)]" aria-label="已排除">
+            ⊘
+          </span>
+        )}
+        {label}
+      </span>
       {priority && (
         <span aria-label="优先标签" title="优先标签" className="text-[10px] text-[var(--accent)]">
           ⭐
@@ -470,6 +480,7 @@ export default function Sidebar() {
         dot={t.color || undefined}
         label={t.name}
         priority={t.priority === 1}
+        excluded={t.excluded === 1}
         count={t.count}
         onClick={() => setView({ type: 'tag', id: t.id })}
         onContextMenu={(e) => openMenu(e, 'tag', t.id)}
@@ -793,6 +804,18 @@ export default function Sidebar() {
                 }}
               >
                 {tags.find((t) => t.id === menu.id)?.priority === 1 ? '取消优先' : '设为优先标签 ⭐'}
+              </button>
+              <button
+                role="menuitem"
+                className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                onClick={async () => {
+                  const cur = tags.find((t) => t.id === menu.id)
+                  await window.api.setTagExcluded(menu.id, cur?.excluded === 1 ? 0 : 1)
+                  await useLibraryStore.getState().refreshTags()
+                  setMenu(null)
+                }}
+              >
+                {tags.find((t) => t.id === menu.id)?.excluded === 1 ? '取消排除' : '排除标签 ⊘（AI 不使用）'}
               </button>
               <button
                 role="menuitem"

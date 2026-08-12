@@ -1,5 +1,5 @@
 import { BrowserWindow, clipboard, dialog, ipcMain, nativeImage, shell } from 'electron'
-import { existsSync } from 'fs'
+import { copyFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import {
   addAndSwitchLibrary,
@@ -11,6 +11,7 @@ import {
 } from './library'
 import { importFiles } from './importer'
 import { exportToFolder, exportToZip } from './exporter'
+import { logFilePath } from './logger'
 import { backupDatabase, backupLibraryToZip } from './backup'
 import {
   addTagToAssets,
@@ -43,6 +44,7 @@ import {
   setAssetTags,
   setTagColor,
   setTagPriority,
+  setTagExcluded,
   mergeTags,
   updateAsset,
   updateSmartFolder
@@ -56,6 +58,7 @@ import type {
   AiProcessResult,
   AiScope,
   AssetQuery,
+  ExportOptions,
   LibraryInfo
 } from '../shared/types'
 import { syncWatchers } from './watcher'
@@ -91,6 +94,20 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   /* ---------------- 备份 ---------------- */
   // 立即备份数据库到 library.db.bak（启动时已自动备份一次,此为手动触发）
   ipcMain.handle('library:backupDb', (): string => backupDatabase())
+
+  // 导出日志文件（排查问题用，保存 main.log 到用户选择的位置）
+  ipcMain.handle('logs:export', async (): Promise<string | null> => {
+    const win = getWindow()
+    const src = logFilePath()
+    const r = await dialog.showSaveDialog(win!, {
+      title: '导出运行日志',
+      defaultPath: `lumen-log-${new Date().toISOString().slice(0, 10)}.log`,
+      filters: [{ name: '日志文件', extensions: ['log', 'txt'] }]
+    })
+    if (r.canceled || !r.filePath) return null
+    copyFileSync(src, r.filePath)
+    return r.filePath
+  })
 
   // 导出整个库为 ZIP（含原图 + 缩略图 + db,用于完整灾难恢复）
   ipcMain.handle(
@@ -293,6 +310,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('tags:rename', (_e, id: number, name: string) => renameTag(id, name))
   ipcMain.handle('tags:setColor', (_e, id: number, color: string) => setTagColor(id, color))
   ipcMain.handle('tags:setPriority', (_e, id: number, priority: number) => setTagPriority(id, priority))
+  ipcMain.handle('tags:setExcluded', (_e, id: number, excluded: number) => setTagExcluded(id, excluded))
   ipcMain.handle('tags:merge', (_e, sourceId: number, targetId: number) => mergeTags(sourceId, targetId))
   ipcMain.handle('tags:delete', (_e, id: number) => deleteTag(id))
 
@@ -329,16 +347,17 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   )
 
   /* ---------------- 系统操作 ---------------- */
-  ipcMain.handle('assets:export', async (_e, ids: string[], mode: 'folder' | 'zip') => {
+  ipcMain.handle('assets:export', async (_e, ids: string[], mode: 'folder' | 'zip', opts: ExportOptions | undefined) => {
     const win = getWindow()
     if (!win || ids.length === 0) return null
+    const options: ExportOptions = opts ?? { naming: 'original', groupByTag: false }
     if (mode === 'folder') {
       const r = await dialog.showOpenDialog(win, {
         title: `导出 ${ids.length} 个素材到文件夹`,
         properties: ['openDirectory', 'createDirectory']
       })
       if (r.canceled || r.filePaths.length === 0) return null
-      return { exported: exportToFolder(ids, r.filePaths[0]), target: r.filePaths[0] }
+      return { exported: exportToFolder(ids, r.filePaths[0], options), target: r.filePaths[0] }
     }
     const r = await dialog.showSaveDialog(win, {
       title: `打包 ${ids.length} 个素材为 ZIP`,
@@ -346,7 +365,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       filters: [{ name: 'ZIP 压缩包', extensions: ['zip'] }]
     })
     if (r.canceled || !r.filePath) return null
-    return { exported: exportToZip(ids, r.filePath), target: r.filePath }
+    return { exported: exportToZip(ids, r.filePath, options), target: r.filePath }
   })
 
   ipcMain.handle('shell:showItem', (_e, id: string) => {

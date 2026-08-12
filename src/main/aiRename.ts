@@ -115,11 +115,16 @@ function extractJson(text: string, wantName: boolean): AiRawSuggestion | null {
 function cleanTags(raw: AiTagSuggestion[], existingTags: Tag[]): AiTagSuggestion[] {
   const seen = new Set<string>()
   const out: AiTagSuggestion[] = []
-  // 预处理：优先标签（priority=1）优先匹配；去空格 + 小写 -> 规范写法
+  // 预处理：优先标签（priority=1）优先匹配；排除标签（excluded=1）直接丢弃；去空格 + 小写 -> 规范写法
   const priorityMap = new Map<string, string>()
   const existingMap = new Map<string, string>()
+  const excludedKeys = new Set<string>()
   for (const t of existingTags) {
     const key = t.name.replace(/\s+/g, '').toLowerCase()
+    if (t.excluded === 1) {
+      excludedKeys.add(key)
+      continue
+    }
     if (!existingMap.has(key)) existingMap.set(key, t.name)
     if (t.priority === 1 && !priorityMap.has(key)) priorityMap.set(key, t.name)
   }
@@ -134,8 +139,10 @@ function cleanTags(raw: AiTagSuggestion[], existingTags: Tag[]): AiTagSuggestion
     // 过滤过短/无意义
     if (name.length < 1 || name.length > 20) continue
     if (/^(无|未知|图片|image|photo|截图|screenshot|未分类|其他)$/i.test(name)) continue
-    // 同义词归并：优先标签最优先，其次常规标签库
     const key = name.toLowerCase()
+    // 排除标签：用户明确不要的，直接丢弃
+    if (excludedKeys.has(key)) continue
+    // 同义词归并：优先标签最优先，其次常规标签库
     const matchedPriority = priorityMap.get(key)
     const matched = matchedPriority ?? existingMap.get(key)
     if (matched) name = matched
@@ -174,6 +181,13 @@ async function suggestForAsset(
       ? `优先标签：${priorityTags.map((t) => t.name).join(',')}。这些是用户最常用的标签，只要内容匹配就优先选用它们。\n`
       : ''
 
+  // 用户排除的标签（AI 绝不使用）
+  const excludedTags = allTags.filter((t) => t.excluded === 1)
+  const excludedHint =
+    excludedTags.length > 0
+      ? `排除标签：${excludedTags.map((t) => t.name).join(',')}。绝对不要使用这些标签。\n`
+      : ''
+
   // 取已有标签库，让 AI 优先复用（避免同义标签泛滥）
   const tagNames = allTags.map((t) => t.name)
   const tagLibHint =
@@ -193,6 +207,7 @@ async function suggestForAsset(
     `- 优先复用已有标签库中的标签\n` +
     `- 标签简洁,避免同义重复\n\n` +
     `${priorityHint}` +
+    `${excludedHint}` +
     `${tagLibHint}` +
     `参考信息:${meta}\n\n` +
     `示例:\n` +

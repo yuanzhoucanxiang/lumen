@@ -4,6 +4,7 @@ import Icon from './Icon'
 import PixelArt from './PixelArt'
 import ScrambleText from './ScrambleText'
 import ConfirmDialog from './ConfirmDialog'
+import ExportDialog from './ExportDialog'
 import type { IconName } from './Icon'
 import type { Asset } from '@shared/types'
 
@@ -264,6 +265,8 @@ export default function Gallery() {
   const view = useLibraryStore((s) => s.view)
   const folders = useLibraryStore((s) => s.folders)
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null)
+  /** 导出对话框的素材范围 */
+  const [exportIds, setExportIds] = useState<string[] | null>(null)
   const [hoverPv, setHoverPv] = useState<{ a: Asset; x: number; y: number } | null>(null)
   const [revertId, setRevertId] = useState<string | null>(null)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -387,15 +390,12 @@ export default function Gallery() {
     setMenu(null)
   }
 
-  /** 导出所选（或右键目标）到文件夹 / ZIP */
-  const doExport = async (mode: 'folder' | 'zip') => {
+  /** 打开导出对话框（以选中/右键目标为范围） */
+  const doExport = () => {
     const s = useLibraryStore.getState()
     const ids = selection.includes(menu!.id) ? selection : [menu!.id]
     setMenu(null)
-    const r = await window.api.exportAssets(ids, mode)
-    if (r) {
-      s.showToast(mode === 'folder' ? `已导出 ${r.exported} 个文件` : `已打包 ${r.exported} 个素材为 ZIP`)
-    }
+    setExportIds(ids)
   }
 
   const doAiProcess = async () => {
@@ -669,16 +669,9 @@ export default function Gallery() {
           <button
             role="menuitem"
             className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
-            onClick={() => void doExport('folder')}
+            onClick={() => doExport()}
           >
-            导出到文件夹…
-          </button>
-          <button
-            role="menuitem"
-            className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
-            onClick={() => void doExport('zip')}
-          >
-            打包为 ZIP…
+            导出…
           </button>
           <button
             role="menuitem"
@@ -776,6 +769,9 @@ export default function Gallery() {
           }}
           onClose={() => setRevertId(null)}
         />
+      )}
+      {exportIds !== null && (
+        <ExportDialog ids={exportIds} onClose={() => setExportIds(null)} />
       )}
       </div>
     </div>

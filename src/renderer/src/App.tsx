@@ -10,6 +10,7 @@ import ScrambleText from './components/ScrambleText'
 import ConfirmDialog from './components/ConfirmDialog'
 import UpdateNotes from './components/UpdateNotes'
 import AiDialog from './components/AiDialog'
+import { loadShortcuts, matchesShortcut } from './shortcuts'
 import type { UpdateStatus } from '@shared/types'
 
 let clipListenerRegistered = false
@@ -26,6 +27,8 @@ export default function App() {
   const [upd, setUpd] = useState<UpdateStatus | null>(null)
   const [updDismissed, setUpdDismissed] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  /** 下载完成弹窗被暂时关闭后置 true,显示「已就绪」持久角标可随时重新打开 */
+  const [updReadyHidden, setUpdReadyHidden] = useState(false)
   const [aiProgress, setAiProgress] = useState<{ done: number; total: number; failed: number } | null>(null)
 
   // 立即下载更新（带反馈：失败 toast，下载中按钮禁用）
@@ -74,7 +77,15 @@ export default function App() {
   }, [refreshAll])
 
   // 键盘快捷键：Delete 删除、Ctrl+Z 撤销、Ctrl+A 全选、空格预览、1-5 评分、方向键移动
+  // (预览/全选/撤销三个动作支持设置页自定义绑定)
   useEffect(() => {
+    const readShortcuts = () => loadShortcuts()
+    let sc = readShortcuts()
+    const onShortcutsChanged = () => {
+      sc = readShortcuts()
+    }
+    window.addEventListener('lumen:shortcuts', onShortcutsChanged)
+
     const onKey = (e: KeyboardEvent): void => {
       const target = e.target as HTMLElement
       const inInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
@@ -86,15 +97,15 @@ export default function App() {
         s.openPreview(null)
         s.openEditor(null)
         s.setSelection([])
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      } else if (matchesShortcut(e, sc.undoDelete)) {
         if (inInput) return
         e.preventDefault()
         void s.undoLast()
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+      } else if (matchesShortcut(e, sc.selectAll)) {
         if (inInput) return
         e.preventDefault()
         s.setSelection(s.assets.map((a) => a.id))
-      } else if (e.key === ' ') {
+      } else if (matchesShortcut(e, sc.preview)) {
         if (inInput) return
         e.preventDefault()
         if (s.selection.length === 1) s.openPreview(s.selection[0])
@@ -119,7 +130,10 @@ export default function App() {
       }
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('lumen:shortcuts', onShortcutsChanged)
+    }
   }, [])
 
   // Ctrl+V 粘贴图片/截图导入
@@ -264,8 +278,8 @@ export default function App() {
         </div>
       )}
 
-      {/* 下载完成：重启安装确认 */}
-      {upd?.state === 'downloaded' && (
+      {/* 下载完成：重启安装确认(关闭后保留「已就绪」角标可重新打开) */}
+      {upd?.state === 'downloaded' && !updReadyHidden && (
         <ConfirmDialog
           title={`新版本 v${upd.version} 已就绪`}
           message={
@@ -279,8 +293,23 @@ export default function App() {
           confirmLabel="重启安装"
           danger={false}
           onConfirm={() => window.api.installUpdate()}
-          onClose={() => setUpd(null)}
+          onClose={() => setUpdReadyHidden(true)}
         />
+      )}
+
+      {/* 更新已就绪持久角标：弹窗关闭后仍可随时重启安装 */}
+      {upd?.state === 'downloaded' && updReadyHidden && (
+        <button
+          aria-label={`新版本 v${upd.version} 已就绪，点击重启安装`}
+          className="anim-dialog menu fixed bottom-6 right-6 z-[190] flex items-center gap-2 px-3 py-2 text-[12px] transition-colors duration-100 hover:border-[var(--accent)]"
+          onClick={() => setUpdReadyHidden(false)}
+        >
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--accent)]" />
+          <span>
+            新版本 <span className="mono text-[var(--accent-text)]">v{upd.version}</span> 已就绪
+          </span>
+          <span className="text-[var(--text-faint)]">重启安装 →</span>
+        </button>
       )}
     </div>
   )
