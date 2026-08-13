@@ -22,37 +22,45 @@ function extractJson(text: string): Record<string, unknown> | null {
   }
 }
 
-/** 调 OpenAI 兼容 API（text-only 或含图片） */
+/** 调 OpenAI 兼容 API（text-only 或含图片），带超时保护（网络抖动时挂起不阻塞 UI） */
 async function chat(
   cfg: AiConfig,
   text: string,
   images?: { base64: string }[],
-  maxTokens = 300
+  maxTokens = 300,
+  timeoutMs = 60_000
 ): Promise<string> {
   const url = `${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`
   const content: Record<string, unknown>[] = [{ type: 'text', text }]
   for (const img of images ?? []) {
     content.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${img.base64}` } })
   }
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${cfg.apiKey}`
-    },
-    body: JSON.stringify({
-      model: cfg.model,
-      messages: [{ role: 'user', content }],
-      temperature: 0.2,
-      max_tokens: maxTokens
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${cfg.apiKey}`
+      },
+      body: JSON.stringify({
+        model: cfg.model,
+        messages: [{ role: 'user', content }],
+        temperature: 0.2,
+        max_tokens: maxTokens
+      }),
+      signal: controller.signal
     })
-  })
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => '')
-    throw new Error(`API ${resp.status}: ${errText.slice(0, 120)}`)
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => '')
+      throw new Error(`API ${resp.status}: ${errText.slice(0, 120)}`)
+    }
+    const data = (await resp.json()) as { choices?: { message?: { content?: string } }[] }
+    return data.choices?.[0]?.message?.content ?? ''
+  } finally {
+    clearTimeout(timer)
   }
-  const data = (await resp.json()) as { choices?: { message?: { content?: string } }[] }
-  return data.choices?.[0]?.message?.content ?? ''
 }
 
 /* ================ 阶段 1：语义 -> 检索条件 ================ */
@@ -67,7 +75,12 @@ interface ExpandedQuery {
  * 纯文本调用，便宜。
  */
 async function expandQuery(query: string, cfg: AiConfig, allTags: Tag[]): Promise<ExpandedQuery> {
-  const tagLib = allTags.map((t) => t.name).join(',')
+  // 标签库全量传入会超 token(标签多时),截取前 200 个(按素材数降序保留常用标签)
+  const tagLib = [...allTags]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 200)
+    .map((t) => t.name)
+    .join(',')
   const prompt =
     `把用户的素材搜索意图转成检索条件,返回 JSON:\n` +
     `{"keywords":["画面内容关键词"],"tags":["标签"]}\n\n` +

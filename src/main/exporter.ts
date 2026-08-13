@@ -156,10 +156,10 @@ function subDir(a: ExportAssetInfo, opts: ExportOptions): string {
   return opts.groupByTag ? safePathSegment(a.firstTag || '未分类') : ''
 }
 
-/** 复制到文件夹（支持命名模板 + 按标签分文件夹） */
+/** 复制到文件夹（支持命名模板 + 按标签分文件夹；不同子目录同名不互相加重名后缀） */
 export function exportToFolder(ids: string[], dir: string, opts: ExportOptions): number {
   const assets = loadAssets(ids)
-  const taken = new Set<string>()
+  const takenByDir = new Map<string, Set<string>>()
   let n = 0
   for (const a of assets) {
     const paths = assetPaths(a.id)
@@ -167,6 +167,11 @@ export function exportToFolder(ids: string[], dir: string, opts: ExportOptions):
     const sub = subDir(a, opts)
     const targetDir = sub ? join(dir, sub) : dir
     if (sub) mkdirSync(targetDir, { recursive: true })
+    let taken = takenByDir.get(targetDir)
+    if (!taken) {
+      taken = new Set()
+      takenByDir.set(targetDir, taken)
+    }
     const name = buildName(a, n + 1, opts.naming)
     const target = join(targetDir, uniqueName(name, taken, targetDir))
     copyFileSync(paths.original, target)
@@ -178,7 +183,7 @@ export function exportToFolder(ids: string[], dir: string, opts: ExportOptions):
 /** 打包为 ZIP（原文件 + metadata.json 清单，支持命名模板 + 按标签分文件夹） */
 export function exportToZip(ids: string[], zipPath: string, opts: ExportOptions): number {
   const assets = loadAssets(ids)
-  const taken = new Set<string>()
+  const takenByDir = new Map<string, Set<string>>()
   const entries: ZipEntry[] = []
   const meta: unknown[] = []
   for (const a of assets) {
@@ -186,7 +191,14 @@ export function exportToZip(ids: string[], zipPath: string, opts: ExportOptions)
     if (!paths) continue
     const sub = subDir(a, opts)
     const name = buildName(a, meta.length + 1, opts.naming)
-    const zipName = sub ? `${sub}/${name}` : name
+    const zipDir = sub || ''
+    let taken = takenByDir.get(zipDir)
+    if (!taken) {
+      taken = new Set()
+      takenByDir.set(zipDir, taken)
+    }
+    const finalName = uniqueName(name, taken)
+    const zipName = sub ? `${sub}/${finalName}` : finalName
     entries.push({ name: zipName, data: readFileSync(paths.original) })
     meta.push({
       file: zipName,

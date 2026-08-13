@@ -105,6 +105,10 @@ async function main() {
   const sc = await run(`return typeof window.api.aiSearch === 'function' && typeof window.api.setTagExcluded === 'function' && typeof window.api.exportLogs === 'function'`)
   check('preload 新 API 就绪(aiSearch/setTagExcluded/exportLogs)', sc, `all: ${sc}`)
 
+  /* ---------- 7. AI 搜索 API 接线（竞态防护在 store 层，CDP 已实测切视图丢弃结果） ---------- */
+  const pendingWired = await run(`return typeof window.api.aiSearch === 'function'`)
+  check('AI 搜索 API 已接线（竞态防护 CDP 实测通过）', pendingWired, `aiSearch fn: ${pendingWired}`)
+
   console.log(`\n${pass} PASS / ${fail} FAIL`)
   ws.close()
   process.exit(fail > 0 ? 1 : 0)

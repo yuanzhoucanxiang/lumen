@@ -58,7 +58,7 @@ export function eventToKeys(e: KeyboardEvent): string {
   return parts.join('+')
 }
 
-/** 判断按键事件是否匹配某快捷键字符串 */
+/** 判断按键事件是否匹配某快捷键字符串（Ctrl 绑定在 macOS 上同时匹配 Cmd，与旧版行为一致） */
 export function matchesShortcut(e: KeyboardEvent, keys: string): boolean {
   const parts = keys.split('+')
   const key = parts[parts.length - 1]
@@ -67,7 +67,7 @@ export function matchesShortcut(e: KeyboardEvent, keys: string): boolean {
   const wantAlt = parts.includes('Alt')
   const eKey = e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key
   return (
-    e.ctrlKey === wantCtrl &&
+    (wantCtrl ? e.ctrlKey || e.metaKey : !e.ctrlKey && !e.metaKey) &&
     e.shiftKey === wantShift &&
     e.altKey === wantAlt &&
     eKey === key

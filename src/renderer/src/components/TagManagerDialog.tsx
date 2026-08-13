@@ -181,9 +181,10 @@ export default function TagManagerDialog({ onClose }: { onClose: () => void }) {
     </div>
   )
 
-  // 合并目标候选:排除所选
+  // 合并目标候选:排除所选,随搜索框过滤(与列表一致)
   const mergeCandidates = tags
     .filter((t) => !selected.has(t.id))
+    .filter((t) => (keyword.trim() ? t.name.toLowerCase().includes(keyword.trim().toLowerCase()) : true))
     .sort((a, b) => b.priority - a.priority || b.count - a.count || a.name.localeCompare(b.name, 'zh-CN'))
 
   return (

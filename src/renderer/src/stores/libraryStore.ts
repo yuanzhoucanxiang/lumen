@@ -45,6 +45,8 @@ interface LibraryState {
   similarTo: { id: string; name: string } | null
   /** AI 智能搜索模式：非空时图库显示 AI 搜索结果（与相似搜索互斥） */
   aiSearch: { query: string } | null
+  /** 进行中的 AI 搜索查询词（防竞态：搜索期间切视图/退出则丢弃过期结果） */
+  aiSearchPending: string | null
   history: { type: 'delete'; ids: string[] }[]
 
   setView: (v: ViewType) => void
@@ -78,9 +80,10 @@ interface LibraryState {
   /** Windows 式 Shift 范围多选：选中锚点到目标之间的连续素材 */
   selectRange: (id: string) => void
   setSimilarTo: (v: { id: string; name: string } | null) => void
-  /** 设置 AI 搜索结果（直接写入 assets，不清会保持） */
+  /** 设置 AI 搜索结果（直接写入 assets，不清会保持）；pending 被清（用户已退出/切视图）时丢弃过期结果 */
   setAiSearchResults: (query: string, assets: Asset[]) => void
   clearAiSearch: () => void
+  setAiSearchPending: (q: string | null) => void
   openPreview: (id: string | null) => void
   openEditor: (id: string | null) => void
   /** AI 处理对话框开关 */
@@ -146,10 +149,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   toast: null,
   similarTo: null,
   aiSearch: null,
+  aiSearchPending: null,
   history: [],
 
   setView: (view) => {
-    set({ view, selection: [], previewId: null, similarTo: null, aiSearch: null })
+    set({ view, selection: [], previewId: null, similarTo: null, aiSearch: null, aiSearchPending: null })
     void get().refreshAssets()
   },
   setKeyword: (keyword) => {
@@ -321,15 +325,18 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   setSelection: (selection) => set({ selection }),
   setSimilarTo: (similarTo) => {
-    set({ similarTo, selection: [], previewId: null, aiSearch: null })
+    set({ similarTo, selection: [], previewId: null, aiSearch: null, aiSearchPending: null })
     void get().refreshAssets()
   },
-  /** AI 搜索结果直接写入 assets（与相似搜索互斥） */
+  /** AI 搜索结果直接写入 assets（与相似搜索互斥）；pending 已失效时丢弃（防竞态） */
   setAiSearchResults: (query, assets) => {
-    set({ aiSearch: { query }, assets, similarTo: null, selection: [], previewId: null, loading: false })
+    const s = get()
+    if (s.aiSearchPending !== query) return // 搜索期间用户已退出/切视图，丢弃过期结果
+    set({ aiSearch: { query }, assets, similarTo: null, selection: [], previewId: null, loading: false, aiSearchPending: null })
   },
+  setAiSearchPending: (q) => set({ aiSearchPending: q }),
   clearAiSearch: () => {
-    set({ aiSearch: null })
+    set({ aiSearch: null, aiSearchPending: null })
     void get().refreshAssets()
   },
   toggleSelect: (id, multi) => {

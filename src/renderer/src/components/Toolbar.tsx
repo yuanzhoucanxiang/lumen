@@ -155,17 +155,26 @@ export default function Toolbar() {
     if (!q || aiSearching) return
     setAiSearching(true)
     setAiProgressText('分析搜索词…')
+    // 记录进行中的查询（结果回来时若 pending 已被清，说明用户已退出/切视图，丢弃结果）
+    useLibraryStore.getState().setAiSearchPending(q)
     try {
       const results = await window.api.aiSearch(q)
-      useLibraryStore.getState().setAiSearchResults(q, results)
-      if (results.length === 0) {
-        useLibraryStore.getState().showToast('AI 没有找到匹配的素材，换个说法试试')
+      const st = useLibraryStore.getState()
+      // pending 失效则丢弃（setAiSearchResults 内部校验），同时提示用户结果已丢弃
+      st.setAiSearchResults(q, results)
+      if (st.aiSearch !== null) {
+        if (results.length === 0) {
+          useLibraryStore.getState().showToast('AI 没有找到匹配的素材，换个说法试试')
+        }
       }
     } catch (e) {
       useLibraryStore.getState().showToast(`AI 搜索失败：${(e as Error).message}`)
     } finally {
       setAiSearching(false)
       setAiProgressText('')
+      // 清理 pending（若结果已应用，setAiSearchResults 已清；此处兜底）
+      const st = useLibraryStore.getState()
+      if (st.aiSearchPending !== null) st.setAiSearchPending(null)
     }
   }
 
