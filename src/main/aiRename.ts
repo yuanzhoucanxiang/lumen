@@ -10,6 +10,8 @@ import {
 } from './repository'
 import { getDb } from './db'
 import { logger } from './logger'
+import { chat, mapWithConcurrency } from './aiClient'
+import type { AiConfig } from './aiClient'
 import type {
   AiApplyRequest,
   AiProcessItem,
@@ -21,11 +23,7 @@ import type {
   Tag
 } from '../shared/types'
 
-export interface AiConfig {
-  baseUrl: string
-  apiKey: string
-  model: string
-}
+export type { AiConfig }
 
 /** AI 原始返回（extractJson 解析后） */
 interface AiRawSuggestion {
@@ -44,24 +42,6 @@ const CATEGORY_GROUPS: Record<AiTagCategory, string> = {
 
 /** 合法的分类值集合（校验 AI 返回的 cat 字段） */
 const VALID_CATEGORIES = new Set<AiTagCategory>(['scene', 'style', 'subject', 'color', 'other'])
-
-/** 并发池（与 importer 的 mapWithConcurrency 同思路，AI 请求限 3 并发防限流） */
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>
-): Promise<R[]> {
-  const results: R[] = new Array(items.length)
-  let i = 0
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (i < items.length) {
-      const idx = i++
-      results[idx] = await fn(items[idx])
-    }
-  })
-  await Promise.all(workers)
-  return results
-}
 
 /** 从 AI 返回文本中提取 JSON（容错：去 ```json 包裹、找第一个 {...}） */
 function extractJson(text: string, wantName: boolean): AiRawSuggestion | null {
@@ -214,36 +194,8 @@ async function suggestForAsset(
     `{"name":"奇幻洞穴场景","tags":[{"name":"洞穴","cat":"scene"},{"name":"岩石地貌","cat":"subject"},{"name":"奇幻","cat":"style"},{"name":"暗黑氛围","cat":"color"}]}\n\n` +
     `只返回 JSON。`
 
-  const url = `${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${cfg.apiKey}`
-    },
-    body: JSON.stringify({
-      model: cfg.model,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64}` } },
-            { type: 'text', text: prompt }
-          ]
-        }
-      ],
-      temperature: 0.3, // 低温更稳定一致
-      max_tokens: 250
-    })
-  })
-
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => '')
-    throw new Error(`API ${resp.status}: ${errText.slice(0, 120)}`)
-  }
-
-  const data = (await resp.json()) as { choices?: { message?: { content?: string } }[] }
-  const content = data.choices?.[0]?.message?.content ?? ''
+  // 共享 chat() 带 60s 超时保护（AbortController）:网络挂起不再无限等待
+  const content = await chat(cfg, prompt, [{ base64 }], 250, 60_000, 0.3)
   const suggestion = extractJson(content, wantName)
   if (!suggestion) {
     logger.warn('[ai]', `无法解析 AI 返回: ${content.slice(0, 100)}`)
@@ -410,25 +362,11 @@ export async function aiProcessBatch(
   return aiApplySuggestions(items, options)
 }
 
-/** 测试 API 连通性（发一个最小文本请求） */
+/** 测试 API 连通性（发一个最小文本请求，20s 超时防挂起） */
 export async function testAiConnection(cfg: AiConfig): Promise<{ ok: boolean; message: string }> {
   try {
-    const url = `${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${cfg.apiKey}`
-      },
-      body: JSON.stringify({
-        model: cfg.model,
-        messages: [{ role: 'user', content: 'hi' }],
-        max_tokens: 5
-      })
-    })
-    if (resp.ok) return { ok: true, message: '连接成功' }
-    const errText = await resp.text().catch(() => '')
-    return { ok: false, message: `API 返回 ${resp.status}: ${errText.slice(0, 80)}` }
+    await chat(cfg, 'hi', undefined, 5, 20_000)
+    return { ok: true, message: '连接成功' }
   } catch (e) {
     return { ok: false, message: (e as Error).message }
   }

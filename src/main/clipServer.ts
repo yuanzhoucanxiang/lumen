@@ -7,6 +7,14 @@ import { importFiles } from './importer'
 const PORT = 45678
 const MAX_BODY = 80 * 1024 * 1024 // 80MB
 
+/**
+ * 鉴权头:只接受 LUMEN Clip 扩展发来的请求。
+ * 网页 JS 跨域 fetch 无法携带自定义头(预检会被拒绝),而 MV3 扩展持有 host_permissions
+ * 可绕过 CORS 携带该头,从而阻止任意本地网页向素材库注入图片(本机原生程序不在威胁模型内)。
+ */
+const CLIENT_HEADER = 'x-lumen-client'
+const CLIENT_TOKEN = 'lumen-clip/1'
+
 const MIME_EXT: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
@@ -17,10 +25,9 @@ const MIME_EXT: Record<string, string> = {
   'image/svg+xml': 'svg'
 }
 
-function cors(res: ServerResponse): void {
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+/** 校验请求来源:必须携带合法客户端头,否则拒绝(403) */
+function isAuthorized(req: IncomingMessage): boolean {
+  return req.headers[CLIENT_HEADER] === CLIENT_TOKEN
 }
 
 function json(res: ServerResponse, code: number, data: unknown): void {
@@ -82,10 +89,14 @@ async function saveClip(payload: ClipPayload): Promise<number> {
   return result.imported
 }
 
-/** 启动浏览器剪藏接收服务（仅监听本机回环地址） */
+/** 启动浏览器剪藏接收服务（仅监听本机回环地址，需携带客户端鉴权头） */
 export function startClipServer(onImported?: (count: number) => void): void {
   const server = createServer((req, res) => {
-    cors(res)
+    // 未携带鉴权头的请求直接拒绝(含网页跨域预检 OPTIONS:浏览器不会放行自定义头)
+    if (!isAuthorized(req)) {
+      json(res, 403, { ok: false, error: 'forbidden' })
+      return
+    }
     if (req.method === 'OPTIONS') {
       res.writeHead(204)
       res.end()

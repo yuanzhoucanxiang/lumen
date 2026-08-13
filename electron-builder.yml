@@ -1,4 +1,8 @@
 appId: com.shiguang.materials
+# 注意:productName/executableName 保持「拾光素材库/ShiGuangMaterials」不变。
+# 改名会同时改变 NSIS 安装目录与 exe 文件名,破坏 electron-updater 对老用户的
+# 更新链路(装到新目录造成双安装、检测不到运行中的旧 exe)。用户可见的
+# 快捷方式/卸载项名称已改用 LUMEN(见 nsis 段)。
 productName: 拾光素材库
 directories:
   buildResources: build
@@ -18,8 +22,8 @@ asarUnpack:
   - '**/node_modules/ffmpeg-static/**'
 nsis:
   artifactName: Lumen-${version}-setup.${ext}
-  shortcutName: ${productName}
-  uninstallDisplayName: ${productName}
+  shortcutName: LUMEN
+  uninstallDisplayName: LUMEN
   createDesktopShortcut: always
 npmRebuild: true
 # 自动更新源：GitHub Releases（yuanzhoucanxiang/shiguang-materials，仅发布安装包）

@@ -14,6 +14,8 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "test:itest": "node scripts/itest.cjs",
+    "test:itest:ai": "node scripts/itest.cjs --only ai",
     "build:win": "npm run typecheck && electron-vite build && electron-builder --win"
   },
   "dependencies": {

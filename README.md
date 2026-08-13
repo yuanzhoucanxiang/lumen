@@ -3,7 +3,7 @@
 > 类 Eagle 的本地素材管理桌面应用：收集、整理、检索你的图片 / 视频 / 音频 / 字体 / PSD 素材。
 > 数据全部存在本地，无需注册、无需联网（联网仅用于自动更新）。
 
-当前版本 **v0.5.4**。安装包下载：<https://github.com/yuanzhoucanxiang/shiguang-materials/releases/latest>
+当前版本 **v0.8.0**。安装包下载：<https://github.com/yuanzhoucanxiang/shiguang-materials/releases/latest>
 
 ---
 
@@ -57,16 +57,26 @@ npm run build:win        # typecheck + 构建 + electron-builder 打包
 
 ### 国内网络环境
 
-`.npmrc` 已配置 electron / sharp 镜像。ffmpeg-static 安装前需：
+`.npmrc` 已配置 electron / sharp 镜像（旧式配置键，npm 10 有效但会告警；**npm 11+ 将不再转发未知配置键**，届时请改用下面的环境变量方式）。
 
-```bash
-export FFMPEG_BINARY_HOST="https://npmmirror.com/mirrors/ffmpeg-static"
+完整环境变量方案（Windows PowerShell，可替代 `.npmrc`，未来 npm 大版本升级后的推荐方式）：
+
+```powershell
+$env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
+$env:ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/"
+$env:SHARP_BINARY_HOST="https://npmmirror.com/mirrors/sharp"
+$env:SHARP_LIBVIPS_BINARY_HOST="https://npmmirror.com/mirrors/sharp-libvips"
+$env:FFMPEG_BINARY_HOST="https://npmmirror.com/mirrors/ffmpeg-static"
 ```
 
-打包时建议：
+macOS / Linux（bash）等价形式：
 
 ```bash
+export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
 export ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/"
+export SHARP_BINARY_HOST="https://npmmirror.com/mirrors/sharp"
+export SHARP_LIBVIPS_BINARY_HOST="https://npmmirror.com/mirrors/sharp-libvips"
+export FFMPEG_BINARY_HOST="https://npmmirror.com/mirrors/ffmpeg-static"
 ```
 
 ## 功能概览

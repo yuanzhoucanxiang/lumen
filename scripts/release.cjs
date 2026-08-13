@@ -11,7 +11,7 @@
  * 流程：版本 bump → notes 生成/校验 → npm run build:win → gh release create → git tag + push
  */
 const { execSync } = require('child_process')
-const { existsSync, readFileSync, writeFileSync, rmSync } = require('fs')
+const { existsSync, readFileSync, writeFileSync, rmSync, readdirSync } = require('fs')
 const { join } = require('path')
 
 const ROOT = join(__dirname, '..')
@@ -134,6 +134,20 @@ if (!noGit) {
   execSync(`git tag ${tag}`, { cwd: ROOT, stdio: 'inherit' })
   execSync('git push && git push --tags', { cwd: ROOT, stdio: 'inherit' })
   ok('git 已提交并推送 (含 tag)')
+}
+
+/* ---------------- 7. 清理 dist 历史安装包 ---------------- */
+// 每个安装包 ~140MB,不清理会累积数 GB;发布成功后只保留当前版本 + latest.yml
+const distDir = join(ROOT, 'dist')
+if (existsSync(distDir)) {
+  const removed = []
+  for (const f of readdirSync(distDir)) {
+    if (/^Lumen-[\d.]+-setup\.exe(\.blockmap)?$/.test(f) && !f.startsWith(`Lumen-${newVer}-setup.exe`)) {
+      rmSync(join(distDir, f), { force: true })
+      removed.push(f)
+    }
+  }
+  if (removed.length > 0) ok(`已清理 ${removed.length} 个历史安装包,dist 只保留 v${newVer}`)
 }
 
 console.log(`\n🎉 发布完成: LUMEN v${newVer}`)

@@ -49,7 +49,7 @@ function createWindow(): void {
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
+      sandbox: true, // 渲染进程沙箱:preload 仅用 contextBridge/ipcRenderer,沙箱兼容
       contextIsolation: true
     }
   })

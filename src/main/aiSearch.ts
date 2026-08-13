@@ -1,13 +1,9 @@
 import { readFileSync } from 'fs'
 import { assetPaths, listTags, searchAssets } from './repository'
 import { logger } from './logger'
+import { chat, mapWithConcurrency } from './aiClient'
+import type { AiConfig } from './aiClient'
 import type { Asset, Tag } from '../shared/types'
-
-export interface AiConfig {
-  baseUrl: string
-  apiKey: string
-  model: string
-}
 
 /** 从 AI 返回文本中提取 JSON（容错：去 ```json 包裹、找第一个 {...}） */
 function extractJson(text: string): Record<string, unknown> | null {
@@ -19,47 +15,6 @@ function extractJson(text: string): Record<string, unknown> | null {
     return JSON.parse(cleaned.slice(start, end + 1)) as Record<string, unknown>
   } catch {
     return null
-  }
-}
-
-/** 调 OpenAI 兼容 API（text-only 或含图片），带超时保护（网络抖动时挂起不阻塞 UI） */
-async function chat(
-  cfg: AiConfig,
-  text: string,
-  images?: { base64: string }[],
-  maxTokens = 300,
-  timeoutMs = 60_000
-): Promise<string> {
-  const url = `${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`
-  const content: Record<string, unknown>[] = [{ type: 'text', text }]
-  for (const img of images ?? []) {
-    content.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${img.base64}` } })
-  }
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${cfg.apiKey}`
-      },
-      body: JSON.stringify({
-        model: cfg.model,
-        messages: [{ role: 'user', content }],
-        temperature: 0.2,
-        max_tokens: maxTokens
-      }),
-      signal: controller.signal
-    })
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => '')
-      throw new Error(`API ${resp.status}: ${errText.slice(0, 120)}`)
-    }
-    const data = (await resp.json()) as { choices?: { message?: { content?: string } }[] }
-    return data.choices?.[0]?.message?.content ?? ''
-  } finally {
-    clearTimeout(timer)
   }
 }
 
@@ -92,7 +47,7 @@ async function expandQuery(query: string, cfg: AiConfig, allTags: Tag[]): Promis
     `用户搜索:${query}\n\n` +
     `只返回 JSON。`
 
-  const content = await chat(cfg, prompt, undefined, 200)
+  const content = await chat(cfg, prompt, undefined, 200, 60_000, 0.2)
   const obj = extractJson(content)
   if (!obj) {
     logger.warn('[aiSearch]', `阶段1解析失败: ${content.slice(0, 100)}`)
@@ -115,24 +70,6 @@ async function expandQuery(query: string, cfg: AiConfig, allTags: Tag[]): Promis
 const VISION_BATCH = 6 // 每批图片数(单请求多图耗时超线性,小批量更快)
 const VISION_MAX_CANDIDATES = 36 // 精排上限(超出按标签命中数取前 N)
 const VISION_CONCURRENCY = 3 // 并发批次数
-
-/** 并发池(与 aiRename 同思路) */
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>
-): Promise<R[]> {
-  const results: R[] = new Array(items.length)
-  let i = 0
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (i < items.length) {
-      const idx = i++
-      results[idx] = await fn(items[idx])
-    }
-  })
-  await Promise.all(workers)
-  return results
-}
 
 /**
  * 视觉精排：把候选缩略图分批(并发)发给视觉模型打分（0-10 相关性）。
@@ -179,7 +116,7 @@ async function rankByVision(
 
     const t0 = Date.now()
     try {
-      const content = await chat(cfg, prompt, images, 300)
+      const content = await chat(cfg, prompt, images, 300, 60_000, 0.2)
       const obj = extractJson(content)
       const matches = obj?.matches
       if (Array.isArray(matches)) {

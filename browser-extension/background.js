@@ -1,5 +1,7 @@
 const CLIP_URL = 'http://127.0.0.1:45678/clip'
 const STATUS_URL = 'http://127.0.0.1:45678/status'
+// 鉴权头:LUMEN 剪藏服务只接受带此头的请求(网页跨域 fetch 无法携带自定义头,防任意网页注入)
+const CLIENT_HEADERS = { 'Content-Type': 'application/json', 'X-Lumen-Client': 'lumen-clip/1' }
 
 /* ---------------- 通用 ---------------- */
 
@@ -16,7 +18,7 @@ async function blobToDataUrl(blob) {
 async function postDataUrl(dataUrl, filename, pageUrl, title) {
   const r = await fetch(CLIP_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: CLIENT_HEADERS,
     body: JSON.stringify({ dataUrl, filename, pageUrl, title })
   })
   const j = await r.json()
@@ -77,7 +79,7 @@ async function clipOne(url, tab) {
   }
   const r = await fetch(CLIP_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: CLIENT_HEADERS,
     body: JSON.stringify({ imageUrl: url, filename, pageUrl: tab.url, title: tab.title })
   })
   const j = await r.json()
@@ -85,7 +87,7 @@ async function clipOne(url, tab) {
 }
 
 async function clipPage(tab, minW, exts) {
-  await fetch(STATUS_URL) // 确认应用运行中
+  await fetch(STATUS_URL, { headers: CLIENT_HEADERS }) // 确认应用运行中
   const results = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     func: collectImages,
@@ -185,7 +187,7 @@ async function cropDataUrl(dataUrl, rect, dpr) {
 }
 
 async function regionClip(tab) {
-  await fetch(STATUS_URL)
+  await fetch(STATUS_URL, { headers: CLIENT_HEADERS })
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     func: regionSelector
@@ -226,7 +228,7 @@ function restoreScroll(y) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 async function fullPageClip(tab) {
-  await fetch(STATUS_URL)
+  await fetch(STATUS_URL, { headers: CLIENT_HEADERS })
   const [{ result: m }] = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     func: pageMetrics
