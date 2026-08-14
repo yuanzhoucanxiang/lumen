@@ -680,7 +680,7 @@ export function cleanTrashOlderThan(days: number): number {
 export function listBoards(): Board[] {
   return getDb()
     .prepare(
-      `SELECT id, name, created_at AS createdAt, updated_at AS updatedAt
+      `SELECT id, name, created_at AS createdAt, updated_at AS updatedAt, guides
        FROM boards ORDER BY updated_at DESC`
     )
     .all() as Board[]
@@ -690,7 +690,7 @@ export function createBoard(name: string): Board {
   const db = getDb()
   const now = Date.now()
   const info = db.prepare('INSERT INTO boards (name, created_at, updated_at) VALUES (?, ?, ?)').run(name, now, now)
-  return { id: Number(info.lastInsertRowid), name, createdAt: now, updatedAt: now }
+  return { id: Number(info.lastInsertRowid), name, createdAt: now, updatedAt: now, guides: '[]' }
 }
 
 export function renameBoard(id: number, name: string): void {
@@ -717,6 +717,7 @@ interface BoardItemRow {
   text: string
   note_font: string
   note_color: string
+  opacity: number
   created_at: number
 }
 
@@ -734,6 +735,7 @@ function rowToBoardItem(r: BoardItemRow): BoardItem {
     text: r.text,
     noteFont: r.note_font ?? '',
     noteColor: r.note_color ?? '',
+    opacity: r.opacity ?? 100,
     createdAt: r.created_at
   }
 }
@@ -741,7 +743,7 @@ function rowToBoardItem(r: BoardItemRow): BoardItem {
 export function listBoardItems(boardId: number): BoardItem[] {
   const rows = getDb()
     .prepare(
-      `SELECT id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, created_at
+      `SELECT id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, opacity, created_at
        FROM board_items WHERE board_id = ? ORDER BY z ASC`
     )
     .all(boardId) as BoardItemRow[]
@@ -775,14 +777,15 @@ export function addBoardItem(
     text: item.text ?? '',
     noteFont: '',
     noteColor: '',
+    opacity: 100,
     createdAt
   }
 }
 
-/** 更新白板元素（动态 SET，x/y/width/height/z/text/noteFont/noteColor 可部分更新） */
+/** 更新白板元素（动态 SET，x/y/width/height/z/text/noteFont/noteColor/opacity 可部分更新） */
 export function updateBoardItem(
   id: string,
-  patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor'>>
+  patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'opacity'>>
 ): void {
   const db = getDb()
   const sets: string[] = []
@@ -795,7 +798,8 @@ export function updateBoardItem(
     z: 'z',
     text: 'text',
     noteFont: 'note_font',
-    noteColor: 'note_color'
+    noteColor: 'note_color',
+    opacity: 'opacity'
   }
   for (const key of Object.keys(colMap) as (keyof typeof colMap)[]) {
     const v = patch[key as keyof typeof patch]
@@ -813,7 +817,7 @@ export function updateBoardItem(
 
 /** 批量更新白板元素（组移动/组缩放等一次性落库，事务原子） */
 export function updateBoardItems(
-  items: { id: string; patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor'>> }[]
+  items: { id: string; patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'opacity'>> }[]
 ): void {
   if (items.length === 0) return
   const db = getDb()
@@ -825,7 +829,8 @@ export function updateBoardItems(
     z: 'z',
     text: 'text',
     noteFont: 'note_font',
-    noteColor: 'note_color'
+    noteColor: 'note_color',
+    opacity: 'opacity'
   }
   const run = db.transaction(() => {
     for (const { id, patch } of items) {
@@ -867,4 +872,10 @@ export function bringBoardItemToFront(id: string, boardId: number): void {
   const z = (db.prepare('SELECT COALESCE(MAX(z), 0) + 1 AS z FROM board_items WHERE board_id = ?').get(boardId) as { z: number }).z
   db.prepare('UPDATE board_items SET z = ? WHERE id = ?').run(z, id)
   db.prepare('UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), boardId)
+}
+
+/** 保存白板参考线（JSON 数组，整体覆盖） */
+export function updateBoardGuides(boardId: number, guidesJson: string): void {
+  const db = getDb()
+  db.prepare('UPDATE boards SET guides = ?, updated_at = ? WHERE id = ?').run(guidesJson, Date.now(), boardId)
 }

@@ -57,7 +57,9 @@ interface Rect {
 export default function BoardCanvas({ onApiReady }: { onApiReady?: (api: BoardCanvasApi) => void }) {
   const boardItems = useLibraryStore((s) => s.boardItems)
   const assets = useLibraryStore((s) => s.assets)
+  const boards = useLibraryStore((s) => s.boards)
   const refreshBoardItems = useLibraryStore((s) => s.refreshBoardItems)
+  const refreshBoards = useLibraryStore((s) => s.refreshBoards)
   const activeBoardId = useLibraryStore((s) => s.activeBoardId)
 
   /* ---------- 视口状态 ---------- */
@@ -112,6 +114,95 @@ export default function BoardCanvas({ onApiReady }: { onApiReady?: (api: BoardCa
 
   /* ---------- 右键菜单 ---------- */
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; itemId: string | null } | null>(null)
+  /** 参考线右键菜单（index 指向 guides 数组） */
+  const [guideMenu, setGuideMenu] = useState<{ x: number; y: number; index: number } | null>(null)
+
+  /* ---------- 参考线（对标 PureRef 参考辅助） ---------- */
+  interface Guide {
+    x?: number
+    y?: number
+    horizontal: boolean
+  }
+  const [guides, setGuides] = useState<Guide[]>([])
+  // 白板切换时从 store 的 boards 解析参考线（用 activeBoardId：boardId 声明在后面,render 求值 deps 会 TDZ）
+  useEffect(() => {
+    const b = boards.find((x) => x.id === activeBoardId)
+    let g: Guide[] = []
+    try {
+      const parsed = JSON.parse(b?.guides ?? '[]') as Guide[]
+      g = Array.isArray(parsed) ? parsed : []
+    } catch {
+      g = []
+    }
+    setGuides(g)
+  }, [boards, activeBoardId])
+  // 拖动中的参考线（实时改局部 state,松手持久化）
+  const guideDragRef = useRef<{ index: number; horizontal: boolean; startX: number; startY: number; orig: number } | null>(null)
+  // guides 的 ref 镜像：pointerup 可能发生在 setGuides 重渲染前,闭包里的 guides 会过期
+  const guidesRef = useRef<Guide[]>([])
+  guidesRef.current = guides
+
+  const persistGuides = async (next: Guide[]) => {
+    setGuides(next)
+    if (boardId != null) {
+      await window.api.setBoardGuides(boardId, JSON.stringify(next))
+      await refreshBoards()
+    }
+  }
+
+  const startGuideDrag = (index: number, g: Guide, e: React.PointerEvent) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    e.preventDefault()
+    try {
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    } catch {
+      /* 合成事件忽略 */
+    }
+    guideDragRef.current = { index, horizontal: g.horizontal, startX: e.clientX, startY: e.clientY, orig: g.horizontal ? g.y ?? 0 : g.x ?? 0 }
+  }
+  const onGuidePointerMove = (e: React.PointerEvent) => {
+    const d = guideDragRef.current
+    if (!d) return
+    const delta = (d.horizontal ? e.clientY - d.startY : e.clientX - d.startX) / viewportRef.current.s
+    setGuides((prev) =>
+      prev.map((g, i) => (i === d.index ? (d.horizontal ? { ...g, y: Math.round(d.orig + delta) } : { ...g, x: Math.round(d.orig + delta) }) : g))
+    )
+  }
+  const onGuidePointerUp = async (e: React.PointerEvent) => {
+    const d = guideDragRef.current
+    if (!d) return
+    guideDragRef.current = null
+    // 从 drag 起点重算目标位置（不依赖可能过期的闭包 state）
+    const delta = (d.horizontal ? e.clientY - d.startY : e.clientX - d.startX) / viewportRef.current.s
+    const next = guidesRef.current.map((g, i) =>
+      i === d.index ? (d.horizontal ? { ...g, y: Math.round(d.orig + delta) } : { ...g, x: Math.round(d.orig + delta) }) : g
+    )
+    setGuides(next)
+    if (boardId != null) {
+      await window.api.setBoardGuides(boardId, JSON.stringify(next))
+      await refreshBoards()
+    }
+  }
+  const openGuideMenu = (e: React.MouseEvent, index: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setCtxMenu(null)
+    setGuideMenu({ x: e.clientX, y: e.clientY, index })
+  }
+  const deleteGuide = async () => {
+    const idx = guideMenu?.index
+    setGuideMenu(null)
+    if (idx == null) return
+    await persistGuides(guides.filter((_, i) => i !== idx))
+  }
+  const addGuideFromMenu = async (horizontal: boolean) => {
+    if (boardId == null) return
+    const pt = canvasPointFromClient(ctxMenu?.x ?? 0, ctxMenu?.y ?? 0)
+    const next = horizontal ? [...guides, { horizontal, y: Math.round(pt.y) }] : [...guides, { horizontal, x: Math.round(pt.x) }]
+    await persistGuides(next)
+    setCtxMenu(null)
+  }
 
   // 切换白板时重置视口与选中
   useEffect(() => {
@@ -384,6 +475,7 @@ export default function BoardCanvas({ onApiReady }: { onApiReady?: (api: BoardCa
       }
       if (e.key === 'Escape') {
         setCtxMenu(null)
+        setGuideMenu(null)
         setSel([])
       }
     }
@@ -678,6 +770,14 @@ export default function BoardCanvas({ onApiReady }: { onApiReady?: (api: BoardCa
     if (boardId != null) await refreshBoardItems(boardId)
     setCtxMenu(null)
   }
+  /** 批量设置透明度（对标 PureRef 参考图透明度对比） */
+  const setOpacityCtx = async (opacity: number) => {
+    const target = ctxTarget()
+    if (target.length === 0) return
+    const updates = target.map((it) => ({ id: it.id, patch: { opacity } }))
+    await window.api.updateBoardItems(updates)
+    if (boardId != null) await refreshBoardItems(boardId)
+  }
 
   /* ---------- 素材宽高比（用于 height=0 自动计算） ---------- */
   const onImgLoad = (item: BoardItem, e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -763,6 +863,7 @@ export default function BoardCanvas({ onApiReady }: { onApiReady?: (api: BoardCa
                   <video
                     src={`${window.api.storyboardUrl(item.assetId!)}&e=${asset.edited ?? 0}`}
                     className="pointer-events-none h-full w-full object-cover"
+                    style={{ opacity: (item.opacity ?? 100) / 100 }}
                     muted
                     playsInline
                   />
@@ -770,6 +871,7 @@ export default function BoardCanvas({ onApiReady }: { onApiReady?: (api: BoardCa
                   <img
                     src={assetThumbUrl(asset)}
                     className="pointer-events-none h-full w-full object-cover"
+                    style={{ opacity: (item.opacity ?? 100) / 100 }}
                     alt={asset.name}
                     draggable={false}
                     onLoad={(e) => onImgLoad(item, e)}
@@ -779,7 +881,7 @@ export default function BoardCanvas({ onApiReady }: { onApiReady?: (api: BoardCa
                 <textarea
                   aria-label="白板文字"
                   className="h-full w-full resize-none bg-transparent p-1.5 text-[13px] outline-none"
-                  style={{ fontFamily: item.noteFont || undefined, color: item.noteColor || 'var(--text-main)' }}
+                  style={{ fontFamily: item.noteFont || undefined, color: item.noteColor || 'var(--text-main)', opacity: (item.opacity ?? 100) / 100 }}
                   placeholder="输入文字…"
                   defaultValue={item.text}
                   onBlur={(e) => {
@@ -855,6 +957,35 @@ export default function BoardCanvas({ onApiReady }: { onApiReady?: (api: BoardCa
               />
             ))}
           </div>
+        )}
+
+        {/* 参考线（对标 PureRef 参考辅助）：可拖动、右键删除 */}
+        {guides.map((g, i) =>
+          g.horizontal ? (
+            <div
+              key={`guide-h-${i}`}
+              data-guide="h"
+              data-guide-index={i}
+              className="absolute cursor-ns-resize"
+              style={{ left: -10000, top: g.y ?? 0, width: 20000, height: 0, borderTop: '1px dashed rgba(90,160,255,0.55)', zIndex: 50000 }}
+              onPointerDown={(e) => startGuideDrag(i, g, e)}
+              onPointerMove={onGuidePointerMove}
+              onPointerUp={(e) => void onGuidePointerUp(e)}
+              onContextMenu={(e) => openGuideMenu(e, i)}
+            />
+          ) : (
+            <div
+              key={`guide-v-${i}`}
+              data-guide="v"
+              data-guide-index={i}
+              className="absolute cursor-ew-resize"
+              style={{ top: -10000, left: g.x ?? 0, height: 20000, width: 0, borderLeft: '1px dashed rgba(90,160,255,0.55)', zIndex: 50000 }}
+              onPointerDown={(e) => startGuideDrag(i, g, e)}
+              onPointerMove={onGuidePointerMove}
+              onPointerUp={(e) => void onGuidePointerUp(e)}
+              onContextMenu={(e) => openGuideMenu(e, i)}
+            />
+          )
         )}
 
         {boardItems.length === 0 && (
@@ -936,16 +1067,66 @@ export default function BoardCanvas({ onApiReady }: { onApiReady?: (api: BoardCa
                   </div>
                 </div>
               )}
+              {/* 透明度（对标 PureRef 参考图透明度对比,多选时批量应用） */}
+              {ctxItem && (
+                <div className="border-t border-[var(--border)] px-3 py-2">
+                  <div className="mb-1 flex items-center justify-between text-[10px] text-[var(--text-faint)]">
+                    <span>透明度</span>
+                    <span className="mono">{ctxItem.opacity ?? 100}%</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {[100, 75, 50, 25].map((p) => (
+                      <button
+                        key={p}
+                        aria-label={`透明度 ${p}%`}
+                        className={`h-4 flex-1 rounded-sm border text-[10px] leading-none transition-colors duration-100 ${
+                          ctxItem.opacity === p
+                            ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-text)]'
+                            : 'border-[var(--border)] text-[var(--text-dim)] hover:bg-[var(--bg-hover)]'
+                        }`}
+                        onClick={() => void setOpacityCtx(p)}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    aria-label="透明度滑块"
+                    type="range"
+                    min={10}
+                    max={100}
+                    step={5}
+                    value={ctxItem.opacity ?? 100}
+                    onChange={(e) => void setOpacityCtx(Number(e.target.value))}
+                    className="mt-1 w-full accent-[var(--accent)]"
+                  />
+                </div>
+              )}
               <div className="my-1 border-t border-[var(--border)]" />
             </>
           ) : (
-            <button
-              className="flex w-full cursor-pointer items-center gap-1.5 px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
-              onClick={() => void addNoteFromMenu()}
-            >
-              <Icon name="type" size={12} />
-              添加文本
-            </button>
+            <>
+              <button
+                className="flex w-full cursor-pointer items-center gap-1.5 px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                onClick={() => void addNoteFromMenu()}
+              >
+                <Icon name="type" size={12} />
+                添加文本
+              </button>
+              <div className="my-1 border-t border-[var(--border)]" />
+              <button
+                className="flex w-full cursor-pointer items-center gap-1.5 px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                onClick={() => void addGuideFromMenu(false)}
+              >
+                添加垂直参考线
+              </button>
+              <button
+                className="flex w-full cursor-pointer items-center gap-1.5 px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                onClick={() => void addGuideFromMenu(true)}
+              >
+                添加水平参考线
+              </button>
+            </>
           )}
           <button className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]" onClick={() => void arrangeCtx('grid')}>
             网格排列{multiSelected ? '选中' : ctxItem ? '选中' : ''}
@@ -955,6 +1136,24 @@ export default function BoardCanvas({ onApiReady }: { onApiReady?: (api: BoardCa
           </button>
           <button className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]" onClick={() => void arrangeCtx('column')}>
             纵向排列{multiSelected ? '选中' : ctxItem ? '选中' : ''}
+          </button>
+        </div>
+      )}
+
+      {/* 参考线右键菜单 */}
+      {guideMenu && (
+        <div
+          className="menu fixed z-[300] w-36 py-1"
+          style={{ left: Math.min(guideMenu.x, window.innerWidth - 160), top: Math.min(guideMenu.y, window.innerHeight - 90) }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] text-[var(--danger)] hover:bg-[var(--bg-hover)]"
+            onClick={() => void deleteGuide()}
+          >
+            删除参考线
           </button>
         </div>
       )}

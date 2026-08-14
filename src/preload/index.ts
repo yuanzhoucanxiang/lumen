@@ -133,6 +133,8 @@ const api = {
   deleteBoardItem: (id: string): Promise<void> => ipcRenderer.invoke('board:deleteItem', id),
   bringBoardItemToFront: (id: string, boardId: number): Promise<void> =>
     ipcRenderer.invoke('board:front', id, boardId),
+  setBoardGuides: (boardId: number, guidesJson: string): Promise<void> =>
+    ipcRenderer.invoke('board:setGuides', boardId, guidesJson),
 
   /* 系统操作 */
   showInFolder: (id: string): Promise<void> => ipcRenderer.invoke('shell:showItem', id),

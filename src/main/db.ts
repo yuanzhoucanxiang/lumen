@@ -132,7 +132,11 @@ function migrate(d: Database.Database): void {
   })
   ensureColumns(d, 'board_items', {
     note_font: "TEXT NOT NULL DEFAULT ''",
-    note_color: "TEXT NOT NULL DEFAULT ''"
+    note_color: "TEXT NOT NULL DEFAULT ''",
+    opacity: 'INTEGER NOT NULL DEFAULT 100'
+  })
+  ensureColumns(d, 'boards', {
+    guides: "TEXT NOT NULL DEFAULT '[]'"
   })
 
   // 回填迁移:把当前回收站里的软删记录一次性写入 tombstone,

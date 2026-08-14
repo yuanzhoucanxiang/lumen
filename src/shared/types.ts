@@ -60,6 +60,8 @@ export interface Board {
   name: string
   createdAt: number
   updatedAt: number
+  /** 参考线 JSON：[{x?,y?,horizontal:boolean}],vertical=有 x,horizontal=有 y */
+  guides: string
 }
 
 /** 白板元素（图片/视频/文字） */
@@ -83,6 +85,8 @@ export interface BoardItem {
   noteFont: string
   /** note 文字颜色（hex） */
   noteColor: string
+  /** 元素透明度 0-100（100=不透明,对标 PureRef 参考图透明度对比） */
+  opacity: number
   createdAt: number
 }
 

@@ -48,6 +48,7 @@ import {
   updateBoardItems,
   deleteBoardItem,
   bringBoardItemToFront,
+  updateBoardGuides,
   renameTag,
   renameTagGroup,
   restoreAssets,
@@ -370,6 +371,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('board:updateItems', (_e, items: { id: string; patch: Partial<BoardItem> }[]) => updateBoardItems(items))
   ipcMain.handle('board:deleteItem', (_e, id: string) => deleteBoardItem(id))
   ipcMain.handle('board:front', (_e, id: string, boardId: number) => bringBoardItemToFront(id, boardId))
+  ipcMain.handle('board:setGuides', (_e, boardId: number, guidesJson: string) => updateBoardGuides(boardId, guidesJson))
 
   /* ---------------- 系统操作 ---------------- */
   ipcMain.handle('assets:export', async (_e, ids: string[], mode: 'folder' | 'zip', opts: ExportOptions | undefined) => {
