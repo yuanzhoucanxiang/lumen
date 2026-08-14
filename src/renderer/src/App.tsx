@@ -77,15 +77,6 @@ export default function App() {
 
   useEffect(() => {
     void refreshAll()
-    // 启动自动打开第一个白板(白板常驻右侧,无白板则保持空态)
-    const st = useLibraryStore.getState()
-    void st.refreshBoards().then(() => {
-      const boards = useLibraryStore.getState().boards
-      const current = useLibraryStore.getState().activeBoardId
-      if (boards.length > 0 && (current == null || !boards.some((b) => b.id === current))) {
-        useLibraryStore.getState().openBoard(boards[0].id)
-      }
-    })
     // 浏览器剪藏导入后自动刷新
     if (!clipListenerRegistered) {
       clipListenerRegistered = true
@@ -211,7 +202,7 @@ export default function App() {
         <main className="flex min-w-0 flex-1 flex-col" style={{ background: 'var(--bg-base)' }}>
           {boardViewMode === 'board' ? (
             <BoardPanel />
-          ) : (
+          ) : boardViewMode === 'split' ? (
             <div className="flex min-h-0 flex-1">
               <div className="flex min-w-0 flex-1 flex-col">
                 <Toolbar />
@@ -219,6 +210,12 @@ export default function App() {
               </div>
               <BoardResizer />
               <BoardPanel />
+            </div>
+          ) : (
+            // 纯素材库：白板关闭时不渲染分屏与白板面板
+            <div className="flex min-w-0 flex-1 flex-col">
+              <Toolbar />
+              <Gallery />
             </div>
           )}
         </main>

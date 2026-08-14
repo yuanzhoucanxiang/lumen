@@ -70,15 +70,17 @@ async function main() {
   let ready = false
   for (let i = 0; i < 120; i++) {
     await sleep(500)
-    // 就绪 = select 存在 且 选项里已含测试白板（store 的 boards 已加载）
-    // 注意：run() 会包一层 async IIFE,表达式必须用 return 返回结果
-    ready = await run(`return (() => {
-      const sel = document.querySelector('select[aria-label="切换白板"]')
-      return !!sel && [...sel.options].some((o) => o.value === '${boardId}')
-    })()`)
+    // 就绪 = 应用已加载（白板默认关闭,需先点主导航「白板」进入）
+    ready = await run(`return !!document.querySelector('nav[aria-label="素材库导航"]')`)
     if (ready) break
   }
-  check('应用重载后白板工具栏就绪', ready, `boardId=${boardId}`)
+  check('应用重载后就绪', ready, `boardId=${boardId}`)
+  // 进入白板模式（viewMode 默认 off,白板面板不可见）
+  await run(`(() => {
+    const btn = [...document.querySelectorAll('nav[aria-label="素材库导航"] > div.mt-2 button')].find((b) => b.textContent.trim().startsWith('白板'))
+    btn.click()
+  })()`)
+  await sleep(500)
   // 通过切换下拉触发 store 刷新（openBoard 会 refreshBoardItems + 重置视口）
   await run(`(() => {
     const sel = document.querySelector('select[aria-label="切换白板"]')

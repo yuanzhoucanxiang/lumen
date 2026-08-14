@@ -181,6 +181,7 @@ const PATHS = {
     </>
   ),
   arrowRight: <path d="M4.5 12h15m-6-6.5 6 6.5-6 6.5" />,
+  arrowLeft: <path d="M19.5 12h-15m6-6.5L4 12l6.5 6.5" />,
   rect: <rect x="4" y="6" width="16" height="12" rx="1.5" />,
   external: (
     <>

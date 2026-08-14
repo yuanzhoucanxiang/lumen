@@ -8,8 +8,8 @@ export type ViewType =
   | { type: 'folder'; id: number }
   | { type: 'tag'; id: number }
 
-/** 白板布局模式：split=素材库+白板分屏, board=白板全屏 */
-export type BoardViewMode = 'split' | 'board'
+/** 白板布局模式：off=纯素材库, split=素材库+白板分屏, board=白板全屏 */
+export type BoardViewMode = 'off' | 'split' | 'board'
 
 export type SortBy = 'imported' | 'name' | 'size' | 'star'
 
@@ -151,7 +151,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   boards: [],
   boardItems: [],
   activeBoardId: null,
-  boardViewMode: 'split',
+  // 白板默认关闭：素材库全屏,需要时通过主导航「白板」进入（不再常驻右侧挤占素材库）
+  boardViewMode: 'off',
   boardViewWidth: Number(localStorage.getItem('lumen.board.width')) || 480,
   stats: { total: 0, deleted: 0, tombstones: 0 },
 
@@ -180,7 +181,17 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   history: [],
 
   setView: (view) => {
-    set({ view, selection: [], previewId: null, similarTo: null, aiSearch: null, aiSearchPending: null })
+    // 库视图导航：若处于白板全屏则退出到纯素材库（分屏/关闭态保持不变）
+    const mode = get().boardViewMode
+    set({
+      view,
+      selection: [],
+      previewId: null,
+      similarTo: null,
+      aiSearch: null,
+      aiSearchPending: null,
+      boardViewMode: mode === 'board' ? 'off' : mode
+    })
     void get().refreshAssets()
   },
   /** 打开/切换白板（画布常驻,切换当前白板） */

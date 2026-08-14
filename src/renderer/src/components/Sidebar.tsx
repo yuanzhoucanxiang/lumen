@@ -163,6 +163,7 @@ export default function Sidebar() {
   const folders = useLibraryStore((s) => s.folders)
   const boards = useLibraryStore((s) => s.boards)
   const activeBoardId = useLibraryStore((s) => s.activeBoardId)
+  const boardViewMode = useLibraryStore((s) => s.boardViewMode)
   const stats = useLibraryStore((s) => s.stats)
   const [addingFolder, setAddingFolder] = useState<false | { parentId: number | null }>(false)
   const [addingTag, setAddingTag] = useState(false)
@@ -324,6 +325,29 @@ export default function Sidebar() {
     const b = await window.api.createBoard(name)
     await useLibraryStore.getState().refreshBoards()
     useLibraryStore.getState().openBoard(b.id)
+    useLibraryStore.getState().setBoardViewMode('board')
+  }
+
+  /** 打开白板视图（全屏聚焦白板） */
+  const openBoardView = (id: number) => {
+    const st = useLibraryStore.getState()
+    st.openBoard(id)
+    st.setBoardViewMode('board')
+  }
+
+  /** 进入白板（独立功能入口）：无白板时自动创建「默认白板」 */
+  const enterBoard = async () => {
+    const st = useLibraryStore.getState()
+    let target = st.activeBoardId
+    if (target == null || !st.boards.some((b) => b.id === target)) {
+      target = st.boards[0]?.id ?? null
+    }
+    if (target == null) {
+      const b = await window.api.createBoard('默认白板')
+      await st.refreshBoards()
+      target = b.id
+    }
+    openBoardView(target)
   }
 
   /** 新建分组（可顺带把某个标签移入） */
@@ -540,6 +564,12 @@ export default function Sidebar() {
           onClick={() => setView({ type: 'starred' })}
         />
         <NavItem
+          active={boardViewMode !== 'off'}
+          icon="shapes"
+          label="白板"
+          onClick={() => void enterBoard()}
+        />
+        <NavItem
           active={view.type === 'trash'}
           icon="trash"
           label="回收站"
@@ -654,7 +684,7 @@ export default function Sidebar() {
                 active={activeBoardId === b.id}
                 icon="shapes"
                 label={b.name}
-                onClick={() => useLibraryStore.getState().openBoard(b.id)}
+                onClick={() => void openBoardView(b.id)}
                 onContextMenu={(e) => openMenu(e, 'board', b.id)}
               />
             )

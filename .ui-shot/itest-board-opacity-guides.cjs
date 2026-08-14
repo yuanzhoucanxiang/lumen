@@ -68,13 +68,16 @@ async function main() {
   let ready = false
   for (let i = 0; i < 120; i++) {
     await sleep(500)
-    ready = await run(`return (() => {
-      const sel = document.querySelector('select[aria-label="切换白板"]')
-      return !!sel && [...sel.options].some((o) => o.value === '${boardId}')
-    })()`)
+    ready = await run(`return !!document.querySelector('nav[aria-label="素材库导航"]')`)
     if (ready) break
   }
-  check('白板工具栏就绪', ready, `boardId=${boardId}`)
+  check('应用重载就绪', ready, `boardId=${boardId}`)
+  // 进入白板模式（viewMode 默认 off）
+  await run(`(() => {
+    const btn = [...document.querySelectorAll('nav[aria-label="素材库导航"] > div.mt-2 button')].find((b) => b.textContent.trim().startsWith('白板'))
+    btn.click()
+  })()`)
+  await sleep(500)
   await run(`(() => {
     const sel = document.querySelector('select[aria-label="切换白板"]')
     sel.value = ${boardId}

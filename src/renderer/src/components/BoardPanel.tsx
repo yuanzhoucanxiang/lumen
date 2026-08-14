@@ -176,13 +176,21 @@ export default function BoardPanel() {
           />
           <button
             aria-label={boardViewMode === 'board' ? '取消白板全屏' : '白板全屏'}
-            title={boardViewMode === 'board' ? '取消白板全屏' : '白板全屏'}
+            title={boardViewMode === 'board' ? '取消白板全屏（分屏）' : '白板全屏'}
             className={`flex h-6 w-6 items-center justify-center rounded-sm transition-colors duration-100 ${
               boardViewMode === 'board' ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]'
             }`}
             onClick={() => setBoardViewMode(boardViewMode === 'board' ? 'split' : 'board')}
           >
             <Icon name="shapes" size={13} />
+          </button>
+          <button
+            aria-label="退出白板"
+            title="退出白板（回到素材库）"
+            className="flex h-6 w-6 items-center justify-center rounded-sm text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--danger)]"
+            onClick={() => setBoardViewMode('off')}
+          >
+            <Icon name="arrowLeft" size={13} />
           </button>
         </div>
       </div>
