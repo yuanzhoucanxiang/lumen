@@ -5,10 +5,11 @@
   <radialGradient id="sheen" cx="0" cy="0" r="1" gradientTransform="translate(194 101) rotate(51) scale(390)"><stop stop-color="#ffffff" stop-opacity="0.07"/><stop offset="0.62" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
   <filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="2" seed="29" result="n"/><feColorMatrix in="n" type="saturate" values="0" result="m"/><feComponentTransfer in="m"><feFuncA type="table" tableValues="0 0.038"/></feComponentTransfer></filter></defs>
     <rect x="16" y="16" width="480" height="480" rx="78" fill="url(#night)"/><rect x="16" y="16" width="480" height="480" rx="78" fill="url(#sheen)"/><rect x="16" y="16" width="480" height="480" rx="78" filter="url(#grain)" opacity="0.48"/>
-    <path d="M171 96H226L251 184L221 412H153L171 96Z" fill="#f2ede3"/>
-    <path d="M222 121C281 87 369 91 421 143" fill="none" stroke="#f2ede3" stroke-width="18" stroke-linecap="round"/>
-    <path d="M220 412H365" stroke="#f2ede3" stroke-width="22"/>
-    <path d="M251 184L221 412H278" fill="#777773" opacity="0.31"/>
-    <circle cx="346" cy="163" r="40" fill="#ef3b31"/><circle cx="346" cy="163" r="15" fill="#101216"/><circle cx="338" cy="154" r="5" fill="#f2ede3" opacity="0.72"/>
-    <path d="M106 445H405" stroke="#f2ede3" stroke-opacity="0.28" stroke-width="4"/>
+    <g clip-path="url(#iconClip)">
+      <g transform="translate(-20 0)">
+        <path d="M196 96C279 72 390 87 456 158L520 196V512H191L221 184L196 96Z" fill="url(#bodyShade)"/>
+        <path d="M212 140C174 139 125 151 72 173C124 170 166 177 196 188C204 175 210 156 212 140Z" fill="#f2ede3"/>
+        <circle cx="346" cy="163" r="40" fill="#ef3b31"/><circle cx="346" cy="163" r="15" fill="#101216"/><circle cx="338" cy="154" r="5" fill="#f2ede3" opacity="0.72"/>
+      </g>
+    </g>
   </svg>

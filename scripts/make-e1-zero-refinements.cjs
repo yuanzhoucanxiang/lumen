@@ -9,7 +9,9 @@ const INK = '#101216'
 const RED = '#ef3b31'
 
 const defs = `
-  <linearGradient id="night" x1="48" y1="24" x2="469" y2="491" gradientUnits="userSpaceOnUse"><stop stop-color="#292b30"/><stop offset="0.48" stop-color="#121419"/><stop offset="1" stop-color="#07080b"/></linearGradient>
+  <clipPath id="iconClip" clipPathUnits="userSpaceOnUse"><rect x="16" y="16" width="480" height="480" rx="78"/></clipPath>
+  <linearGradient id="night" x1="48" y1="24" x2="469" y2="491" gradientUnits="userSpaceOnUse"><stop stop-color="#3a3e46"/><stop offset="0.48" stop-color="#292d34"/><stop offset="1" stop-color="#1a1d23"/></linearGradient>
+  <linearGradient id="bodyShade" x1="190" y1="96" x2="478" y2="486" gradientUnits="userSpaceOnUse"><stop stop-color="#292d34"/><stop offset="0.38" stop-color="#1e2228"/><stop offset="0.72" stop-color="#14171c"/><stop offset="1" stop-color="#0b0d11"/></linearGradient>
   <radialGradient id="sheen" cx="0" cy="0" r="1" gradientTransform="translate(194 101) rotate(51) scale(390)"><stop stop-color="#ffffff" stop-opacity="0.07"/><stop offset="0.62" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
   <filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="2" seed="29" result="n"/><feColorMatrix in="n" type="saturate" values="0" result="m"/><feComponentTransfer in="m"><feFuncA type="table" tableValues="0 0.038"/></feComponentTransfer></filter>`
 
@@ -61,6 +63,136 @@ function proportionLeft() {
       <path d="M106 445H405" stroke="${IVORY}" stroke-opacity="0.28" stroke-width="4"/>
     </g>
   `)
+}
+
+function proportionLeftDark() {
+  return doc(`
+    ${shell()}
+    <g transform="translate(-20 0)">
+      <path d="M171 96H226L251 184L221 412H153L171 96Z" fill="${IVORY}"/>
+      <path d="M197 140L226 181L203 378H178L197 140Z" fill="${INK}" opacity="0.84"/>
+      <path d="M222 121C281 87 369 91 421 143" fill="none" stroke="${IVORY}" stroke-width="18" stroke-linecap="round"/>
+      <path d="M220 412H365" stroke="${IVORY}" stroke-width="22"/>
+      <path d="M251 184L221 412H286" fill="#62636a" opacity="0.46"/>
+      ${eye(346, 163, 40)}
+      <path d="M106 445H405" stroke="${IVORY}" stroke-opacity="0.28" stroke-width="4"/>
+    </g>
+  `)
+}
+
+function proportionLeftBody() {
+  return doc(`
+    ${shell()}
+    <g transform="translate(-20 0)">
+      <path d="M219 114C285 76 383 88 430 157C482 234 461 353 386 414H207L247 184L219 114Z" fill="#050609" stroke="#2b2e34" stroke-width="3"/>
+      <path d="M179 96H222L247 184L217 412H164L179 96Z" fill="${IVORY}"/>
+      <path d="M222 121C281 87 369 91 421 143" fill="none" stroke="${IVORY}" stroke-width="18" stroke-linecap="round"/>
+      <path d="M216 412H355" stroke="${IVORY}" stroke-width="21"/>
+      <path d="M247 184L217 412H286" fill="#55585e" opacity="0.52"/>
+      ${eye(346, 163, 40)}
+      <path d="M106 445H405" stroke="${IVORY}" stroke-opacity="0.28" stroke-width="4"/>
+    </g>
+  `)
+}
+
+function proportionLeftOverlay() {
+  return doc(`
+    ${shell()}
+    <g transform="translate(-20 0)">
+      <path d="M171 96H226L251 184L221 412H153L171 96Z" fill="${IVORY}"/>
+      <path d="M222 121C281 87 369 91 421 143" fill="none" stroke="${IVORY}" stroke-width="18" stroke-linecap="round"/>
+      <path d="M220 412H365" stroke="${IVORY}" stroke-width="22"/>
+      <path d="M231 157L202 412H286L231 157Z" fill="#07080b" opacity="0.92"/>
+      ${eye(346, 163, 40)}
+      <path d="M106 445H405" stroke="${IVORY}" stroke-opacity="0.28" stroke-width="4"/>
+    </g>
+  `)
+}
+
+function proportionLeftBodyCrop() {
+  return doc(`
+    ${shell()}
+    <g clip-path="url(#iconClip)">
+      <g transform="translate(-20 0)">
+        <path d="M171 96H226L251 184L221 412H153L171 96Z" fill="${IVORY}"/>
+        <path d="M207 109C279 75 389 87 456 158L520 196V512H186L231 184L207 109Z" fill="#050609"/>
+        <path d="M222 121C281 87 369 91 421 143" fill="none" stroke="${IVORY}" stroke-width="18" stroke-linecap="round"/>
+        <path d="M220 412H365" stroke="${IVORY}" stroke-width="22"/>
+        ${eye(346, 163, 40)}
+        <path d="M106 445H405" stroke="${IVORY}" stroke-opacity="0.28" stroke-width="4"/>
+      </g>
+    </g>
+  `)
+}
+
+function proportionLeftWhiteReduced() {
+  return doc(`
+    ${shell()}
+    <g clip-path="url(#iconClip)">
+      <g transform="translate(-20 0)">
+        <path d="M196 96C279 72 390 87 456 158L520 196V512H191L221 184L196 96Z" fill="url(#bodyShade)"/>
+        <path d="M171 96H196L221 184L191 412H153L171 96Z" fill="${IVORY}"/>
+        <path d="M222 121C281 87 369 91 421 143" fill="none" stroke="${IVORY}" stroke-width="18" stroke-linecap="round"/>
+        ${eye(346, 163, 40)}
+      </g>
+    </g>
+  `)
+}
+
+function proportionLeftWhiteReducedNoArc() {
+  return proportionLeftWhiteReduced().replace(
+    /\s*<path d="M222 121C281 87 369 91 421 143" fill="none" stroke="#[0-9a-fA-F]{6}" stroke-width="18" stroke-linecap="round"\/>/,
+    ''
+  )
+}
+
+function proportionSideBeak() {
+  return doc(`
+    ${shell()}
+    <g clip-path="url(#iconClip)">
+      <g transform="translate(-20 0)">
+        <path d="M196 96C279 72 390 87 456 158L520 196V512H191L221 184L196 96Z" fill="url(#bodyShade)"/>
+        <path d="M210 132C180 134 137 149 94 174C134 174 165 183 190 198C199 181 207 156 210 132Z" fill="${IVORY}"/>
+        ${eye(346, 163, 40)}
+      </g>
+    </g>
+  `)
+}
+
+function sideBeakVariant(beakMarkup) {
+  return doc(`
+    ${shell()}
+    <g clip-path="url(#iconClip)">
+      <g transform="translate(-20 0)">
+        <path d="M196 96C279 72 390 87 456 158L520 196V512H191L221 184L196 96Z" fill="url(#bodyShade)"/>
+        ${beakMarkup}
+        ${eye(346, 163, 40)}
+      </g>
+    </g>
+  `)
+}
+
+function sideBeakLongSharp() {
+  return sideBeakVariant(`<path d="M212 140C174 139 125 151 72 173C124 170 166 177 196 188C204 175 210 156 212 140Z" fill="${IVORY}"/>`)
+}
+
+function sideBeakSoftHook() {
+  return sideBeakVariant(`<path d="M211 131C176 134 129 150 84 168C99 170 104 175 98 183C132 179 166 188 191 202C202 182 210 154 211 131Z" fill="${IVORY}"/>`)
+}
+
+function sideBeakFaceted() {
+  return sideBeakVariant(`
+    <path d="M211 134L79 173L176 181L195 202L211 160Z" fill="${IVORY}"/>
+    <path d="M79 173L176 181L195 202C161 188 122 178 79 173Z" fill="#c9c3b8"/>
+  `)
+}
+
+function sideBeakShortHeavy() {
+  return sideBeakVariant(`<path d="M212 124C183 127 148 139 113 157L91 171C129 174 165 187 191 207C205 184 213 151 212 124Z" fill="${IVORY}"/>`)
+}
+
+function noBeak() {
+  return sideBeakVariant('')
 }
 
 function innerCut() {
@@ -161,6 +293,216 @@ async function makePositionBoard(original, shifted) {
     .toFile(path.join(OUT, 'lumen-e1-zeroa-left-comparison.png'))
 }
 
+async function makeDarkAdjustmentBoard(previous, adjusted) {
+  const labels = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="650">
+    <rect width="1160" height="650" fill="#0c1015"/>
+    <text x="50" y="58" fill="#f4f6f8" font-family="Segoe UI, sans-serif" font-size="28" font-weight="700" letter-spacing="5">E1-0A · POSITION + BLACK-MASS TEST</text>
+    <text x="50" y="96" fill="#75838f" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="19">在左移 12px 稿基础上，再左移 8px，并扩大内部近黑色羽面</text>
+    <rect x="50" y="130" width="500" height="470" rx="28" fill="#151a21" stroke="#272e37"/>
+    <rect x="610" y="130" width="500" height="470" rx="28" fill="#151a21" stroke="#272e37"/>
+    <text x="82" y="540" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="29" font-weight="700">左移 12px</text>
+    <text x="642" y="540" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="29" font-weight="700">左移 20px + 黑羽</text>
+    <text x="82" y="575" fill="#8998a4" font-family="Segoe UI, sans-serif" font-size="17">PREVIOUS</text>
+    <text x="642" y="575" fill="#ef5a50" font-family="Segoe UI, sans-serif" font-size="17">ADJUSTED</text>
+  </svg>`)
+  await sharp({ create: { width: 1160, height: 650, channels: 4, background: '#0c1015' } })
+    .composite([
+      { input: labels, left: 0, top: 0 },
+      { input: previous, left: 130, top: 165 },
+      { input: adjusted, left: 690, top: 165 }
+    ])
+    .png()
+    .toFile(path.join(OUT, 'lumen-e1-zeroa-left20-dark-comparison.png'))
+}
+
+async function makeBodyAdjustmentBoard(previous, adjusted) {
+  const labels = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="650">
+    <rect width="1160" height="650" fill="#0c1015"/>
+    <text x="50" y="58" fill="#f4f6f8" font-family="Segoe UI, sans-serif" font-size="28" font-weight="700" letter-spacing="5">E1-0A · WHITE / BLACK BODY TEST</text>
+    <text x="50" y="96" fill="#75838f" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="19">移除内部黑槽：缩小象牙白面积，扩大右侧连续乌鸦黑色身体</text>
+    <rect x="50" y="130" width="500" height="470" rx="28" fill="#151a21" stroke="#272e37"/>
+    <rect x="610" y="130" width="500" height="470" rx="28" fill="#151a21" stroke="#272e37"/>
+    <text x="82" y="540" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="29" font-weight="700">旧版：左移 12px</text>
+    <text x="642" y="540" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="29" font-weight="700">新版：白少 / 黑身大</text>
+    <text x="82" y="575" fill="#8998a4" font-family="Segoe UI, sans-serif" font-size="17">REFERENCE</text>
+    <text x="642" y="575" fill="#ef5a50" font-family="Segoe UI, sans-serif" font-size="17">ADJUSTED</text>
+  </svg>`)
+  await sharp({ create: { width: 1160, height: 650, channels: 4, background: '#0c1015' } })
+    .composite([
+      { input: labels, left: 0, top: 0 },
+      { input: previous, left: 130, top: 165 },
+      { input: adjusted, left: 690, top: 165 }
+    ])
+    .png()
+    .toFile(path.join(OUT, 'lumen-e1-zeroa-body-mass-comparison.png'))
+}
+
+async function makeOverlayAdjustmentBoard(previous, adjusted) {
+  const labels = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="650">
+    <rect width="1160" height="650" fill="#0c1015"/>
+    <text x="50" y="58" fill="#f4f6f8" font-family="Segoe UI, sans-serif" font-size="28" font-weight="700" letter-spacing="5">E1-0A · BLACK OVERLAY POSITION TEST</text>
+    <text x="50" y="96" fill="#75838f" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="19">不画完整身体：仅将原有三角黑色羽面向左推进，覆盖更多白色</text>
+    <rect x="50" y="130" width="500" height="470" rx="28" fill="#151a21" stroke="#272e37"/>
+    <rect x="610" y="130" width="500" height="470" rx="28" fill="#151a21" stroke="#272e37"/>
+    <text x="82" y="540" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="29" font-weight="700">旧版：黑面靠右</text>
+    <text x="642" y="540" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="29" font-weight="700">新版：黑面左移</text>
+    <text x="82" y="575" fill="#8998a4" font-family="Segoe UI, sans-serif" font-size="17">REFERENCE</text>
+    <text x="642" y="575" fill="#ef5a50" font-family="Segoe UI, sans-serif" font-size="17">ADJUSTED</text>
+  </svg>`)
+  await sharp({ create: { width: 1160, height: 650, channels: 4, background: '#0c1015' } })
+    .composite([
+      { input: labels, left: 0, top: 0 },
+      { input: previous, left: 130, top: 165 },
+      { input: adjusted, left: 690, top: 165 }
+    ])
+    .png()
+    .toFile(path.join(OUT, 'lumen-e1-zeroa-overlay-left-comparison.png'))
+}
+
+async function makeBodyCropAdjustmentBoard(previous, adjusted) {
+  const labels = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="650">
+    <rect width="1160" height="650" fill="#0c1015"/>
+    <text x="50" y="58" fill="#f4f6f8" font-family="Segoe UI, sans-serif" font-size="28" font-weight="700" letter-spacing="5">E1-0A · CROPPED BLACK BODY TEST</text>
+    <text x="50" y="96" fill="#75838f" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="19">黑色主体只向左覆盖白色，右侧直接出画，不绘制完整身体</text>
+    <rect x="50" y="130" width="500" height="470" rx="28" fill="#151a21" stroke="#272e37"/>
+    <rect x="610" y="130" width="500" height="470" rx="28" fill="#151a21" stroke="#272e37"/>
+    <text x="82" y="540" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="29" font-weight="700">旧版：白色面积偏多</text>
+    <text x="642" y="540" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="29" font-weight="700">新版：黑色主体左压</text>
+    <text x="82" y="575" fill="#8998a4" font-family="Segoe UI, sans-serif" font-size="17">REFERENCE</text>
+    <text x="642" y="575" fill="#ef5a50" font-family="Segoe UI, sans-serif" font-size="17">BODY CROP / NO FULL OUTLINE</text>
+  </svg>`)
+  await sharp({ create: { width: 1160, height: 650, channels: 4, background: '#0c1015' } })
+    .composite([
+      { input: labels, left: 0, top: 0 },
+      { input: previous, left: 130, top: 165 },
+      { input: adjusted, left: 690, top: 165 }
+    ])
+    .png()
+    .toFile(path.join(OUT, 'lumen-e1-zeroa-body-crop-comparison.png'))
+}
+
+async function makeWhiteReducedBoard(previous, adjusted) {
+  const labels = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="650">
+    <rect width="1160" height="650" fill="#0c1015"/>
+    <text x="50" y="58" fill="#f4f6f8" font-family="Segoe UI, sans-serif" font-size="28" font-weight="700" letter-spacing="5">E1-0A · BODY GRADIENT / NO BOTTOM LINES</text>
+    <text x="50" y="96" fill="#75838f" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="19">背景改为较亮石墨炭黑；乌鸦保留渐变，并在全区域始终比背景更暗</text>
+    <rect x="50" y="130" width="500" height="470" rx="28" fill="#151a21" stroke="#272e37"/>
+    <rect x="610" y="130" width="500" height="470" rx="28" fill="#151a21" stroke="#272e37"/>
+    <text x="82" y="540" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="29" font-weight="700">旧版：原始白色宽度</text>
+    <text x="642" y="540" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="29" font-weight="700">新版：亮背景 / 暗乌鸦</text>
+    <text x="82" y="575" fill="#8998a4" font-family="Segoe UI, sans-serif" font-size="17">REFERENCE</text>
+    <text x="642" y="575" fill="#ef5a50" font-family="Segoe UI, sans-serif" font-size="17">GRAPHITE BG / DARKER CROW</text>
+  </svg>`)
+  await sharp({ create: { width: 1160, height: 650, channels: 4, background: '#0c1015' } })
+    .composite([
+      { input: labels, left: 0, top: 0 },
+      { input: previous, left: 130, top: 165 },
+      { input: adjusted, left: 690, top: 165 }
+    ])
+    .png()
+    .toFile(path.join(OUT, 'lumen-e1-zeroa-white-reduced-comparison.png'))
+}
+
+async function makeNoArcBoard(withArc, noArc) {
+  const labels = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="650">
+    <rect width="1160" height="650" fill="#0c1015"/>
+    <text x="50" y="58" fill="#f4f6f8" font-family="Segoe UI, sans-serif" font-size="28" font-weight="700" letter-spacing="5">E1-0A · WHITE ARC REMOVAL TEST</text>
+    <text x="50" y="96" fill="#75838f" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="19">仅移除红眼上方的弯曲白色眉弧，其余结构与明暗关系保持不变</text>
+    <rect x="50" y="130" width="500" height="470" rx="28" fill="#151a21" stroke="#272e37"/>
+    <rect x="610" y="130" width="500" height="470" rx="28" fill="#151a21" stroke="#272e37"/>
+    <text x="82" y="540" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="29" font-weight="700">当前版：保留白色眉弧</text>
+    <text x="642" y="540" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="29" font-weight="700">测试版：移除白色眉弧</text>
+    <text x="82" y="575" fill="#8998a4" font-family="Segoe UI, sans-serif" font-size="17">WITH ARC</text>
+    <text x="642" y="575" fill="#ef5a50" font-family="Segoe UI, sans-serif" font-size="17">NO ARC</text>
+  </svg>`)
+  await sharp({ create: { width: 1160, height: 650, channels: 4, background: '#0c1015' } })
+    .composite([
+      { input: labels, left: 0, top: 0 },
+      { input: withArc, left: 130, top: 165 },
+      { input: noArc, left: 690, top: 165 }
+    ])
+    .png()
+    .toFile(path.join(OUT, 'lumen-e1-zeroa-no-arc-comparison.png'))
+}
+
+async function makeSideBeakBoard(noArc, sideBeak) {
+  const labels = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="650">
+    <rect width="1160" height="650" fill="#0c1015"/>
+    <text x="50" y="58" fill="#f4f6f8" font-family="Segoe UI, sans-serif" font-size="28" font-weight="700" letter-spacing="5">E1-0A · SIDE BEAK TEST</text>
+    <text x="50" y="96" fill="#75838f" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="19">将左侧整条白边替换为抽象侧面嘴巴；保留正面右眼局部与深色头部</text>
+    <rect x="50" y="130" width="500" height="470" rx="28" fill="#151a21" stroke="#272e37"/>
+    <rect x="610" y="130" width="500" height="470" rx="28" fill="#151a21" stroke="#272e37"/>
+    <text x="82" y="540" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="29" font-weight="700">当前版：抽象白色竖边</text>
+    <text x="642" y="540" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="29" font-weight="700">测试版：侧面乌鸦嘴</text>
+    <text x="82" y="575" fill="#8998a4" font-family="Segoe UI, sans-serif" font-size="17">VERTICAL EDGE</text>
+    <text x="642" y="575" fill="#ef5a50" font-family="Segoe UI, sans-serif" font-size="17">ABSTRACT SIDE BEAK</text>
+  </svg>`)
+  await sharp({ create: { width: 1160, height: 650, channels: 4, background: '#0c1015' } })
+    .composite([
+      { input: labels, left: 0, top: 0 },
+      { input: noArc, left: 130, top: 165 },
+      { input: sideBeak, left: 690, top: 165 }
+    ])
+    .png()
+    .toFile(path.join(OUT, 'lumen-e1-zeroa-side-beak-comparison.png'))
+}
+
+async function makeSideBeakVariantsBoard(variants) {
+  const labels = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="660">
+    <rect width="1500" height="660" fill="#0c1015"/>
+    <text x="40" y="55" fill="#f4f6f8" font-family="Segoe UI, sans-serif" font-size="28" font-weight="700" letter-spacing="5">E1-0A · SIDE BEAK CALIBRATION</text>
+    <text x="40" y="92" fill="#75838f" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="18">锁定红眼、头部、背景与渐变，只比较侧嘴的长度、钩度、切面和厚度</text>
+    <rect x="30" y="120" width="340" height="500" rx="26" fill="#151a21" stroke="#272e37"/>
+    <rect x="390" y="120" width="340" height="500" rx="26" fill="#151a21" stroke="#272e37"/>
+    <rect x="750" y="120" width="340" height="500" rx="26" fill="#151a21" stroke="#272e37"/>
+    <rect x="1110" y="120" width="340" height="500" rx="26" fill="#151a21" stroke="#272e37"/>
+    <text x="55" y="475" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="27" font-weight="700">S1 · 长锐</text>
+    <text x="415" y="475" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="27" font-weight="700">S2 · 轻钩</text>
+    <text x="775" y="475" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="27" font-weight="700">S3 · 双切面</text>
+    <text x="1135" y="475" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="27" font-weight="700">S4 · 短厚</text>
+    <text x="55" y="512" fill="#8998a4" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="17">最抽象，速度感最强</text>
+    <text x="415" y="512" fill="#8998a4" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="17">嘴尖微钩，更像乌鸦</text>
+    <text x="775" y="512" fill="#8998a4" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="17">几何层次最明确</text>
+    <text x="1135" y="512" fill="#8998a4" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="17">稳重、徽章感最强</text>
+    <text x="55" y="555" fill="#ef5a50" font-family="Segoe UI, sans-serif" font-size="16">LONG / SHARP</text>
+    <text x="415" y="555" fill="#ef5a50" font-family="Segoe UI, sans-serif" font-size="16">SOFT HOOK</text>
+    <text x="775" y="555" fill="#ef5a50" font-family="Segoe UI, sans-serif" font-size="16">TWO FACETS</text>
+    <text x="1135" y="555" fill="#ef5a50" font-family="Segoe UI, sans-serif" font-size="16">SHORT / HEAVY</text>
+  </svg>`)
+  await sharp({ create: { width: 1500, height: 660, channels: 4, background: '#0c1015' } })
+    .composite([
+      { input: labels, left: 0, top: 0 },
+      { input: variants[0], left: 60, top: 145 },
+      { input: variants[1], left: 420, top: 145 },
+      { input: variants[2], left: 780, top: 145 },
+      { input: variants[3], left: 1140, top: 145 }
+    ])
+    .png()
+    .toFile(path.join(OUT, 'lumen-e1-zeroa-side-beak-variants.png'))
+}
+
+async function makeNoBeakBoard(sideBeak, withoutBeak) {
+  const labels = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="650">
+    <rect width="1160" height="650" fill="#0c1015"/>
+    <text x="50" y="58" fill="#f4f6f8" font-family="Segoe UI, sans-serif" font-size="28" font-weight="700" letter-spacing="5">E1-0A · NO BEAK TEST</text>
+    <text x="50" y="96" fill="#75838f" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="19">完全移除象牙白嘴形，仅保留石墨背景、渐变乌鸦头部与红眼</text>
+    <rect x="50" y="130" width="500" height="470" rx="28" fill="#151a21" stroke="#272e37"/>
+    <rect x="610" y="130" width="500" height="470" rx="28" fill="#151a21" stroke="#272e37"/>
+    <text x="82" y="540" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="29" font-weight="700">侧嘴版：保留嘴形</text>
+    <text x="642" y="540" fill="#f5f7f9" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="29" font-weight="700">测试版：完全无嘴</text>
+    <text x="82" y="575" fill="#8998a4" font-family="Segoe UI, sans-serif" font-size="17">WITH BEAK</text>
+    <text x="642" y="575" fill="#ef5a50" font-family="Segoe UI, sans-serif" font-size="17">NO BEAK</text>
+  </svg>`)
+  await sharp({ create: { width: 1160, height: 650, channels: 4, background: '#0c1015' } })
+    .composite([
+      { input: labels, left: 0, top: 0 },
+      { input: sideBeak, left: 130, top: 165 },
+      { input: withoutBeak, left: 690, top: 165 }
+    ])
+    .png()
+    .toFile(path.join(OUT, 'lumen-e1-zeroa-no-beak-comparison.png'))
+}
+
 async function main() {
   fs.mkdirSync(OUT, { recursive: true })
   const rendered = []
@@ -185,6 +527,77 @@ async function main() {
   const original = await sharp(path.join(OUT, 'e1-0a-proportion.png')).resize(360, 360).png().toBuffer()
   const shifted = await sharp(shiftedPngPath).resize(360, 360).png().toBuffer()
   await makePositionBoard(original, shifted)
+  const adjustedSvg = proportionLeftDark()
+  const adjustedSvgPath = path.join(OUT, 'e1-0a-left-20-dark.svg')
+  const adjustedPngPath = path.join(OUT, 'e1-0a-left-20-dark.png')
+  fs.writeFileSync(adjustedSvgPath, adjustedSvg)
+  await sharp(Buffer.from(adjustedSvg)).png().toFile(adjustedPngPath)
+  const adjusted = await sharp(adjustedPngPath).resize(360, 360).png().toBuffer()
+  await makeDarkAdjustmentBoard(shifted, adjusted)
+  const bodySvg = proportionLeftBody()
+  const bodySvgPath = path.join(OUT, 'e1-0a-left-20-body.svg')
+  const bodyPngPath = path.join(OUT, 'e1-0a-left-20-body.png')
+  fs.writeFileSync(bodySvgPath, bodySvg)
+  await sharp(Buffer.from(bodySvg)).png().toFile(bodyPngPath)
+  const body = await sharp(bodyPngPath).resize(360, 360).png().toBuffer()
+  await makeBodyAdjustmentBoard(shifted, body)
+  const overlaySvg = proportionLeftOverlay()
+  const overlaySvgPath = path.join(OUT, 'e1-0a-left-20-overlay.svg')
+  const overlayPngPath = path.join(OUT, 'e1-0a-left-20-overlay.png')
+  fs.writeFileSync(overlaySvgPath, overlaySvg)
+  await sharp(Buffer.from(overlaySvg)).png().toFile(overlayPngPath)
+  const overlay = await sharp(overlayPngPath).resize(360, 360).png().toBuffer()
+  await makeOverlayAdjustmentBoard(shifted, overlay)
+  const bodyCropSvg = proportionLeftBodyCrop()
+  const bodyCropSvgPath = path.join(OUT, 'e1-0a-left-20-body-crop.svg')
+  const bodyCropPngPath = path.join(OUT, 'e1-0a-left-20-body-crop.png')
+  fs.writeFileSync(bodyCropSvgPath, bodyCropSvg)
+  await sharp(Buffer.from(bodyCropSvg)).png().toFile(bodyCropPngPath)
+  const bodyCrop = await sharp(bodyCropPngPath).resize(360, 360).png().toBuffer()
+  await makeBodyCropAdjustmentBoard(shifted, bodyCrop)
+  const whiteReducedSvg = proportionLeftWhiteReduced()
+  const whiteReducedSvgPath = path.join(OUT, 'e1-0a-left-20-white-reduced.svg')
+  const whiteReducedPngPath = path.join(OUT, 'e1-0a-left-20-white-reduced.png')
+  fs.writeFileSync(whiteReducedSvgPath, whiteReducedSvg)
+  await sharp(Buffer.from(whiteReducedSvg)).png().toFile(whiteReducedPngPath)
+  const whiteReduced = await sharp(whiteReducedPngPath).resize(360, 360).png().toBuffer()
+  await makeWhiteReducedBoard(shifted, whiteReduced)
+  const noArcSvg = proportionLeftWhiteReducedNoArc()
+  const noArcSvgPath = path.join(OUT, 'e1-0a-left-20-no-arc.svg')
+  const noArcPngPath = path.join(OUT, 'e1-0a-left-20-no-arc.png')
+  fs.writeFileSync(noArcSvgPath, noArcSvg)
+  await sharp(Buffer.from(noArcSvg)).png().toFile(noArcPngPath)
+  const noArc = await sharp(noArcPngPath).resize(360, 360).png().toBuffer()
+  await makeNoArcBoard(whiteReduced, noArc)
+  const sideBeakSvg = proportionSideBeak()
+  const sideBeakSvgPath = path.join(OUT, 'e1-0a-side-beak.svg')
+  const sideBeakPngPath = path.join(OUT, 'e1-0a-side-beak.png')
+  fs.writeFileSync(sideBeakSvgPath, sideBeakSvg)
+  await sharp(Buffer.from(sideBeakSvg)).png().toFile(sideBeakPngPath)
+  const sideBeak = await sharp(sideBeakPngPath).resize(360, 360).png().toBuffer()
+  await makeSideBeakBoard(noArc, sideBeak)
+  const sideBeakVariants = [
+    ['s1-long-sharp', sideBeakLongSharp()],
+    ['s2-soft-hook', sideBeakSoftHook()],
+    ['s3-faceted', sideBeakFaceted()],
+    ['s4-short-heavy', sideBeakShortHeavy()]
+  ]
+  const sideBeakVariantBuffers = []
+  for (const [slug, svg] of sideBeakVariants) {
+    const svgPath = path.join(OUT, `e1-0a-side-beak-${slug}.svg`)
+    const pngPath = path.join(OUT, `e1-0a-side-beak-${slug}.png`)
+    fs.writeFileSync(svgPath, svg)
+    await sharp(Buffer.from(svg)).png().toFile(pngPath)
+    sideBeakVariantBuffers.push(await sharp(pngPath).resize(280, 280).png().toBuffer())
+  }
+  await makeSideBeakVariantsBoard(sideBeakVariantBuffers)
+  const noBeakSvg = noBeak()
+  const noBeakSvgPath = path.join(OUT, 'e1-0a-no-beak.svg')
+  const noBeakPngPath = path.join(OUT, 'e1-0a-no-beak.png')
+  fs.writeFileSync(noBeakSvgPath, noBeakSvg)
+  await sharp(Buffer.from(noBeakSvg)).png().toFile(noBeakPngPath)
+  const noBeakBuffer = await sharp(noBeakPngPath).resize(360, 360).png().toBuffer()
+  await makeNoBeakBoard(sideBeak, noBeakBuffer)
   console.log(`generated ${VARIANTS.length} E1-0 refinements in ${OUT}`)
 }
 
