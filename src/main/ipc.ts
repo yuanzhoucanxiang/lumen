@@ -61,6 +61,7 @@ import {
   updateSmartFolder
 } from './repository'
 import { applyEdit, revertEdit } from './editor'
+import { exportBoardToFile, importBoardFromFile } from './boardFile'
 import { aiProcessBatch, aiSuggestBatch, aiApplySuggestions, testAiConnection } from './aiRename'
 import { aiSearch } from './aiSearch'
 import type {
@@ -372,6 +373,33 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('board:deleteItem', (_e, id: string) => deleteBoardItem(id))
   ipcMain.handle('board:front', (_e, id: string, boardId: number) => bringBoardItemToFront(id, boardId))
   ipcMain.handle('board:setGuides', (_e, boardId: number, guidesJson: string) => updateBoardGuides(boardId, guidesJson))
+
+  /* ---------------- 白板文件（.lumenboard） ---------------- */
+  // 无对话框直写路径（供测试/脚本复用）；UI 走带对话框版本
+  ipcMain.handle('board:exportToPath', (_e, boardId: number, targetPath: string) => exportBoardToFile(boardId, targetPath))
+  ipcMain.handle('board:importFromPath', async (_e, filePath: string) => importBoardFromFile(filePath))
+  ipcMain.handle('board:exportFile', async (_e, boardId: number) => {
+    const win = getWindow()
+    if (!win) return null
+    const r = await dialog.showSaveDialog(win, {
+      title: '导出白板为 .lumenboard',
+      defaultPath: `lumenboard-${new Date().toISOString().slice(0, 10)}.lumenboard`,
+      filters: [{ name: 'LUMEN 白板', extensions: ['lumenboard'] }]
+    })
+    if (r.canceled || !r.filePath) return null
+    return exportBoardToFile(boardId, r.filePath)
+  })
+  ipcMain.handle('board:importFile', async () => {
+    const win = getWindow()
+    if (!win) return null
+    const r = await dialog.showOpenDialog(win, {
+      title: '导入 LUMEN 白板',
+      properties: ['openFile'],
+      filters: [{ name: 'LUMEN 白板', extensions: ['lumenboard'] }]
+    })
+    if (r.canceled || r.filePaths.length === 0) return null
+    return importBoardFromFile(r.filePaths[0])
+  })
 
   /* ---------------- 系统操作 ---------------- */
   ipcMain.handle('assets:export', async (_e, ids: string[], mode: 'folder' | 'zip', opts: ExportOptions | undefined) => {

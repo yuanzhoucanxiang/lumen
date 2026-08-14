@@ -75,6 +75,21 @@ export default function BoardPanel() {
     canvasApiRef.current?.zoomTo(v)
   }
 
+  const exportBoard = async () => {
+    if (!hasBoard) return
+    const r = await window.api.exportBoardFile(activeBoardId!)
+    if (r) useLibraryStore.getState().showToast(`白板已导出：${r.target}`)
+  }
+
+  const importBoard = async () => {
+    const r = await window.api.importBoardFile()
+    if (r) {
+      await refreshBoards()
+      openBoard(r.boardId)
+      useLibraryStore.getState().showToast(`已导入白板「${r.name}」（${r.imported} 个元素）`)
+    }
+  }
+
   return (
     <div className="flex min-h-0 flex-col border-l border-[var(--border)] bg-[var(--bg-base)]" style={{ width: boardViewMode === 'board' ? undefined : boardViewWidth, minWidth: boardViewMode === 'board' ? 0 : 280 }}>
       {/* 工具栏(照抄 MOTZ board-toolbar) */}
@@ -122,6 +137,23 @@ export default function BoardPanel() {
         </button>
 
         <div className="ml-auto flex items-center gap-2">
+          <button
+            aria-label="导出白板文件"
+            title="导出 .lumenboard（跨设备交换参考白板）"
+            className="flex h-6 w-6 items-center justify-center rounded-sm text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
+            disabled={!hasBoard}
+            onClick={() => void exportBoard()}
+          >
+            <Icon name="save" size={13} />
+          </button>
+          <button
+            aria-label="导入白板文件"
+            title="导入 .lumenboard"
+            className="flex h-6 w-6 items-center justify-center rounded-sm text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
+            onClick={() => void importBoard()}
+          >
+            <Icon name="import" size={13} />
+          </button>
           <button
             aria-label="白板浮动置顶"
             title="白板浮动置顶(参考作画时贴在旁边)"

@@ -141,6 +141,16 @@ const api = {
     ipcRenderer.invoke('window:floatingOpen', boardId),
   closeFloatingWindow: (): Promise<void> => ipcRenderer.invoke('window:floatingClose'),
 
+  /* 白板文件（.lumenboard）导入导出 */
+  exportBoardToPath: (boardId: number, targetPath: string): Promise<{ count: number; target: string }> =>
+    ipcRenderer.invoke('board:exportToPath', boardId, targetPath),
+  importBoardFromPath: (filePath: string): Promise<{ boardId: number; name: string; imported: number }> =>
+    ipcRenderer.invoke('board:importFromPath', filePath),
+  exportBoardFile: (boardId: number): Promise<{ count: number; target: string } | null> =>
+    ipcRenderer.invoke('board:exportFile', boardId),
+  importBoardFile: (): Promise<{ boardId: number; name: string; imported: number } | null> =>
+    ipcRenderer.invoke('board:importFile'),
+
   /* 系统操作 */
   showInFolder: (id: string): Promise<void> => ipcRenderer.invoke('shell:showItem', id),
   copyImage: (id: string): Promise<boolean> => ipcRenderer.invoke('asset:copyImage', id),

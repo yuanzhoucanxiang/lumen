@@ -1,5 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { extname, join } from 'path'
+import { inflateRawSync } from 'zlib'
 import { assetPaths } from './repository'
 import { getDb } from './db'
 import type { ExportOptions } from '../shared/types'
@@ -30,8 +31,7 @@ function safePathSegment(s: string): string {
 /* ---------------- 纯 JS ZIP（store 无压缩，图片类素材压不动） ---------------- */
 
 let CRC_TABLE: Int32Array | null = null
-function crc32(buf: Buffer): number {
-  if (!CRC_TABLE) {
+function crc32(buf: Buffer): number {  if (!CRC_TABLE) {
     CRC_TABLE = new Int32Array(256)
     for (let n = 0; n < 256; n++) {
       let c = n
@@ -49,8 +49,10 @@ interface ZipEntry {
   data: Buffer
 }
 
-function zipStore(entries: ZipEntry[]): Buffer {
-  const locals: Buffer[] = []
+export type { ZipEntry }
+
+/** 纯 JS ZIP 写入（store 无压缩，图片类素材压不动） */
+export function zipStore(entries: ZipEntry[]): Buffer {  const locals: Buffer[] = []
   const centrals: Buffer[] = []
   let offset = 0
   for (const e of entries) {
@@ -105,6 +107,50 @@ function zipStore(entries: ZipEntry[]): Buffer {
   end.writeUInt32LE(offset, 16)
   end.writeUInt16LE(0, 20)
   return Buffer.concat([...locals, centralBuf, end])
+}
+
+/**
+ * 纯 JS ZIP 读取（.lumenboard 用）：解析 EOCD + 中央目录 + 本地头。
+ * 支持 store(0) 与 deflate(8) 两种压缩方式（zlib.inflateRawSync），
+ * 兼容其他工具重压缩过的文件。目录条目忽略。
+ */
+export function zipRead(buf: Buffer): Map<string, Buffer> {
+  // 从尾部倒查 EOCD 签名（注释最长 65535 字节）
+  let eocd = -1
+  const searchStart = Math.max(0, buf.length - 22 - 65535)
+  for (let i = buf.length - 22; i >= searchStart; i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) {
+      eocd = i
+      break
+    }
+  }
+  if (eocd < 0) throw new Error('不是有效的 ZIP 文件')
+  const entryCount = buf.readUInt16LE(eocd + 10)
+  let cdOffset = buf.readUInt32LE(eocd + 16)
+  const out = new Map<string, Buffer>()
+  for (let i = 0; i < entryCount; i++) {
+    if (buf.readUInt32LE(cdOffset) !== 0x02014b50) throw new Error('ZIP 中央目录损坏')
+    const method = buf.readUInt16LE(cdOffset + 10)
+    const compSize = buf.readUInt32LE(cdOffset + 20)
+    const nameLen = buf.readUInt16LE(cdOffset + 28)
+    const extraLen = buf.readUInt16LE(cdOffset + 30)
+    const commentLen = buf.readUInt16LE(cdOffset + 32)
+    const localOffset = buf.readUInt32LE(cdOffset + 42)
+    const name = buf.subarray(cdOffset + 46, cdOffset + 46 + nameLen).toString('utf-8')
+    // 跳过目录条目
+    if (!name.endsWith('/')) {
+      if (buf.readUInt32LE(localOffset) !== 0x04034b50) throw new Error('ZIP 本地头损坏')
+      const lNameLen = buf.readUInt16LE(localOffset + 26)
+      const lExtraLen = buf.readUInt16LE(localOffset + 28)
+      const dataStart = localOffset + 30 + lNameLen + lExtraLen
+      const data = buf.subarray(dataStart, dataStart + compSize)
+      if (method === 0) out.set(name, Buffer.from(data))
+      else if (method === 8) out.set(name, inflateRawSync(data))
+      else throw new Error(`不支持的 ZIP 压缩方式: ${method}`)
+    }
+    cdOffset += 46 + nameLen + extraLen + commentLen
+  }
+  return out
 }
 
 /* ---------------- 导出 ---------------- */
