@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Raven silhouette icon</title>
+  <desc id="desc">A clean vector interpretation of a side-profile raven with a long beak, hunched back, heavy body and raised claw.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d6d7d8"/>
+      <stop offset="0.52" stop-color="#bfc1c3"/>
+      <stop offset="1" stop-color="#a8abad"/>
+    </linearGradient>
+    <linearGradient id="raven" x1="0.1" y1="0" x2="0.88" y2="1">
+      <stop offset="0" stop-color="#15171a"/>
+      <stop offset="0.55" stop-color="#090a0c"/>
+      <stop offset="1" stop-color="#030405"/>
+    </linearGradient>
+    <clipPath id="tile">
+      <rect x="16" y="16" width="480" height="480" rx="78"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#tile)">
+    <rect x="16" y="16" width="480" height="480" fill="url(#sky)"/>
+
+    <!-- One continuous head, beak, neck and body silhouette. -->
+    <path fill="url(#raven)" d="
+      M 484 204
+      C 465 187 437 173 399 157
+      C 374 147 354 136 338 118
+      C 319 97 295 86 269 83
+      C 238 80 210 88 185 106
+      C 158 126 143 151 120 176
+      C 99 198 77 210 59 225
+      L 71 229
+      L 54 236
+      C 32 250 23 277 25 311
+      C 27 357 38 405 50 449
+      L 68 512
+      L 418 512
+      C 413 478 403 439 387 401
+      C 373 364 350 329 337 297
+      C 325 267 330 245 349 231
+      C 368 217 392 212 417 212
+      C 443 212 466 217 484 215
+      Q 491 211 484 204
+      Z"/>
+
+    <!-- Raised leg, kept bold enough to survive a 64 px render. -->
+    <path d="M 378 400 C 385 424 394 442 404 441 C 416 439 418 415 416 387 C 414 354 415 321 416 288"
+      fill="none" stroke="#050607" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Three side-view toes and hooked talons. -->
+    <path d="M 416 301 C 414 283 411 265 417 251 C 422 240 419 231 418 220 C 424 227 426 237 423 247"
+      fill="none" stroke="#050607" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M 416 278 C 427 262 441 251 455 250 C 446 255 440 264 437 274"
+      fill="none" stroke="#050607" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M 416 300 C 432 286 449 278 463 280 C 452 284 445 292 440 301"
+      fill="none" stroke="#050607" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M 417 320 C 427 338 441 351 453 350 C 447 359 438 359 429 352"
+      fill="none" stroke="#050607" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Raven silhouette icon</title>
+  <desc id="desc">A clean vector interpretation of a side-profile raven with a long beak, hunched back, heavy body and raised claw.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d6d7d8"/>
+      <stop offset="0.52" stop-color="#bfc1c3"/>
+      <stop offset="1" stop-color="#a8abad"/>
+    </linearGradient>
+    <linearGradient id="raven" x1="0.1" y1="0" x2="0.88" y2="1">
+      <stop offset="0" stop-color="#15171a"/>
+      <stop offset="0.55" stop-color="#090a0c"/>
+      <stop offset="1" stop-color="#030405"/>
+    </linearGradient>
+    <clipPath id="tile">
+      <rect x="16" y="16" width="480" height="480" rx="78"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#tile)">
+    <rect x="16" y="16" width="480" height="480" fill="url(#sky)"/>
+
+    <!-- One continuous head, beak, neck and body silhouette. -->
+    <path fill="url(#raven)" d="
+      M 484 204
+      C 465 187 437 173 399 157
+      C 374 147 354 136 338 118
+      C 319 97 295 86 269 83
+      C 238 80 210 88 185 106
+      C 158 126 143 151 120 176
+      C 99 198 77 210 59 225
+      L 71 229
+      L 54 236
+      C 32 250 23 277 25 311
+      C 27 357 38 405 50 449
+      L 68 512
+      L 418 512
+      C 413 478 403 439 387 401
+      C 373 364 350 329 337 297
+      C 325 267 330 245 349 231
+      C 368 217 392 212 417 212
+      C 443 212 466 217 484 215
+      Q 491 211 484 204
+      Z"/>
+
+    <!-- Raised tarsus: narrow through the middle, with a heavy ankle at the body. -->
+    <path fill="#050607" d="
+      M 374 398
+      C 382 422 394 445 407 451
+      C 418 456 429 449 434 435
+      C 439 421 437 402 435 385
+      L 433 325
+      C 433 314 431 304 434 295
+      L 426 286
+      C 421 299 423 313 424 327
+      L 424 391
+      C 426 412 422 428 415 431
+      C 406 435 396 418 389 398
+      Z"/>
+
+    <!-- Upright digit, including its backward-hooked talon. -->
+    <path fill="#050607" d="
+      M 426 304
+      C 423 292 423 279 428 269
+      C 432 260 431 252 428 245
+      C 424 237 426 229 433 225
+      C 431 235 433 243 438 249
+      C 444 257 444 266 439 275
+      C 434 284 433 294 438 304
+      C 434 308 430 308 426 304
+      Z"/>
+
+    <!-- Upper forward digit: long phalanx and a fine inward hook. -->
+    <path fill="#050607" d="
+      M 428 298
+      C 437 282 447 269 458 262
+      C 466 257 473 258 477 262
+      C 468 263 461 269 458 277
+      C 454 288 445 299 434 307
+      C 430 306 428 303 428 298
+      Z"/>
+
+    <!-- Lower forward digit, offset so the two toes do not merge at icon size. -->
+    <path fill="#050607" d="
+      M 430 309
+      C 442 299 455 291 467 290
+      C 475 289 481 293 483 298
+      C 474 296 467 299 462 306
+      C 456 314 446 319 435 320
+      C 431 318 429 314 430 309
+      Z"/>
+
+    <!-- Rear digit curling down beside the tarsus. -->
+    <path fill="#050607" d="
+      M 427 326
+      C 432 343 439 357 449 365
+      C 456 371 464 370 470 365
+      C 468 374 461 379 453 377
+      C 442 375 433 364 428 351
+      C 424 341 423 332 427 326
+      Z"/>
+  </g>
+</svg>

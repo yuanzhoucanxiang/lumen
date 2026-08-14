@@ -1,4 +1,4 @@
-/* Generate the LUMEN desktop and browser-extension icons directly from the approved raven photograph. */
+/* Generate all LUMEN icons from the approved traced-raven SVG master. */
 const sharp = require('sharp')
 const fs = require('fs')
 const path = require('path')
@@ -6,7 +6,7 @@ const path = require('path')
 async function main() {
   const buildDir = path.join(__dirname, '..', 'build')
   const extIconDir = path.join(__dirname, '..', 'browser-extension', 'icons')
-  const sourcePath = path.join(buildDir, 'raven-icon-source.png')
+  const sourcePath = path.join(buildDir, 'raven-icon-source.svg')
   fs.mkdirSync(buildDir, { recursive: true })
   fs.mkdirSync(extIconDir, { recursive: true })
 
@@ -17,8 +17,8 @@ async function main() {
   const sizes = [16, 24, 32, 48, 64, 128, 256]
   const pngs = []
   for (const size of sizes) {
-    const buffer = await sharp(sourcePath)
-      .resize(size, size, { fit: 'cover', position: 'centre' })
+    const buffer = await sharp(sourcePath, { density: 288 })
+      .resize(size, size)
       .png()
       .toBuffer()
     pngs.push({ size, buffer })
@@ -52,7 +52,7 @@ async function main() {
     path.join(buildDir, 'icon.ico'),
     Buffer.concat([header, ...entries, ...pngs.map((icon) => icon.buffer)])
   )
-  console.log('icons generated from raven-icon-source.png:', fs.readdirSync(buildDir).join(', '))
+  console.log('icons generated from raven-icon-source.svg:', fs.readdirSync(buildDir).join(', '))
 }
 
 main().catch((error) => {
