@@ -128,6 +128,8 @@ const api = {
   ): Promise<BoardItem> => ipcRenderer.invoke('board:addItem', boardId, item),
   updateBoardItem: (id: string, patch: Partial<BoardItem>): Promise<void> =>
     ipcRenderer.invoke('board:updateItem', id, patch),
+  updateBoardItems: (items: { id: string; patch: Partial<BoardItem> }[]): Promise<void> =>
+    ipcRenderer.invoke('board:updateItems', items),
   deleteBoardItem: (id: string): Promise<void> => ipcRenderer.invoke('board:deleteItem', id),
   bringBoardItemToFront: (id: string, boardId: number): Promise<void> =>
     ipcRenderer.invoke('board:front', id, boardId),

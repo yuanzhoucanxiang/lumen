@@ -45,6 +45,7 @@ import {
   listBoardItems,
   addBoardItem,
   updateBoardItem,
+  updateBoardItems,
   deleteBoardItem,
   bringBoardItemToFront,
   renameTag,
@@ -366,6 +367,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     addBoardItem(boardId, item)
   )
   ipcMain.handle('board:updateItem', (_e, id: string, patch: Partial<BoardItem>) => updateBoardItem(id, patch))
+  ipcMain.handle('board:updateItems', (_e, items: { id: string; patch: Partial<BoardItem> }[]) => updateBoardItems(items))
   ipcMain.handle('board:deleteItem', (_e, id: string) => deleteBoardItem(id))
   ipcMain.handle('board:front', (_e, id: string, boardId: number) => bringBoardItemToFront(id, boardId))
 

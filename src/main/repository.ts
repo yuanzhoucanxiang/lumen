@@ -811,6 +811,49 @@ export function updateBoardItem(
   db.prepare('UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), row.board_id)
 }
 
+/** 批量更新白板元素（组移动/组缩放等一次性落库，事务原子） */
+export function updateBoardItems(
+  items: { id: string; patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor'>> }[]
+): void {
+  if (items.length === 0) return
+  const db = getDb()
+  const colMap: Record<string, string> = {
+    x: 'x',
+    y: 'y',
+    width: 'width',
+    height: 'height',
+    z: 'z',
+    text: 'text',
+    noteFont: 'note_font',
+    noteColor: 'note_color'
+  }
+  const run = db.transaction(() => {
+    for (const { id, patch } of items) {
+      const sets: string[] = []
+      const params: unknown[] = []
+      for (const key of Object.keys(colMap) as (keyof typeof colMap)[]) {
+        const v = patch[key as keyof typeof patch]
+        if (v !== undefined) {
+          sets.push(`${colMap[key]} = ?`)
+          params.push(v)
+        }
+      }
+      if (sets.length === 0) continue
+      const row = db.prepare('SELECT board_id FROM board_items WHERE id = ?').get(id) as { board_id: number } | undefined
+      if (!row) continue
+      db.prepare(`UPDATE board_items SET ${sets.join(', ')} WHERE id = ?`).run(...params, id)
+    }
+  })
+  run()
+  // 批量更新后统一刷新 boards.updated_at
+  const touched = getDb()
+    .prepare(
+      `SELECT DISTINCT board_id FROM board_items WHERE id IN (${items.map(() => '?').join(',')})`
+    )
+    .all(...items.map((i) => i.id)) as { board_id: number }[]
+  for (const t of touched) db.prepare('UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), t.board_id)
+}
+
 export function deleteBoardItem(id: string): void {
   const db = getDb()
   const row = db.prepare('SELECT board_id FROM board_items WHERE id = ?').get(id) as { board_id: number } | undefined
