@@ -136,6 +136,11 @@ const api = {
   setBoardGuides: (boardId: number, guidesJson: string): Promise<void> =>
     ipcRenderer.invoke('board:setGuides', boardId, guidesJson),
 
+  /* 白板浮动置顶窗口 */
+  openFloatingBoard: (boardId: number): Promise<void> =>
+    ipcRenderer.invoke('window:floatingOpen', boardId),
+  closeFloatingWindow: (): Promise<void> => ipcRenderer.invoke('window:floatingClose'),
+
   /* 系统操作 */
   showInFolder: (id: string): Promise<void> => ipcRenderer.invoke('shell:showItem', id),
   copyImage: (id: string): Promise<boolean> => ipcRenderer.invoke('asset:copyImage', id),

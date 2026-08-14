@@ -122,6 +122,15 @@ export default function BoardPanel() {
         </button>
 
         <div className="ml-auto flex items-center gap-2">
+          <button
+            aria-label="白板浮动置顶"
+            title="白板浮动置顶(参考作画时贴在旁边)"
+            className="flex h-6 w-6 items-center justify-center rounded-sm text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
+            disabled={!hasBoard}
+            onClick={() => void window.api.openFloatingBoard(activeBoardId!)}
+          >
+            <Icon name="pin" size={13} />
+          </button>
           <span className="mono w-10 text-right text-[11px] text-[var(--text-faint)]">{Math.round(zoom * 100)}%</span>
           <input
             aria-label="白板缩放"

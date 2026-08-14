@@ -453,6 +453,18 @@ export default function BoardCanvas({ onApiReady }: { onApiReady?: (api: BoardCa
     finishMarquee()
   }
 
+  /* ---------- 多窗口同步：窗口获得焦点时刷新（浮动窗与主窗互相看到对方改动） ---------- */
+  useEffect(() => {
+    const onFocus = () => {
+      if (activeBoardId != null) {
+        void refreshBoardItems(activeBoardId)
+        void refreshBoards()
+      }
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [activeBoardId, refreshBoardItems, refreshBoards])
+
   /* ---------- 键盘（空格平移 / Delete 删除选中 / Ctrl+A 全选 / Esc 取消） ---------- */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
