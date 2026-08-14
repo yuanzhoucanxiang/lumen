@@ -187,15 +187,16 @@ export default function Sidebar() {
   const [boardInputVal, setBoardInputVal] = useState('')
 
   /* 分区折叠状态（localStorage 持久化）：文件夹/智能文件夹/白板/标签 */
+  // 白板默认折叠（列表短小,展开也限高,避免挤压文件夹/标签两大分区）
   type SectionKey = 'folders' | 'smart' | 'boards' | 'tags'
   const [sectionFold, setSectionFold] = useState<Record<SectionKey, boolean>>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('lumen.sidebar.fold') ?? '{}') as Partial<
         Record<SectionKey, boolean>
       >
-      return { folders: !!saved.folders, smart: !!saved.smart, boards: !!saved.boards, tags: !!saved.tags }
+      return { folders: !!saved.folders, smart: !!saved.smart, boards: saved.boards !== false, tags: !!saved.tags }
     } catch {
-      return { folders: false, smart: false, boards: false, tags: false }
+      return { folders: false, smart: false, boards: true, tags: false }
     }
   })
   const toggleSection = (key: SectionKey): void => {
@@ -599,8 +600,11 @@ export default function Sidebar() {
         )}
       </section>
 
-      {/* 白板 */}
-      <section className={`${sectionCls(sectionFold.boards)} pb-2`} aria-label="白板">
+      {/* 白板：固定高度块(展开限高内部滚动),不参与 flex-1 平分,避免挤压文件夹/标签 */}
+      <section
+        className={sectionFold.boards ? 'mt-3 shrink-0 px-2' : 'mt-3 flex min-h-0 shrink-0 flex-col px-2'}
+        aria-label="白板"
+      >
         <SectionHeader
           title="白板"
           addLabel="新建白板"
@@ -612,7 +616,7 @@ export default function Sidebar() {
           }}
         />
         {!sectionFold.boards && (
-          <div className="modal-scroll min-h-0 flex-1 space-y-px overflow-y-auto">
+          <div className="modal-scroll max-h-44 min-h-0 space-y-px overflow-y-auto">
           {boardInputOpen && (
             <input
               autoFocus
