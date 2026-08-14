@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Asset, AssetQuery, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSearchProgress, AiSuggestionItem, AppSettings, DupeGroup, ExportOptions, Folder, ImportResult, LibraryInfo, Tag, TagGroup, UpdateStatus } from '../shared/types'
+import type { Asset, AssetQuery, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSearchProgress, AiSuggestionItem, AppSettings, Board, BoardItem, DupeGroup, ExportOptions, Folder, ImportResult, LibraryInfo, Tag, TagGroup, UpdateStatus } from '../shared/types'
 
 const api = {
   /* 库管理 */
@@ -115,6 +115,22 @@ const api = {
     ipcRenderer.invoke('folders:addAssets', assetIds, folderId),
   removeAssetsFromFolder: (assetIds: string[], folderId: number): Promise<void> =>
     ipcRenderer.invoke('folders:removeAssets', assetIds, folderId),
+
+  /* 白板 */
+  listBoards: (): Promise<Board[]> => ipcRenderer.invoke('boards:list'),
+  createBoard: (name: string): Promise<Board> => ipcRenderer.invoke('boards:create', name),
+  renameBoard: (id: number, name: string): Promise<void> => ipcRenderer.invoke('boards:rename', id, name),
+  deleteBoard: (id: number): Promise<void> => ipcRenderer.invoke('boards:delete', id),
+  listBoardItems: (boardId: number): Promise<BoardItem[]> => ipcRenderer.invoke('board:items', boardId),
+  addBoardItem: (
+    boardId: number,
+    item: { assetId?: string | null; type: 'asset' | 'note'; x: number; y: number; width: number; height: number; text?: string }
+  ): Promise<BoardItem> => ipcRenderer.invoke('board:addItem', boardId, item),
+  updateBoardItem: (id: string, patch: Partial<BoardItem>): Promise<void> =>
+    ipcRenderer.invoke('board:updateItem', id, patch),
+  deleteBoardItem: (id: string): Promise<void> => ipcRenderer.invoke('board:deleteItem', id),
+  bringBoardItemToFront: (id: string, boardId: number): Promise<void> =>
+    ipcRenderer.invoke('board:front', id, boardId),
 
   /* 系统操作 */
   showInFolder: (id: string): Promise<void> => ipcRenderer.invoke('shell:showItem', id),

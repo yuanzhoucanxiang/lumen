@@ -91,6 +91,28 @@ function migrate(d: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_deleted_files_hash ON deleted_files(hash, size);
     CREATE INDEX IF NOT EXISTS idx_deleted_files_namesize ON deleted_files(name, size);
+
+    -- 白板：无限画布，素材库的延伸（类 PureRef）
+    CREATE TABLE IF NOT EXISTS boards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS board_items (
+      id TEXT PRIMARY KEY,
+      board_id INTEGER NOT NULL,
+      asset_id TEXT,
+      type TEXT NOT NULL DEFAULT 'asset',
+      x REAL NOT NULL DEFAULT 0,
+      y REAL NOT NULL DEFAULT 0,
+      width REAL NOT NULL DEFAULT 240,
+      height REAL NOT NULL DEFAULT 0,
+      z INTEGER NOT NULL DEFAULT 0,
+      text TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_board_items_board ON board_items(board_id);
   `)
   // 增量迁移：为旧库补充新字段
   ensureColumns(d, 'assets', {

@@ -1,9 +1,10 @@
 import { join } from 'path'
 import { existsSync, rmSync } from 'fs'
+import { randomUUID } from 'crypto'
 import { getDb } from './db'
 import { getLibraryPath } from './library'
 import { assetKindOf, computeDHash } from './importer'
-import type { Asset, AssetQuery, DupeGroup, Folder, SmartConditions, Tag, TagGroup } from '../shared/types'
+import type { Asset, AssetQuery, Board, BoardItem, DupeGroup, Folder, SmartConditions, Tag, TagGroup } from '../shared/types'
 
 interface AssetRow {
   id: string
@@ -672,4 +673,138 @@ export function cleanTrashOlderThan(days: number): number {
     )
   }
   return rows.length
+}
+
+/* ---------------- 白板 ---------------- */
+
+export function listBoards(): Board[] {
+  return getDb()
+    .prepare(
+      `SELECT id, name, created_at AS createdAt, updated_at AS updatedAt
+       FROM boards ORDER BY updated_at DESC`
+    )
+    .all() as Board[]
+}
+
+export function createBoard(name: string): Board {
+  const db = getDb()
+  const now = Date.now()
+  const info = db.prepare('INSERT INTO boards (name, created_at, updated_at) VALUES (?, ?, ?)').run(name, now, now)
+  return { id: Number(info.lastInsertRowid), name, createdAt: now, updatedAt: now }
+}
+
+export function renameBoard(id: number, name: string): void {
+  getDb().prepare('UPDATE boards SET name = ?, updated_at = ? WHERE id = ?').run(name, Date.now(), id)
+}
+
+/** 删除白板（级联删除其元素） */
+export function deleteBoard(id: number): void {
+  const db = getDb()
+  db.prepare('DELETE FROM board_items WHERE board_id = ?').run(id)
+  db.prepare('DELETE FROM boards WHERE id = ?').run(id)
+}
+
+interface BoardItemRow {
+  id: string
+  board_id: number
+  asset_id: string | null
+  type: string
+  x: number
+  y: number
+  width: number
+  height: number
+  z: number
+  text: string
+  created_at: number
+}
+
+function rowToBoardItem(r: BoardItemRow): BoardItem {
+  return {
+    id: r.id,
+    boardId: r.board_id,
+    assetId: r.asset_id,
+    type: r.type === 'note' ? 'note' : 'asset',
+    x: r.x,
+    y: r.y,
+    width: r.width,
+    height: r.height,
+    z: r.z,
+    text: r.text,
+    createdAt: r.created_at
+  }
+}
+
+export function listBoardItems(boardId: number): BoardItem[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, board_id, asset_id, type, x, y, width, height, z, text, created_at
+       FROM board_items WHERE board_id = ? ORDER BY z ASC`
+    )
+    .all(boardId) as BoardItemRow[]
+  return rows.map(rowToBoardItem)
+}
+
+/** 添加白板元素（asset 或 note），返回完整元素 */
+export function addBoardItem(
+  boardId: number,
+  item: { assetId?: string | null; type: 'asset' | 'note'; x: number; y: number; width: number; height: number; text?: string }
+): BoardItem {
+  const db = getDb()
+  const id = randomUUID().replace(/-/g, '').slice(0, 16)
+  const z = (db.prepare('SELECT COALESCE(MAX(z), -1) + 1 AS z FROM board_items WHERE board_id = ?').get(boardId) as { z: number }).z
+  const createdAt = Date.now()
+  db.prepare(
+    `INSERT INTO board_items (id, board_id, asset_id, type, x, y, width, height, z, text, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, boardId, item.assetId ?? null, item.type, item.x, item.y, item.width, item.height, z, item.text ?? '', createdAt)
+  db.prepare('UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), boardId)
+  return {
+    id,
+    boardId,
+    assetId: item.assetId ?? null,
+    type: item.type,
+    x: item.x,
+    y: item.y,
+    width: item.width,
+    height: item.height,
+    z,
+    text: item.text ?? '',
+    createdAt
+  }
+}
+
+/** 更新白板元素（动态 SET，x/y/width/height/z/text 可部分更新） */
+export function updateBoardItem(
+  id: string,
+  patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text'>>
+): void {
+  const db = getDb()
+  const sets: string[] = []
+  const params: unknown[] = []
+  for (const key of ['x', 'y', 'width', 'height', 'z', 'text'] as const) {
+    if (patch[key] !== undefined) {
+      sets.push(`${key} = ?`)
+      params.push(patch[key])
+    }
+  }
+  if (sets.length === 0) return
+  const row = db.prepare('SELECT board_id FROM board_items WHERE id = ?').get(id) as { board_id: number } | undefined
+  if (!row) return
+  db.prepare(`UPDATE board_items SET ${sets.join(', ')} WHERE id = ?`).run(...params, id)
+  db.prepare('UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), row.board_id)
+}
+
+export function deleteBoardItem(id: string): void {
+  const db = getDb()
+  const row = db.prepare('SELECT board_id FROM board_items WHERE id = ?').get(id) as { board_id: number } | undefined
+  db.prepare('DELETE FROM board_items WHERE id = ?').run(id)
+  if (row) db.prepare('UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), row.board_id)
+}
+
+/** 置顶：z = 当前最大值 + 1 */
+export function bringBoardItemToFront(id: string, boardId: number): void {
+  const db = getDb()
+  const z = (db.prepare('SELECT COALESCE(MAX(z), 0) + 1 AS z FROM board_items WHERE board_id = ?').get(boardId) as { z: number }).z
+  db.prepare('UPDATE board_items SET z = ? WHERE id = ?').run(z, id)
+  db.prepare('UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), boardId)
 }

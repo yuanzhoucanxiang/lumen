@@ -38,6 +38,15 @@ import {
   queryAssets,
   removeFromFolder,
   renameFolder,
+  listBoards,
+  createBoard,
+  renameBoard,
+  deleteBoard,
+  listBoardItems,
+  addBoardItem,
+  updateBoardItem,
+  deleteBoardItem,
+  bringBoardItemToFront,
   renameTag,
   renameTagGroup,
   restoreAssets,
@@ -58,6 +67,7 @@ import type {
   AiProcessResult,
   AiScope,
   AssetQuery,
+  BoardItem,
   ExportOptions,
   LibraryInfo
 } from '../shared/types'
@@ -345,6 +355,19 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('folders:removeAssets', (_e, assetIds: string[], folderId: number) =>
     removeFromFolder(assetIds, folderId)
   )
+
+  /* ---------------- 白板 ---------------- */
+  ipcMain.handle('boards:list', () => listBoards())
+  ipcMain.handle('boards:create', (_e, name: string) => createBoard(name))
+  ipcMain.handle('boards:rename', (_e, id: number, name: string) => renameBoard(id, name))
+  ipcMain.handle('boards:delete', (_e, id: number) => deleteBoard(id))
+  ipcMain.handle('board:items', (_e, boardId: number) => listBoardItems(boardId))
+  ipcMain.handle('board:addItem', (_e, boardId: number, item: { assetId?: string | null; type: 'asset' | 'note'; x: number; y: number; width: number; height: number; text?: string }) =>
+    addBoardItem(boardId, item)
+  )
+  ipcMain.handle('board:updateItem', (_e, id: string, patch: Partial<BoardItem>) => updateBoardItem(id, patch))
+  ipcMain.handle('board:deleteItem', (_e, id: string) => deleteBoardItem(id))
+  ipcMain.handle('board:front', (_e, id: string, boardId: number) => bringBoardItemToFront(id, boardId))
 
   /* ---------------- 系统操作 ---------------- */
   ipcMain.handle('assets:export', async (_e, ids: string[], mode: 'folder' | 'zip', opts: ExportOptions | undefined) => {

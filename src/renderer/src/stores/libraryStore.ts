@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Asset, Folder, Tag, TagGroup } from '@shared/types'
+import type { Asset, Board, BoardItem, Folder, Tag, TagGroup } from '@shared/types'
 
 export type ViewType =
   | { type: 'all' }
@@ -7,6 +7,7 @@ export type ViewType =
   | { type: 'trash' }
   | { type: 'folder'; id: number }
   | { type: 'tag'; id: number }
+  | { type: 'board'; id: number }
 
 export type SortBy = 'imported' | 'name' | 'size' | 'star'
 
@@ -18,6 +19,9 @@ interface LibraryState {
   tags: Tag[]
   tagGroups: TagGroup[]
   folders: Folder[]
+  boards: Board[]
+  /** 当前白板的元素（view.type === 'board' 时有效） */
+  boardItems: BoardItem[]
   stats: { total: number; deleted: number; tombstones: number }
 
   view: ViewType
@@ -65,6 +69,9 @@ interface LibraryState {
   refreshTags: () => Promise<void>
   refreshTagGroups: () => Promise<void>
   refreshFolders: () => Promise<void>
+  refreshBoards: () => Promise<void>
+  /** 加载指定白板的元素 */
+  refreshBoardItems: (boardId: number) => Promise<void>
   refreshStats: () => Promise<void>
   refreshAll: () => Promise<void>
 
@@ -126,6 +133,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   tags: [],
   tagGroups: [],
   folders: [],
+  boards: [],
+  boardItems: [],
   stats: { total: 0, deleted: 0, tombstones: 0 },
 
   view: { type: 'all' },
@@ -154,7 +163,13 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   setView: (view) => {
     set({ view, selection: [], previewId: null, similarTo: null, aiSearch: null, aiSearchPending: null })
-    void get().refreshAssets()
+    if (view.type === 'board') {
+      // 白板需要素材信息(名称/宽高比),同时刷新 assets 和 boardItems
+      void get().refreshAssets()
+      void get().refreshBoardItems(view.id)
+    } else {
+      void get().refreshAssets()
+    }
   },
   setKeyword: (keyword) => {
     set({ keyword })
@@ -253,11 +268,20 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   refreshTags: async () => set({ tags: await window.api.listTags() }),
   refreshTagGroups: async () => set({ tagGroups: await window.api.listTagGroups() }),
   refreshFolders: async () => set({ folders: await window.api.listFolders() }),
+  refreshBoards: async () => set({ boards: await window.api.listBoards() }),
+  refreshBoardItems: async (boardId) => set({ boardItems: await window.api.listBoardItems(boardId) }),
   refreshStats: async () => set({ stats: await window.api.getLibraryStats() }),
 
   refreshAll: async () => {
     const s = get()
-    await Promise.all([s.refreshAssets(), s.refreshTags(), s.refreshTagGroups(), s.refreshFolders(), s.refreshStats()])
+    await Promise.all([
+      s.refreshAssets(),
+      s.refreshTags(),
+      s.refreshTagGroups(),
+      s.refreshFolders(),
+      s.refreshBoards(),
+      s.refreshStats()
+    ])
   },
 
   importDialog: async () => {

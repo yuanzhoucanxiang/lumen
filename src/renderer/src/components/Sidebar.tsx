@@ -161,17 +161,18 @@ export default function Sidebar() {
   const tags = useLibraryStore((s) => s.tags)
   const tagGroups = useLibraryStore((s) => s.tagGroups)
   const folders = useLibraryStore((s) => s.folders)
+  const boards = useLibraryStore((s) => s.boards)
   const stats = useLibraryStore((s) => s.stats)
   const [addingFolder, setAddingFolder] = useState<false | { parentId: number | null }>(false)
   const [addingTag, setAddingTag] = useState(false)
   const [inputVal, setInputVal] = useState('')
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [collapsedGroups, setCollapsedGroups] = useState<Set<number>>(new Set())
-  const [renaming, setRenaming] = useState<{ kind: 'tag' | 'group'; id: number } | null>(null)
+  const [renaming, setRenaming] = useState<{ kind: 'tag' | 'group' | 'board'; id: number } | null>(null)
   const [renameVal, setRenameVal] = useState('')
   const [pendingAssign, setPendingAssign] = useState<number | null>(null) // 等待新建分组并移入的标签 id
   const [groupInput, setGroupInput] = useState('')
-  const [menu, setMenu] = useState<{ x: number; y: number; kind: 'folder' | 'tag' | 'tagGroup'; id: number } | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; kind: 'folder' | 'tag' | 'tagGroup' | 'board'; id: number } | null>(null)
   /** 待合并的源标签 id（打开 MergeTagDialog） */
   const [mergeSource, setMergeSource] = useState<number | null>(null)
   /** 标签管理对话框开关 */
@@ -181,17 +182,20 @@ export default function Sidebar() {
   const [libMenuOpen, setLibMenuOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [dropTargetFolder, setDropTargetFolder] = useState<number | null>(null)
+  /** 新建白板输入框 */
+  const [boardInputOpen, setBoardInputOpen] = useState(false)
+  const [boardInputVal, setBoardInputVal] = useState('')
 
-  /* 分区折叠状态（localStorage 持久化）：文件夹/智能文件夹/标签 */
-  type SectionKey = 'folders' | 'smart' | 'tags'
+  /* 分区折叠状态（localStorage 持久化）：文件夹/智能文件夹/白板/标签 */
+  type SectionKey = 'folders' | 'smart' | 'boards' | 'tags'
   const [sectionFold, setSectionFold] = useState<Record<SectionKey, boolean>>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('lumen.sidebar.fold') ?? '{}') as Partial<
         Record<SectionKey, boolean>
       >
-      return { folders: !!saved.folders, smart: !!saved.smart, tags: !!saved.tags }
+      return { folders: !!saved.folders, smart: !!saved.smart, boards: !!saved.boards, tags: !!saved.tags }
     } catch {
-      return { folders: false, smart: false, tags: false }
+      return { folders: false, smart: false, boards: false, tags: false }
     }
   })
   const toggleSection = (key: SectionKey): void => {
@@ -298,13 +302,26 @@ export default function Sidebar() {
       if (renaming.kind === 'tag') {
         await window.api.renameTag(renaming.id, name)
         await useLibraryStore.getState().refreshTags()
-      } else {
+      } else if (renaming.kind === 'group') {
         await window.api.renameTagGroup(renaming.id, name)
         await useLibraryStore.getState().refreshTagGroups()
+      } else if (renaming.kind === 'board') {
+        await window.api.renameBoard(renaming.id, name)
+        await useLibraryStore.getState().refreshBoards()
       }
     }
     setRenaming(null)
     setRenameVal('')
+  }
+
+  /** 新建白板 */
+  const submitBoardAdd = async () => {
+    const name = boardInputVal.trim()
+    setBoardInputOpen(false)
+    if (!name) return
+    const b = await window.api.createBoard(name)
+    await useLibraryStore.getState().refreshBoards()
+    setView({ type: 'board', id: b.id })
   }
 
   /** 新建分组（可顺带把某个标签移入） */
@@ -442,8 +459,8 @@ export default function Sidebar() {
   }
 
   /** 打开右键菜单（按菜单高度钳制，避免超出视口） */
-  const MENU_H: Record<'folder' | 'tag' | 'tagGroup', number> = { folder: 130, tag: 290, tagGroup: 110 }
-  const openMenu = (e: React.MouseEvent, kind: 'folder' | 'tag' | 'tagGroup', id: number): void => {
+  const MENU_H: Record<'folder' | 'tag' | 'tagGroup' | 'board', number> = { folder: 130, tag: 290, tagGroup: 110, board: 110 }
+  const openMenu = (e: React.MouseEvent, kind: 'folder' | 'tag' | 'tagGroup' | 'board', id: number): void => {
     e.preventDefault()
     setMenu({
       x: Math.min(e.clientX, window.innerWidth - 200),
@@ -577,6 +594,68 @@ export default function Sidebar() {
           ))}
           {smartFolders.length === 0 && (
             <p className="px-2.5 py-1 text-[11px] text-[var(--text-faint)]">按条件自动聚合素材</p>
+          )}
+          </div>
+        )}
+      </section>
+
+      {/* 白板 */}
+      <section className={`${sectionCls(sectionFold.boards)} pb-2`} aria-label="白板">
+        <SectionHeader
+          title="白板"
+          addLabel="新建白板"
+          collapsed={sectionFold.boards}
+          onToggle={() => toggleSection('boards')}
+          onAdd={() => {
+            setBoardInputOpen(true)
+            setBoardInputVal('')
+          }}
+        />
+        {!sectionFold.boards && (
+          <div className="modal-scroll min-h-0 flex-1 space-y-px overflow-y-auto">
+          {boardInputOpen && (
+            <input
+              autoFocus
+              aria-label="新白板名称"
+              className="field-input w-full"
+              placeholder="白板名称…"
+              value={boardInputVal}
+              onChange={(e) => setBoardInputVal(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void submitBoardAdd()
+                if (e.key === 'Escape') setBoardInputOpen(false)
+              }}
+              onBlur={() => void submitBoardAdd()}
+            />
+          )}
+          {boards.map((b) =>
+            renaming?.kind === 'board' && renaming.id === b.id ? (
+              <input
+                key={b.id}
+                autoFocus
+                aria-label="重命名白板"
+                className="field-input w-full px-1.5 py-0.5 text-[11px]"
+                value={renameVal}
+                onChange={(e) => setRenameVal(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void submitRename()
+                  if (e.key === 'Escape') setRenaming(null)
+                }}
+                onBlur={() => void submitRename()}
+              />
+            ) : (
+              <NavItem
+                key={b.id}
+                active={view.type === 'board' && view.id === b.id}
+                icon="shapes"
+                label={b.name}
+                onClick={() => setView({ type: 'board', id: b.id })}
+                onContextMenu={(e) => openMenu(e, 'board', b.id)}
+              />
+            )
+          )}
+          {boards.length === 0 && !boardInputOpen && (
+            <p className="px-2.5 py-1 text-[11px] text-[var(--text-faint)]">把参考素材摊开自由摆放</p>
           )}
           </div>
         )}
@@ -912,6 +991,35 @@ export default function Sidebar() {
                 }}
               >
                 删除分组（标签保留）
+              </button>
+            </>
+          )}
+
+          {/* 白板菜单 */}
+          {menu.kind === 'board' && (
+            <>
+              <button
+                role="menuitem"
+                className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                onClick={() => {
+                  setRenaming({ kind: 'board', id: menu.id })
+                  setRenameVal(boards.find((b) => b.id === menu.id)?.name ?? '')
+                  setMenu(null)
+                }}
+              >
+                重命名
+              </button>
+              <button
+                role="menuitem"
+                className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] text-[var(--danger)] hover:bg-[var(--bg-hover)]"
+                onClick={async () => {
+                  await window.api.deleteBoard(menu.id)
+                  await useLibraryStore.getState().refreshBoards()
+                  if (view.type === 'board' && view.id === menu.id) setView({ type: 'all' })
+                  setMenu(null)
+                }}
+              >
+                删除白板
               </button>
             </>
           )}

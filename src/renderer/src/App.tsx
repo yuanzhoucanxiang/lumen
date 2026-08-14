@@ -10,6 +10,7 @@ import ScrambleText from './components/ScrambleText'
 import ConfirmDialog from './components/ConfirmDialog'
 import UpdateNotes from './components/UpdateNotes'
 import AiDialog from './components/AiDialog'
+import BoardView from './components/BoardView'
 import { loadShortcuts, matchesShortcut } from './shortcuts'
 import type { UpdateStatus } from '@shared/types'
 
@@ -21,6 +22,7 @@ export default function App() {
   const toast = useLibraryStore((s) => s.toast)
   const previewId = useLibraryStore((s) => s.previewId)
   const editorId = useLibraryStore((s) => s.editorId)
+  const view = useLibraryStore((s) => s.view)
   const aiDialogOpen = useLibraryStore((s) => s.aiDialogOpen)
   const selection = useLibraryStore((s) => s.selection)
   const [dragOver, setDragOver] = useState(false)
@@ -169,8 +171,14 @@ export default function App() {
       <div className="flex min-h-0 flex-1">
         <Sidebar />
         <main className="flex min-w-0 flex-1 flex-col" style={{ background: 'var(--bg-base)' }}>
-          <Toolbar />
-          <Gallery />
+          {view.type === 'board' ? (
+            <BoardView />
+          ) : (
+            <>
+              <Toolbar />
+              <Gallery />
+            </>
+          )}
         </main>
         <Inspector />
       </div>

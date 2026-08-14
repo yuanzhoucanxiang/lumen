@@ -54,6 +54,34 @@ export interface Folder {
   conditions: string
 }
 
+/** 白板（无限画布） */
+export interface Board {
+  id: number
+  name: string
+  createdAt: number
+  updatedAt: number
+}
+
+/** 白板元素（图片/视频/文字） */
+export interface BoardItem {
+  id: string
+  boardId: number
+  /** 关联素材 id（note 类型为 null） */
+  assetId: string | null
+  /** 'asset' = 图片/视频, 'note' = 文字 */
+  type: 'asset' | 'note'
+  x: number
+  y: number
+  width: number
+  /** 0 = 按素材宽高比自动计算 */
+  height: number
+  /** 层级（越大越上） */
+  z: number
+  /** note 类型的文字内容 */
+  text: string
+  createdAt: number
+}
+
 /** 智能文件夹筛选条件 */
 export interface SmartConditions {
   keyword?: string
