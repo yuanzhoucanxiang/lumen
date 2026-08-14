@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><defs>
+    <linearGradient id="night" x1="50" y1="28" x2="462" y2="488" gradientUnits="userSpaceOnUse"><stop stop-color="#232429"/><stop offset="0.5" stop-color="#111216"/><stop offset="1" stop-color="#07080a"/></linearGradient>
+    <filter id="darkGrain"><feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="2" seed="11" result="n"/><feColorMatrix in="n" type="saturate" values="0" result="m"/><feComponentTransfer in="m"><feFuncA type="table" tableValues="0 0.045"/></feComponentTransfer></filter></defs>
+    <rect x="16" y="16" width="480" height="480" rx="78" fill="url(#night)"/>
+    <rect x="16" y="16" width="480" height="480" rx="78" filter="url(#darkGrain)" opacity="0.44"/>
+    <path d="M130 95H201V336H360V407H130V95Z" fill="#f4efe5"/>
+    <circle cx="361" cy="139" r="47" fill="#ef392f"/>
+    <circle cx="361" cy="139" r="17" fill="#111216"/>
+    <path d="M101 439H410" stroke="#f4efe5" stroke-width="7"/>
+    <path d="M321 439H410" stroke="#ef392f" stroke-width="7"/>
+    <path d="M101 80H167" stroke="#f4efe5" stroke-opacity="0.23" stroke-width="3"/>
+  </svg>

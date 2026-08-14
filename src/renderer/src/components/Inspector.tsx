@@ -94,7 +94,7 @@ export default function Inspector() {
           </span>
           {selection.length > 1 ? (
             <div className="w-full">
-              <p className="mono text-[11px] tracking-[0.08em]">已选择 {selection.length} 个素材</p>
+              <p className="mono text-[12px] tracking-[0.08em]">已选择 {selection.length} 个素材</p>
               {/* 批量评分 */}
               <div className="mt-3 text-left">
                 <div className="section-title mb-1.5">批量评分</div>
@@ -217,7 +217,7 @@ export default function Inspector() {
                 return (
                   <span
                     key={t}
-                    className="flex items-center gap-1.5 border border-[var(--border-strong)] bg-[var(--bg-hover)] px-2 py-0.5 text-[11px]"
+                    className="flex items-center gap-1.5 border border-[var(--border-strong)] bg-[var(--bg-hover)] px-2 py-0.5 text-[12px]"
                   >
                     {color && (
                       <span aria-hidden="true" className="h-2 w-2 rounded-full" style={{ background: color }} />
@@ -238,7 +238,7 @@ export default function Inspector() {
               </label>
               <input
                 id="tag-input"
-                className="w-20 border border-dashed border-[var(--border-strong)] bg-transparent px-2 py-0.5 text-[11px] outline-none transition-colors duration-100 placeholder:text-[var(--text-faint)] focus:border-[var(--accent)]"
+                className="w-20 border border-dashed border-[var(--border-strong)] bg-transparent px-2 py-0.5 text-[12px] outline-none transition-colors duration-100 placeholder:text-[var(--text-faint)] focus:border-[var(--accent)]"
                 placeholder="+ 添加…"
                 value={tagInput}
                 list="tag-suggestions"
@@ -307,7 +307,7 @@ export default function Inspector() {
                 {asset.comment ? (
                   <Markdown text={asset.comment} />
                 ) : (
-                  <span className="text-[11px] text-[var(--text-faint)]">无注释</span>
+                  <span className="text-[12px] text-[var(--text-faint)]">无注释</span>
                 )}
               </div>
             )}
@@ -332,7 +332,7 @@ export default function Inspector() {
 
           {/* 信息 */}
           <div className="section-title mb-1.5">信息</div>
-          <dl className="space-y-1.5 text-[11px] text-[var(--text-dim)]">
+          <dl className="space-y-2 text-[12px] text-[var(--text-dim)]">
             <div className="flex justify-between">
               <dt>格式</dt>
               <dd className="mono uppercase">{asset.ext}</dd>

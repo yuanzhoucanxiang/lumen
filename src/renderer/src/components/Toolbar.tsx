@@ -214,7 +214,7 @@ export default function Toolbar() {
 
   return (
     <div
-      className="flex h-12 shrink-0 items-center gap-2 overflow-x-auto border-b border-[var(--border)] bg-[var(--bg-panel)] px-3"
+      className="flex h-12 shrink-0 items-center gap-2.5 overflow-x-auto border-b border-[var(--border)] bg-[var(--bg-panel)] px-3"
       onScroll={() => setOpenPanel(null)}
     >
       {/* 导入按钮 */}
@@ -259,7 +259,7 @@ export default function Toolbar() {
         </button>
         {/* 进度行（搜索中显示） */}
         {aiMode && aiProgressText && (
-          <div className="pointer-events-none absolute left-0 top-full z-10 mt-1 whitespace-nowrap rounded-sm border border-[var(--border)] bg-[var(--bg-panel)] px-2 py-0.5 text-[11px] text-[var(--accent-text)] shadow-sm">
+          <div className="pointer-events-none absolute left-0 top-full z-10 mt-1 whitespace-nowrap rounded-sm border border-[var(--border)] bg-[var(--bg-panel)] px-2 py-0.5 text-[12px] text-[var(--accent-text)] shadow-sm">
             {aiProgressText}
           </div>
         )}
@@ -342,7 +342,7 @@ export default function Toolbar() {
           </div>
           {colorFilter && (
             <div className="mt-3">
-              <div className="mb-1 flex justify-between text-[11px] text-[var(--text-dim)]">
+              <div className="mb-1 flex justify-between text-[12px] text-[var(--text-dim)]">
                 <label htmlFor="color-tolerance">容差</label>
                 <span className="tnum">{colorFilter.tolerance}%</span>
               </div>
@@ -359,7 +359,7 @@ export default function Toolbar() {
               />
             </div>
           )}
-          <div className="mt-3 flex items-center justify-between text-[11px] text-[var(--text-dim)]">
+          <div className="mt-3 flex items-center justify-between text-[12px] text-[var(--text-dim)]">
             <label htmlFor="color-count">颜色数量</label>
             <select
               id="color-count"

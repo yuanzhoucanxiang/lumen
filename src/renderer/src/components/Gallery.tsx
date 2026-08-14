@@ -9,8 +9,8 @@ import type { IconName } from './Icon'
 import type { Asset } from '@shared/types'
 
 const GAP = 14
-const LABEL_H = 24
-const LIST_ROW_H = 38
+const LABEL_H = 26
+const LIST_ROW_H = 40
 const HOVER_PREVIEW_DELAY = 420
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi', 'wmv', 'm4v'])
 
@@ -103,11 +103,11 @@ function ListRow({ item, selected, onClick, onDoubleClick, onContextMenu }: Item
       </span>
       <span className="mono w-12 shrink-0 text-[10px] uppercase text-[var(--text-faint)]">.{a.ext}</span>
       {a.width > 0 && (
-        <span className="mono tnum w-20 shrink-0 text-[10px] text-[var(--text-faint)]">
+        <span className="mono tnum w-20 shrink-0 text-[11px] text-[var(--text-faint)]">
           {a.width} × {a.height}
         </span>
       )}
-      <span className="mono tnum w-16 shrink-0 text-right text-[10px] text-[var(--text-faint)]">
+      <span className="mono tnum w-16 shrink-0 text-right text-[11px] text-[var(--text-faint)]">
         {fmtSize(a.size)}
       </span>
     </div>
@@ -235,7 +235,7 @@ function AssetCard({
 
         {/* 名称行 */}
         <div
-          className={`mono flex items-center justify-center truncate px-1.5 text-[10.5px] tracking-[0.04em] transition-colors duration-150 ${
+          className={`mono flex items-center justify-center truncate px-1.5 text-[11px] tracking-[0.04em] transition-colors duration-150 ${
             selected ? 'text-[var(--accent-text)]' : 'text-[var(--text-dim)] group-hover:text-[var(--text-main)]'
           }`}
           style={{ height: LABEL_H }}
@@ -451,11 +451,11 @@ export default function Gallery() {
     <div className="flex min-h-0 flex-1 flex-col">
       {/* 以图搜图横幅 */}
       {similarTo && (
-        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--bg-panel)] px-3 text-[12px]">
+        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--bg-panel)] px-4 text-[12px]">
           <Icon name="search" size={12} className="text-[var(--accent-text)]" />
           <span className="text-[var(--text-dim)]">相似搜索：</span>
           <span className="max-w-56 truncate font-medium text-[var(--accent-text)]">{similarTo.name}</span>
-          <span className="mono text-[10px] text-[var(--text-faint)]">{assets.length} 个结果</span>
+          <span className="mono text-[11px] text-[var(--text-faint)]">{assets.length} 个结果</span>
           <button
             className="ml-auto flex items-center gap-1 text-[var(--text-dim)] transition-colors duration-100 hover:text-[var(--text-main)]"
             onClick={() => setSimilarTo(null)}
@@ -468,11 +468,11 @@ export default function Gallery() {
 
       {/* AI 智能搜索横幅 */}
       {aiSearch && (
-        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--bg-panel)] px-3 text-[12px]">
+        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--bg-panel)] px-4 text-[12px]">
           <Icon name="sparkles" size={12} className="text-[var(--accent)]" />
           <span className="text-[var(--text-dim)]">AI 搜索：</span>
           <span className="max-w-56 truncate font-medium text-[var(--accent-text)]">{aiSearch.query}</span>
-          <span className="mono text-[10px] text-[var(--text-faint)]">{assets.length} 个结果</span>
+          <span className="mono text-[11px] text-[var(--text-faint)]">{assets.length} 个结果</span>
           <button
             className="ml-auto flex items-center gap-1 text-[var(--text-dim)] transition-colors duration-100 hover:text-[var(--text-main)]"
             onClick={clearAiSearch}
@@ -588,7 +588,7 @@ export default function Gallery() {
           </div>
           <div className="border-t border-[var(--border)] px-3 py-2">
             <div className="truncate text-[12px]">{hoverPv.a.name}</div>
-            <div className="mono mt-0.5 flex items-center justify-between text-[10px] text-[var(--text-faint)]">
+            <div className="mono mt-0.5 flex items-center justify-between text-[11px] text-[var(--text-faint)]">
               <span className="uppercase">.{hoverPv.a.ext}</span>
               {hoverPv.a.width > 0 && (
                 <span className="tnum">

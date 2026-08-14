@@ -157,7 +157,7 @@ export default function BoardWorkspace() {
           onClick={() => onTrayClick(a)}
         >
           <img src={assetThumbUrl(a)} alt={a.name} className="h-full w-full object-cover" draggable={false} />
-          <span className="absolute bottom-0 left-0 right-0 truncate bg-black/50 px-1 py-px text-[9px] text-white/70 opacity-0 transition-opacity duration-100 group-hover:opacity-100">
+          <span className="absolute bottom-0 left-0 right-0 truncate bg-black/50 px-1 py-px text-[10px] text-white/70 opacity-0 transition-opacity duration-100 group-hover:opacity-100">
             {a.name}
           </span>
         </div>
@@ -199,17 +199,17 @@ export default function BoardWorkspace() {
         )}
         <span className="mono text-[10px] text-[var(--text-faint)]">{boardItems.length} 项</span>
         <div className="mx-1 h-4 w-px bg-[var(--border)]" />
-        <button className="btn-ghost flex items-center gap-1 px-2 py-0.5 text-[11px]" onClick={() => void addNote()} disabled={!board}>
+        <button className="btn-ghost flex items-center gap-1 px-2.5 py-1 text-[12px]" onClick={() => void addNote()} disabled={!board}>
           <Icon name="type" size={11} />
           文字
         </button>
-        <button className="btn-ghost px-2 py-0.5 text-[11px]" onClick={() => void arrange('grid')} disabled={!board}>
+        <button className="btn-ghost px-2.5 py-1 text-[12px]" onClick={() => void arrange('grid')} disabled={!board}>
           网格排列
         </button>
-        <button className="btn-ghost px-2 py-0.5 text-[11px]" onClick={() => void arrange('row')} disabled={!board}>
+        <button className="btn-ghost px-2.5 py-1 text-[12px]" onClick={() => void arrange('row')} disabled={!board}>
           横排
         </button>
-        <button className="btn-ghost px-2 py-0.5 text-[11px]" onClick={() => void arrange('column')} disabled={!board}>
+        <button className="btn-ghost px-2.5 py-1 text-[12px]" onClick={() => void arrange('column')} disabled={!board}>
           竖排
         </button>
         <div className="ml-auto text-[10px] text-[var(--text-faint)]">空格/中键平移 · 滚轮缩放 · 双击托盘素材添加到画布</div>
@@ -238,7 +238,7 @@ export default function BoardWorkspace() {
                 <input
                   autoFocus
                   aria-label="新白板名称"
-                  className="field-input w-full px-1.5 py-1 text-[11px]"
+                  className="field-input w-full px-2 py-1.5 text-[12px]"
                   placeholder="白板名称…"
                   value={addVal}
                   onChange={(e) => setAddVal(e.target.value)}
@@ -252,7 +252,7 @@ export default function BoardWorkspace() {
               {boards.map((b) => (
                 <div
                   key={b.id}
-                  className={`flex cursor-pointer items-center gap-1.5 rounded-sm px-1.5 py-1 text-[12px] transition-colors duration-100 ${
+                  className={`flex cursor-pointer items-center gap-1.5 rounded-sm px-2 py-1.5 text-[13px] transition-colors duration-100 ${
                     b.id === activeBoardId ? 'bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]' : 'text-[var(--text-main)] hover:bg-[var(--bg-hover)]'
                   }`}
                   onClick={() => openBoard(b.id)}
@@ -268,7 +268,7 @@ export default function BoardWorkspace() {
                 </div>
               ))}
               {boards.length === 0 && !adding && (
-                <p className="px-1 py-2 text-[11px] text-[var(--text-faint)]">还没有白板,点 + 新建</p>
+                <p className="px-1 py-2 text-[12px] text-[var(--text-faint)]">还没有白板,点 + 新建</p>
               )}
             </div>
             {renamingId != null && (
@@ -276,7 +276,7 @@ export default function BoardWorkspace() {
                 <input
                   autoFocus
                   aria-label="重命名白板"
-                  className="field-input w-full px-1.5 py-1 text-[11px]"
+                  className="field-input w-full px-2 py-1.5 text-[12px]"
                   value={renameVal}
                   onChange={(e) => setRenameVal(e.target.value)}
                   onKeyDown={(e) => {
@@ -319,7 +319,7 @@ export default function BoardWorkspace() {
             </div>
             <input
               aria-label="搜索托盘素材"
-              className="field-input mb-1.5 w-full px-1.5 py-1 text-[11px]"
+              className="field-input mb-1.5 w-full px-2 py-1.5 text-[12px]"
               placeholder="搜索素材…"
               value={trayKeyword}
               onChange={(e) => setTrayKeyword(e.target.value)}
@@ -327,7 +327,7 @@ export default function BoardWorkspace() {
             <div className="modal-scroll min-h-0 flex-1 space-y-1 overflow-y-auto">
               <div className="grid grid-cols-2 gap-1">{trayGrid}</div>
               {trayAssets.length === 0 && (
-                <p className="px-1 py-2 text-[11px] text-[var(--text-faint)]">拖到右侧画布,或双击添加</p>
+                <p className="px-1 py-2 text-[12px] text-[var(--text-faint)]">拖到右侧画布,或双击添加</p>
               )}
             </div>
           </div>

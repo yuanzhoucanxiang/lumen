@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><defs>
+  <linearGradient id="paper" x1="58" y1="28" x2="465" y2="490" gradientUnits="userSpaceOnUse"><stop stop-color="#fbf8f1"/><stop offset="0.55" stop-color="#f3efe6"/><stop offset="1" stop-color="#ded6c9"/></linearGradient>
+  <filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.72" numOctaves="2" seed="7" result="n"/><feColorMatrix in="n" type="saturate" values="0" result="m"/><feComponentTransfer in="m"><feFuncA type="table" tableValues="0 0.032"/></feComponentTransfer></filter>
+  <filter id="press" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="1.8" flood-color="#ffffff" flood-opacity="0.5"/><feDropShadow dx="0" dy="-1" stdDeviation="1.5" flood-color="#605a51" flood-opacity="0.16"/></filter></defs>
+    <rect x="16" y="16" width="480" height="480" rx="64" fill="url(#paper)"/><rect x="16" y="16" width="480" height="480" rx="64" filter="url(#grain)" opacity="0.62"/>
+    <path d="M163 78H215V351H354V403H163V78Z" fill="#111317"/>
+    <circle cx="328" cy="143" r="29" fill="#ef392f"/>
+    <path d="M375 78V403" stroke="#111317" stroke-width="4"/>
+    <path d="M390 78V278" stroke="#ef392f" stroke-width="10"/>
+    <path d="M91 435H144M163 435H215M234 435H286M305 435H357M376 435H421" stroke="#111317" stroke-width="5"/>
+  </svg>

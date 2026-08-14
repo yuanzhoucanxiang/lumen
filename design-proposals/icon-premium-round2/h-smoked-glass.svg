@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><defs>
+    <linearGradient id="bg" x1="56" y1="28" x2="456" y2="488" gradientUnits="userSpaceOnUse"><stop stop-color="#1a2633"/><stop offset="0.5" stop-color="#08121c"/><stop offset="1" stop-color="#03070c"/></linearGradient>
+    <linearGradient id="glass" x1="122" y1="92" x2="392" y2="426" gradientUnits="userSpaceOnUse"><stop stop-color="#e8faff" stop-opacity="0.3"/><stop offset="0.32" stop-color="#68d6ff" stop-opacity="0.13"/><stop offset="0.72" stop-color="#235b7f" stop-opacity="0.09"/><stop offset="1" stop-color="#dff8ff" stop-opacity="0.19"/></linearGradient>
+    <linearGradient id="edge" x1="133" y1="104" x2="381" y2="409" gradientUnits="userSpaceOnUse"><stop stop-color="#e8fbff"/><stop offset="0.42" stop-color="#6ad8ff"/><stop offset="1" stop-color="#2374a9"/></linearGradient>
+    <radialGradient id="lens" cx="0" cy="0" r="1" gradientTransform="translate(331 166) rotate(90) scale(137)"><stop stop-color="#dffbff" stop-opacity="0.92"/><stop offset="0.24" stop-color="#65d8ff" stop-opacity="0.55"/><stop offset="1" stop-color="#65d8ff" stop-opacity="0"/></radialGradient>
+    <filter id="glassShadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#000000" flood-opacity="0.62"/></filter></defs>
+    <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
+    <circle cx="331" cy="166" r="125" fill="url(#lens)" opacity="0.5"/>
+    <rect x="105" y="84" width="302" height="344" rx="91" fill="#02070b" opacity="0.68" filter="url(#glassShadow)"/>
+    <rect x="105" y="84" width="302" height="344" rx="91" fill="url(#glass)" stroke="url(#edge)" stroke-opacity="0.58" stroke-width="4"/>
+    <path d="M164 139V316C164 345.8 188.2 370 218 370H354" fill="none" stroke="#e9fbff" stroke-opacity="0.88" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M177 143V309C177 335.5 198.5 357 225 357H350" fill="none" stroke="#61d2ff" stroke-opacity="0.45" stroke-width="10" stroke-linecap="round"/>
+    <circle cx="334" cy="164" r="23" fill="#eaffff"/>
+    <circle cx="334" cy="164" r="42" fill="none" stroke="#7edfff" stroke-opacity="0.38" stroke-width="3"/>
+  </svg>

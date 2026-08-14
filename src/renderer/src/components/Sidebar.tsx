@@ -83,7 +83,7 @@ function NavItem({
         </span>
       )}
       {count !== undefined && count > 0 && (
-        <span className="tnum mono text-[10px] text-[var(--text-faint)]">{count}</span>
+        <span className="tnum mono text-[11px] text-[var(--text-faint)]">{count}</span>
       )}
     </button>
   )
@@ -108,7 +108,7 @@ function SectionHeader({
   onToggle: () => void
 }) {
   return (
-    <div className="mb-1 flex items-center justify-between border-b border-[var(--border)] px-1 pb-1.5 pt-0">
+    <div className="mb-1 flex items-center justify-between border-b border-[var(--border)] px-1 pb-2 pt-0">
       <button
         aria-expanded={!collapsed}
         aria-label={`${collapsed ? '展开' : '折叠'}${title}`}
@@ -213,7 +213,7 @@ export default function Sidebar() {
   }
   /** 展开的分区：平分空间 + 内容独立滚动；折叠：只占标题 */
   const sectionCls = (collapsed: boolean): string =>
-    collapsed ? 'mt-3 shrink-0 px-2' : 'mt-3 flex min-h-0 flex-1 flex-col px-2'
+    collapsed ? 'mt-4 shrink-0 px-2' : 'mt-4 flex min-h-0 flex-1 flex-col px-2'
 
   const ASSET_MIME = 'application/x-eaglelike-assets'
 
@@ -527,7 +527,7 @@ export default function Sidebar() {
   return (
     <nav
       aria-label="素材库导航"
-      className="flex w-60 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]"
+      className="flex w-64 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]"
       onClick={() => setMenu(null)}
     >
       {/* 品牌区 */}
@@ -585,11 +585,11 @@ export default function Sidebar() {
           }}
         />
         {!sectionFold.folders && (
-          <div className="modal-scroll min-h-0 flex-1 space-y-px overflow-y-auto">
+          <div className="modal-scroll min-h-0 flex-1 space-y-0.5 overflow-y-auto">
           {addingFolder && addingFolder.parentId === null && addFolderInput}
           {folderTree.map((node) => renderFolderNode(node, 0))}
           {folderTree.length === 0 && !addingFolder && (
-            <p className="px-2.5 py-1 text-[11px] text-[var(--text-faint)]">暂无文件夹</p>
+            <p className="px-2.5 py-1.5 text-[12px] text-[var(--text-faint)]">暂无文件夹</p>
           )}
           </div>
         )}
@@ -605,7 +605,7 @@ export default function Sidebar() {
           onAdd={() => setSmartDialog({ open: true, edit: null })}
         />
         {!sectionFold.smart && (
-          <div className="modal-scroll min-h-0 flex-1 space-y-px overflow-y-auto">
+          <div className="modal-scroll min-h-0 flex-1 space-y-0.5 overflow-y-auto">
           {smartFolders.map((f) => (
             <NavItem
               key={f.id}
@@ -618,7 +618,7 @@ export default function Sidebar() {
             />
           ))}
           {smartFolders.length === 0 && (
-            <p className="px-2.5 py-1 text-[11px] text-[var(--text-faint)]">按条件自动聚合素材</p>
+            <p className="px-2.5 py-1.5 text-[12px] text-[var(--text-faint)]">按条件自动聚合素材</p>
           )}
           </div>
         )}
@@ -640,7 +640,7 @@ export default function Sidebar() {
           }}
         />
         {!sectionFold.boards && (
-          <div className="modal-scroll max-h-44 min-h-0 space-y-px overflow-y-auto">
+          <div className="modal-scroll max-h-44 min-h-0 space-y-0.5 overflow-y-auto">
           {boardInputOpen && (
             <input
               autoFocus
@@ -683,7 +683,7 @@ export default function Sidebar() {
             )
           )}
           {boards.length === 0 && !boardInputOpen && (
-            <p className="px-2.5 py-1 text-[11px] text-[var(--text-faint)]">把参考素材摊开自由摆放</p>
+            <p className="px-2.5 py-1.5 text-[12px] text-[var(--text-faint)]">把参考素材摊开自由摆放</p>
           )}
           </div>
         )}
@@ -705,7 +705,7 @@ export default function Sidebar() {
           }}
         />
         {!sectionFold.tags && (
-          <div className="modal-scroll min-h-0 flex-1 space-y-px overflow-y-auto">
+          <div className="modal-scroll min-h-0 flex-1 space-y-0.5 overflow-y-auto">
           {addingTag && (
             <input
               autoFocus
@@ -766,7 +766,7 @@ export default function Sidebar() {
                   />
                 ) : (
                   <button
-                    className="flex min-w-0 flex-1 items-center gap-1.5 px-1 py-0.5 text-left"
+                    className="flex min-w-0 flex-1 items-center gap-1.5 px-1 py-1 text-left"
                     onClick={() => toggleGroupCollapse(group.id)}
                     onContextMenu={(e) => openMenu(e, 'tagGroup', group.id)}
                   >
@@ -779,7 +779,7 @@ export default function Sidebar() {
                 <div style={{ paddingLeft: 14 }}>
                   {gts.map((t) => renderTag(t))}
                   {gts.length === 0 && (
-                    <p className="px-2.5 py-0.5 text-[10px] text-[var(--text-faint)]">空分组</p>
+                    <p className="px-2.5 py-1 text-[11px] text-[var(--text-faint)]">空分组</p>
                   )}
                 </div>
               )}
@@ -790,7 +790,7 @@ export default function Sidebar() {
           {ungroupedTags.map((t) => renderTag(t))}
 
           {tags.length === 0 && !addingTag && (
-            <p className="px-2.5 py-1 text-[11px] text-[var(--text-faint)]">暂无标签</p>
+            <p className="px-2.5 py-1.5 text-[12px] text-[var(--text-faint)]">暂无标签</p>
           )}
           </div>
         )}
@@ -807,7 +807,7 @@ export default function Sidebar() {
           {menu.kind === 'folder' && folders.find((f) => f.id === menu.id)?.isSmart === 1 && (
             <button
               role="menuitem"
-              className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+              className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
               onClick={() => {
                 const f = folders.find((x) => x.id === menu.id) ?? null
                 setSmartDialog({ open: true, edit: f })
@@ -820,7 +820,7 @@ export default function Sidebar() {
           {menu.kind === 'folder' && folders.find((f) => f.id === menu.id)?.isSmart === 0 && (
             <button
               role="menuitem"
-              className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+              className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
               onClick={() => {
                 const pid = menu.id
                 setCollapsed((prev) => {
@@ -840,7 +840,7 @@ export default function Sidebar() {
           {menu.kind === 'folder' && (
             <button
               role="menuitem"
-              className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] text-[var(--danger)] hover:bg-[var(--bg-hover)]"
+              className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] text-[var(--danger)] hover:bg-[var(--bg-hover)]"
               onClick={async () => {
                 await window.api.deleteFolder(menu.id)
                 await useLibraryStore.getState().refreshFolders()
@@ -891,7 +891,7 @@ export default function Sidebar() {
               <div className="my-1 border-t border-[var(--border)]" />
               <button
                 role="menuitem"
-                className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
                 onClick={() => {
                   setRenaming({ kind: 'tag', id: menu.id })
                   setRenameVal(tags.find((t) => t.id === menu.id)?.name ?? '')
@@ -902,7 +902,7 @@ export default function Sidebar() {
               </button>
               <button
                 role="menuitem"
-                className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
                 onClick={async () => {
                   const cur = tags.find((t) => t.id === menu.id)
                   await window.api.setTagPriority(menu.id, cur?.priority === 1 ? 0 : 1)
@@ -914,7 +914,7 @@ export default function Sidebar() {
               </button>
               <button
                 role="menuitem"
-                className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
                 onClick={async () => {
                   const cur = tags.find((t) => t.id === menu.id)
                   await window.api.setTagExcluded(menu.id, cur?.excluded === 1 ? 0 : 1)
@@ -926,7 +926,7 @@ export default function Sidebar() {
               </button>
               <button
                 role="menuitem"
-                className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
                 onClick={() => {
                   setMergeSource(menu.id)
                   setMenu(null)
@@ -937,13 +937,13 @@ export default function Sidebar() {
               <div className="relative group/tg">
                 <button
                   role="menuitem"
-                  className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                  className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
                 >
                   移动到分组 ▸
                 </button>
                 <div className="menu absolute left-full top-0 hidden w-40 py-1 group-hover/tg:block">
                   <button
-                    className="block w-full cursor-pointer px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                    className="block w-full cursor-pointer px-3 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
                     onClick={async () => {
                       await window.api.assignTagToGroup(menu.id, null)
                       await useLibraryStore.getState().refreshTags()
@@ -955,7 +955,7 @@ export default function Sidebar() {
                   {tagGroups.map((g) => (
                     <button
                       key={g.id}
-                      className="block w-full cursor-pointer truncate px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                      className="block w-full cursor-pointer truncate px-3 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
                       onClick={async () => {
                         await window.api.assignTagToGroup(menu.id, g.id)
                         await useLibraryStore.getState().refreshTags()
@@ -967,7 +967,7 @@ export default function Sidebar() {
                   ))}
                   <div className="my-1 border-t border-[var(--border)]" />
                   <button
-                    className="block w-full cursor-pointer px-3 py-1.5 text-left text-[12px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]"
+                    className="block w-full cursor-pointer px-3 py-2 text-left text-[12px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]"
                     onClick={() => {
                       setPendingAssign(menu.id)
                       setGroupInput('')
@@ -981,7 +981,7 @@ export default function Sidebar() {
               <div className="my-1 border-t border-[var(--border)]" />
               <button
                 role="menuitem"
-                className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] text-[var(--danger)] hover:bg-[var(--bg-hover)]"
+                className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] text-[var(--danger)] hover:bg-[var(--bg-hover)]"
                 onClick={async () => {
                   await window.api.deleteTag(menu.id)
                   await useLibraryStore.getState().refreshTags()
@@ -999,7 +999,7 @@ export default function Sidebar() {
             <>
               <button
                 role="menuitem"
-                className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
                 onClick={() => {
                   setRenaming({ kind: 'group', id: menu.id })
                   setRenameVal(tagGroups.find((g) => g.id === menu.id)?.name ?? '')
@@ -1010,7 +1010,7 @@ export default function Sidebar() {
               </button>
               <button
                 role="menuitem"
-                className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] text-[var(--danger)] hover:bg-[var(--bg-hover)]"
+                className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] text-[var(--danger)] hover:bg-[var(--bg-hover)]"
                 onClick={async () => {
                   await window.api.deleteTagGroup(menu.id)
                   await useLibraryStore.getState().refreshTags()
@@ -1028,7 +1028,7 @@ export default function Sidebar() {
             <>
               <button
                 role="menuitem"
-                className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
                 onClick={() => {
                   setRenaming({ kind: 'board', id: menu.id })
                   setRenameVal(boards.find((b) => b.id === menu.id)?.name ?? '')
@@ -1039,7 +1039,7 @@ export default function Sidebar() {
               </button>
               <button
                 role="menuitem"
-                className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] text-[var(--danger)] hover:bg-[var(--bg-hover)]"
+                className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] text-[var(--danger)] hover:bg-[var(--bg-hover)]"
                 onClick={async () => {
                   await window.api.deleteBoard(menu.id)
                   await useLibraryStore.getState().refreshBoards()
@@ -1063,7 +1063,7 @@ export default function Sidebar() {
       )}
 
       {/* 状态行 */}
-      <div className="mono flex items-center gap-1.5 border-t border-[var(--border)] px-3.5 pt-2 text-[9.5px] uppercase tracking-[0.16em] text-[var(--text-faint)]">
+      <div className="mono flex items-center gap-1.5 border-t border-[var(--border)] px-3.5 pt-2 text-[11px] uppercase tracking-[0.16em] text-[var(--text-faint)]">
         <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
         SYNC · LOCAL DB · OK
       </div>
@@ -1103,7 +1103,7 @@ export default function Sidebar() {
             ))}
             <div className="my-1 border-t border-[var(--border)]" />
             <button
-              className="block w-full cursor-pointer px-3 py-1.5 text-left text-[12px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]"
+              className="block w-full cursor-pointer px-3 py-2 text-left text-[12px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]"
               onClick={() => void openNewLib()}
             >
               + 新建 / 打开其他库…

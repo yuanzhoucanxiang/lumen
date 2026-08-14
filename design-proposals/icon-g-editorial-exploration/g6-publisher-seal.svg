@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><defs>
+    <linearGradient id="card" x1="52" y1="26" x2="469" y2="490" gradientUnits="userSpaceOnUse"><stop stop-color="#efe7d8"/><stop offset="0.55" stop-color="#ded2c0"/><stop offset="1" stop-color="#c9baa5"/></linearGradient>
+    <filter id="sealGrain"><feTurbulence type="fractalNoise" baseFrequency="0.56" numOctaves="3" seed="19" result="n"/><feColorMatrix in="n" type="saturate" values="0" result="m"/><feComponentTransfer in="m"><feFuncA type="table" tableValues="0 0.05"/></feComponentTransfer></filter></defs>
+    <rect x="16" y="16" width="480" height="480" rx="54" fill="url(#card)"/>
+    <rect x="16" y="16" width="480" height="480" rx="54" filter="url(#sealGrain)" opacity="0.62"/>
+    <path d="M105 92H393V420H105V92Z" fill="none" stroke="#111317" stroke-width="8"/>
+    <path d="M141 128H207V326H340V384H141V128Z" fill="#111317"/>
+    <circle cx="357" cy="148" r="62" fill="#ef392f" opacity="0.96"/>
+    <circle cx="357" cy="148" r="35" fill="none" stroke="#e8dfd1" stroke-width="5" opacity="0.78"/>
+    <path d="M357 104V192M313 148H401" stroke="#e8dfd1" stroke-width="5" opacity="0.76"/>
+    <path d="M105 420L181 344" stroke="#ef392f" stroke-width="8"/>
+  </svg>

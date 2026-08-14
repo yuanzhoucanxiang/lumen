@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><defs>
+  <linearGradient id="night" x1="48" y1="24" x2="469" y2="491" gradientUnits="userSpaceOnUse"><stop stop-color="#292b30"/><stop offset="0.48" stop-color="#121419"/><stop offset="1" stop-color="#07080b"/></linearGradient>
+  <radialGradient id="sheen" cx="0" cy="0" r="1" gradientTransform="translate(194 101) rotate(51) scale(390)"><stop stop-color="#ffffff" stop-opacity="0.07"/><stop offset="0.62" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
+  <filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="2" seed="29" result="n"/><feColorMatrix in="n" type="saturate" values="0" result="m"/><feComponentTransfer in="m"><feFuncA type="table" tableValues="0 0.038"/></feComponentTransfer></filter></defs>
+    <rect x="16" y="16" width="480" height="480" rx="78" fill="url(#night)"/><rect x="16" y="16" width="480" height="480" rx="78" fill="url(#sheen)"/><rect x="16" y="16" width="480" height="480" rx="78" filter="url(#grain)" opacity="0.48"/>
+    <path d="M135 82H231L273 197L224 432H135V82Z" fill="#f2ede3"/>
+    <path d="M231 82H425V144L364 229L273 197L231 82Z" fill="#ddd8cf"/>
+    <path d="M273 197L364 229L417 412H224L273 197Z" fill="#5e6064" opacity="0.45"/>
+    <path d="M273 197L224 432H315" fill="#101216" opacity="0.56"/>
+    <circle cx="348" cy="162" r="47" fill="#ef3b31"/><circle cx="348" cy="162" r="17" fill="#101216"/><circle cx="340" cy="153" r="5" fill="#f2ede3" opacity="0.72"/>
+    <path d="M103 449H407" stroke="#f2ede3" stroke-opacity="0.32" stroke-width="4"/>
+  </svg>
