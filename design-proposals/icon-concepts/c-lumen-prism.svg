@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="54" y1="31" x2="458" y2="487" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#28214d"/><stop offset="0.48" stop-color="#11142e"/><stop offset="1" stop-color="#080b17"/>
+    </linearGradient>
+    <radialGradient id="core" cx="0" cy="0" r="1" gradientTransform="translate(256 255) rotate(90) scale(201)">
+      <stop stop-color="#82ddff" stop-opacity="0.32"/><stop offset="1" stop-color="#7770ff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="p1" x1="152" y1="125" x2="274" y2="255" gradientUnits="userSpaceOnUse"><stop stop-color="#a9ecff"/><stop offset="1" stop-color="#54bdf2"/></linearGradient>
+    <linearGradient id="p2" x1="360" y1="132" x2="269" y2="261" gradientUnits="userSpaceOnUse"><stop stop-color="#8b86ff"/><stop offset="1" stop-color="#5bc9fa"/></linearGradient>
+    <linearGradient id="p3" x1="347" y1="389" x2="257" y2="267" gradientUnits="userSpaceOnUse"><stop stop-color="#477bff"/><stop offset="1" stop-color="#7bcfff"/></linearGradient>
+    <filter id="blur"><feGaussianBlur stdDeviation="22"/></filter></defs>
+  
+    <path d="M88 16H404L496 108V424C496 463.8 463.8 496 424 496H88C48.2 496 16 463.8 16 424V88C16 48.2 48.2 16 88 16Z" fill="url(#bg)"/><path d="M88 16H404L496 108V424C496 463.8 463.8 496 424 496H88C48.2 496 16 463.8 16 424V88C16 48.2 48.2 16 88 16Z" fill="url(#core)"/>
+    <path d="M406 18L494 106H438C420.3 106 406 91.7 406 74V18Z" fill="#8a83ff" opacity="0.16"/>
+    <circle cx="256" cy="256" r="92" fill="#5dc9ff" opacity="0.21" filter="url(#blur)"/>
+    <path d="M256 92L377 162L305 229H207L135 162L256 92Z" fill="url(#p1)"/>
+    <path d="M377 162V302L282 276L233 191L256 92L377 162Z" fill="url(#p2)" opacity="0.95"/>
+    <path d="M377 302L256 372L233 276L282 191L377 162V302Z" fill="url(#p3)" opacity="0.93"/>
+    <path d="M256 372L135 302L207 229H305L377 302L256 372Z" fill="#3d7fd5"/>
+    <path d="M135 302V162L230 188L279 273L256 372L135 302Z" fill="#58b9ea"/>
+    <path d="M135 162L256 92L279 188L230 273L135 302V162Z" fill="#8bdcf8"/>
+    <circle cx="256" cy="256" r="58" fill="#0d1530" stroke="#d9f7ff" stroke-width="13"/>
+    <circle cx="256" cy="256" r="24" fill="#f5fdff"/>
+  
+</svg>

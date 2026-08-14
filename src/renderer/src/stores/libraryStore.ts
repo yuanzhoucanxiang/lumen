@@ -7,7 +7,7 @@ export type ViewType =
   | { type: 'trash' }
   | { type: 'folder'; id: number }
   | { type: 'tag'; id: number }
-  | { type: 'board'; id: number }
+  | { type: 'boards' }
 
 export type SortBy = 'imported' | 'name' | 'size' | 'star'
 
@@ -20,8 +20,10 @@ interface LibraryState {
   tagGroups: TagGroup[]
   folders: Folder[]
   boards: Board[]
-  /** 当前白板的元素（view.type === 'board' 时有效） */
+  /** 当前白板的元素（view.type === 'boards' 时有效） */
   boardItems: BoardItem[]
+  /** 白板工作区当前打开的白板 id（null = 未打开） */
+  activeBoardId: number | null
   stats: { total: number; deleted: number; tombstones: number }
 
   view: ViewType
@@ -72,6 +74,9 @@ interface LibraryState {
   refreshBoards: () => Promise<void>
   /** 加载指定白板的元素 */
   refreshBoardItems: (boardId: number) => Promise<void>
+  /** 打开白板工作区并切到指定白板 */
+  openBoard: (boardId: number) => void
+  setActiveBoardId: (boardId: number | null) => void
   refreshStats: () => Promise<void>
   refreshAll: () => Promise<void>
 
@@ -135,6 +140,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   folders: [],
   boards: [],
   boardItems: [],
+  activeBoardId: null,
   stats: { total: 0, deleted: 0, tombstones: 0 },
 
   view: { type: 'all' },
@@ -163,13 +169,28 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   setView: (view) => {
     set({ view, selection: [], previewId: null, similarTo: null, aiSearch: null, aiSearchPending: null })
-    if (view.type === 'board') {
-      // 白板需要素材信息(名称/宽高比),同时刷新 assets 和 boardItems
+    if (view.type === 'boards') {
+      // 白板工作区:刷新白板列表 + 素材托盘需要素材;若已打开白板则刷新其元素
+      void get().refreshBoards()
       void get().refreshAssets()
-      void get().refreshBoardItems(view.id)
+      const ab = get().activeBoardId
+      if (ab != null) void get().refreshBoardItems(ab)
     } else {
+      // 离开工作区清激活白板
+      if (get().activeBoardId != null) set({ activeBoardId: null })
       void get().refreshAssets()
     }
+  },
+  /** 打开白板工作区并切到指定白板 */
+  openBoard: (boardId) => {
+    set({ activeBoardId: boardId, view: { type: 'boards' }, selection: [], previewId: null, similarTo: null, aiSearch: null, aiSearchPending: null })
+    void get().refreshBoards()
+    void get().refreshAssets()
+    void get().refreshBoardItems(boardId)
+  },
+  setActiveBoardId: (boardId) => {
+    set({ activeBoardId: boardId })
+    if (boardId != null) void get().refreshBoardItems(boardId)
   },
   setKeyword: (keyword) => {
     set({ keyword })

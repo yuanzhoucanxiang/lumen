@@ -162,6 +162,7 @@ export default function Sidebar() {
   const tagGroups = useLibraryStore((s) => s.tagGroups)
   const folders = useLibraryStore((s) => s.folders)
   const boards = useLibraryStore((s) => s.boards)
+  const activeBoardId = useLibraryStore((s) => s.activeBoardId)
   const stats = useLibraryStore((s) => s.stats)
   const [addingFolder, setAddingFolder] = useState<false | { parentId: number | null }>(false)
   const [addingTag, setAddingTag] = useState(false)
@@ -322,7 +323,24 @@ export default function Sidebar() {
     if (!name) return
     const b = await window.api.createBoard(name)
     await useLibraryStore.getState().refreshBoards()
-    setView({ type: 'board', id: b.id })
+    useLibraryStore.getState().openBoard(b.id)
+  }
+
+  /** 进入白板工作区(无白板时先建「默认白板」;有则打开第一个) */
+  const openBoardsWorkspace = async () => {
+    const s = useLibraryStore.getState()
+    if (s.boards.length === 0) {
+      const b = await window.api.createBoard('默认白板')
+      await s.refreshBoards()
+      s.openBoard(b.id)
+      return
+    }
+    const current = s.activeBoardId
+    if (current != null && s.boards.some((b) => b.id === current)) {
+      s.setView({ type: 'boards' })
+    } else {
+      s.openBoard(s.boards[0].id)
+    }
   }
 
   /** 新建分组（可顺带把某个标签移入） */
@@ -545,6 +563,12 @@ export default function Sidebar() {
           count={stats.deleted}
           onClick={() => setView({ type: 'trash' })}
         />
+        <NavItem
+          active={view.type === 'boards'}
+          icon="shapes"
+          label="白板"
+          onClick={() => void openBoardsWorkspace()}
+        />
       </div>
 
       {/* 文件夹 */}
@@ -650,10 +674,10 @@ export default function Sidebar() {
             ) : (
               <NavItem
                 key={b.id}
-                active={view.type === 'board' && view.id === b.id}
+                active={view.type === 'boards' && activeBoardId === b.id}
                 icon="shapes"
                 label={b.name}
-                onClick={() => setView({ type: 'board', id: b.id })}
+                onClick={() => useLibraryStore.getState().openBoard(b.id)}
                 onContextMenu={(e) => openMenu(e, 'board', b.id)}
               />
             )
@@ -1019,7 +1043,11 @@ export default function Sidebar() {
                 onClick={async () => {
                   await window.api.deleteBoard(menu.id)
                   await useLibraryStore.getState().refreshBoards()
-                  if (view.type === 'board' && view.id === menu.id) setView({ type: 'all' })
+                  // 删除的是当前激活白板:退出工作区回素材库
+                  if (useLibraryStore.getState().activeBoardId === menu.id) {
+                    useLibraryStore.getState().setActiveBoardId(null)
+                    setView({ type: 'all' })
+                  }
                   setMenu(null)
                 }}
               >

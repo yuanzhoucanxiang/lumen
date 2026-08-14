@@ -1,44 +1,58 @@
-/* 生成应用图标：build/icon.ico + browser-extension/icons/*.png
-   风格：蓝黑终端底 + 几何「L_」（LUMEN 首字母 + 终端光标）+ 故障切片 */
+/* Generate the LUMEN app icon: build/icon.ico + browser-extension/icons/*.png
+   Concept: a luminous L held inside overlapping media frames. */
 const sharp = require('sharp')
 const fs = require('fs')
 const path = require('path')
 
-const FONT = 'Segoe UI'
-
 function svg(size) {
-  const u = size / 256 // 以 256 为基准缩放
-  const step = 26 * u // 像素阶梯角
-  const border = Math.max(1.5, 3 * u)
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 256 256">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#10141b"/>
-      <stop offset="1" stop-color="#07090d"/>
+    <linearGradient id="bg" x1="30" y1="18" x2="226" y2="238" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#17354a"/>
+      <stop offset="0.5" stop-color="#0b1d2c"/>
+      <stop offset="1" stop-color="#071019"/>
     </linearGradient>
-    <linearGradient id="ice" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#77c4f5"/>
-      <stop offset="1" stop-color="#4da9e9"/>
+    <radialGradient id="halo" cx="0" cy="0" r="1" gradientTransform="translate(181 69) rotate(132) scale(158)">
+      <stop stop-color="#61c8ff" stop-opacity="0.34"/>
+      <stop offset="0.58" stop-color="#2d93d1" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#071019" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="frame" x1="64" y1="68" x2="195" y2="202" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c6efff"/>
+      <stop offset="0.42" stop-color="#67c9ff"/>
+      <stop offset="1" stop-color="#3498db"/>
     </linearGradient>
+    <linearGradient id="edge" x1="76" y1="74" x2="183" y2="202" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#effaff"/>
+      <stop offset="0.32" stop-color="#95dcff"/>
+      <stop offset="1" stop-color="#4eafe9"/>
+    </linearGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="9"/>
+    </filter>
   </defs>
-  <!-- 像素阶梯角外框 -->
-  <path d="M ${step} 0 L ${size - step} 0 L ${size - step / 2} ${step / 2} L ${size} ${step / 2} L ${size} ${step} L ${size} ${size - step} L ${size - step / 2} ${size - step / 2} L ${size - step / 2} ${size} L ${size - step} ${size} L ${step} ${size} L ${step / 2} ${size - step / 2} L 0 ${size - step / 2} L 0 ${size - step} L 0 ${step} L ${step / 2} ${step / 2} L ${step / 2} 0 Z" fill="url(#bg)"/>
-  <!-- 顶部一道冰蓝光 -->
-  <rect x="${size * 0.18}" y="${size * 0.09}" width="${size * 0.64}" height="${border}" fill="#4da9e9" opacity="0.9"/>
-  <!-- 故障切片：红/青两层错位 -->
-  <text x="${size * 0.42 - 2.5 * u}" y="${size * 0.56}" font-family="${FONT}" font-size="${size * 0.6}" font-weight="600"
-        fill="#d8566e" opacity="0.5" text-anchor="middle" dominant-baseline="middle">L</text>
-  <text x="${size * 0.42 + 2.5 * u}" y="${size * 0.56}" font-family="${FONT}" font-size="${size * 0.6}" font-weight="600"
-        fill="#4da9e9" opacity="0.5" text-anchor="middle" dominant-baseline="middle">L</text>
-  <!-- 主字母 L -->
-  <text x="${size * 0.42}" y="${size * 0.56}" font-family="${FONT}" font-size="${size * 0.6}" font-weight="600"
-        fill="url(#ice)" text-anchor="middle" dominant-baseline="middle">L</text>
-  <!-- 终端光标 -->
-  <rect x="${size * 0.585}" y="${size * 0.665}" width="${size * 0.115}" height="${size * 0.045}" fill="url(#ice)"/>
-  <!-- 底部像素点 -->
-  <rect x="${size * 0.5 - 10 * u}" y="${size * 0.87}" width="${5 * u}" height="${5 * u}" fill="#4da9e9"/>
-  <rect x="${size * 0.5 - 2 * u}" y="${size * 0.87}" width="${5 * u}" height="${5 * u}" fill="#2b7ab8"/>
-  <rect x="${size * 0.5 + 6 * u}" y="${size * 0.87}" width="${5 * u}" height="${5 * u}" fill="#1a4a70"/>
+
+  <!-- One clipped corner echoes LUMEN's interface controls. -->
+  <path d="M44 8H202L248 54V212C248 231.9 231.9 248 212 248H44C24.1 248 8 231.9 8 212V44C8 24.1 24.1 8 44 8Z" fill="url(#bg)"/>
+  <path d="M44 8H202L248 54V212C248 231.9 231.9 248 212 248H44C24.1 248 8 231.9 8 212V44C8 24.1 24.1 8 44 8Z" fill="url(#halo)"/>
+  <path d="M203 9L247 53H218C209.7 53 203 46.3 203 38V9Z" fill="#4db4ed" opacity="0.18"/>
+
+  <!-- Offset outlines read as a library of visual assets. -->
+  <path d="M91 49H178L207 78V164" fill="none" stroke="#63bce9" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" opacity="0.24"/>
+  <path d="M72 65H164L193 94V183" fill="none" stroke="#78cdf6" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" opacity="0.42"/>
+
+  <!-- Primary media frame and custom, font-independent L monogram. -->
+  <path d="M56 79C56 71.3 62.3 65 70 65H151L190 104V190C190 197.7 183.7 204 176 204H70C62.3 204 56 197.7 56 190V79Z" fill="#0a1722" fill-opacity="0.8" stroke="url(#frame)" stroke-width="11" stroke-linejoin="round"/>
+  <path d="M151 66V91C151 98.2 156.8 104 164 104H189" fill="none" stroke="#aee7ff" stroke-width="10" stroke-linejoin="round"/>
+  <path d="M84 91V171C84 177.6 89.4 183 96 183H160" fill="none" stroke="url(#edge)" stroke-width="25" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- The light source makes the mark read as LUMEN, not just an initial. -->
+  <circle cx="161" cy="88" r="19" fill="#55c7ff" opacity="0.34" filter="url(#glow)"/>
+  <circle cx="161" cy="88" r="7" fill="#f1fbff"/>
+  <path d="M161 72V77M161 99V104M145 88H150M172 88H177" stroke="#c7f0ff" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Subtle base highlight preserves definition on dark taskbars. -->
+  <path d="M47 229H174" stroke="#49aee8" stroke-width="3" stroke-linecap="round" opacity="0.34"/>
 </svg>`
 }
 
@@ -48,43 +62,42 @@ async function main() {
   fs.mkdirSync(buildDir, { recursive: true })
   fs.mkdirSync(extIconDir, { recursive: true })
 
-  // 各尺寸 PNG
   const sizes = [16, 24, 32, 48, 64, 128, 256]
   const pngs = []
-  for (const s of sizes) {
-    const buf = await sharp(Buffer.from(svg(s))).png().toBuffer()
-    pngs.push({ size: s, buf })
-    if ([16, 48, 128].includes(s)) {
-      fs.writeFileSync(path.join(extIconDir, `icon${s}.png`), buf)
+  for (const size of sizes) {
+    const buffer = await sharp(Buffer.from(svg(size))).png().toBuffer()
+    pngs.push({ size, buffer })
+    if ([16, 48, 128].includes(size)) {
+      fs.writeFileSync(path.join(extIconDir, `icon${size}.png`), buffer)
     }
   }
-  fs.writeFileSync(path.join(buildDir, 'icon.png'), pngs.find((p) => p.size === 256).buf)
+  fs.writeFileSync(path.join(buildDir, 'icon.png'), pngs.find((icon) => icon.size === 256).buffer)
 
-  // 手工打包 ICO（PNG 压缩格式，Windows Vista+ 支持）
-  const n = pngs.length
-  const headerSize = 6 + n * 16
+  // Package PNG frames into a Windows Vista+ ICO file.
+  const count = pngs.length
+  const headerSize = 6 + count * 16
   const header = Buffer.alloc(6)
-  header.writeUInt16LE(0, 0) // 保留
-  header.writeUInt16LE(1, 2) // ICO 类型
-  header.writeUInt16LE(n, 4)
+  header.writeUInt16LE(0, 0)
+  header.writeUInt16LE(1, 2)
+  header.writeUInt16LE(count, 4)
   const entries = []
   let offset = headerSize
-  for (const p of pngs) {
-    const e = Buffer.alloc(16)
-    e.writeUInt8(p.size >= 256 ? 0 : p.size, 0)
-    e.writeUInt8(p.size >= 256 ? 0 : p.size, 1)
-    e.writeUInt16LE(1, 4) // 颜色平面
-    e.writeUInt16LE(32, 6) // 位深
-    e.writeUInt32LE(p.buf.length, 8)
-    e.writeUInt32LE(offset, 12)
-    entries.push(e)
-    offset += p.buf.length
+  for (const icon of pngs) {
+    const entry = Buffer.alloc(16)
+    entry.writeUInt8(icon.size >= 256 ? 0 : icon.size, 0)
+    entry.writeUInt8(icon.size >= 256 ? 0 : icon.size, 1)
+    entry.writeUInt16LE(1, 4)
+    entry.writeUInt16LE(32, 6)
+    entry.writeUInt32LE(icon.buffer.length, 8)
+    entry.writeUInt32LE(offset, 12)
+    entries.push(entry)
+    offset += icon.buffer.length
   }
-  fs.writeFileSync(path.join(buildDir, 'icon.ico'), Buffer.concat([header, ...entries, ...pngs.map((p) => p.buf)]))
+  fs.writeFileSync(path.join(buildDir, 'icon.ico'), Buffer.concat([header, ...entries, ...pngs.map((icon) => icon.buffer)]))
   console.log('icons generated:', fs.readdirSync(buildDir).join(', '))
 }
 
-main().catch((e) => {
-  console.error(e)
+main().catch((error) => {
+  console.error(error)
   process.exit(1)
 })

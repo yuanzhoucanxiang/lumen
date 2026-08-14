@@ -10,7 +10,7 @@ import ScrambleText from './components/ScrambleText'
 import ConfirmDialog from './components/ConfirmDialog'
 import UpdateNotes from './components/UpdateNotes'
 import AiDialog from './components/AiDialog'
-import BoardView from './components/BoardView'
+import BoardWorkspace from './components/BoardWorkspace'
 import { loadShortcuts, matchesShortcut } from './shortcuts'
 import type { UpdateStatus } from '@shared/types'
 
@@ -171,8 +171,8 @@ export default function App() {
       <div className="flex min-h-0 flex-1">
         <Sidebar />
         <main className="flex min-w-0 flex-1 flex-col" style={{ background: 'var(--bg-base)' }}>
-          {view.type === 'board' ? (
-            <BoardView />
+          {view.type === 'boards' ? (
+            <BoardWorkspace />
           ) : (
             <>
               <Toolbar />
