@@ -715,6 +715,8 @@ interface BoardItemRow {
   height: number
   z: number
   text: string
+  note_font: string
+  note_color: string
   created_at: number
 }
 
@@ -730,6 +732,8 @@ function rowToBoardItem(r: BoardItemRow): BoardItem {
     height: r.height,
     z: r.z,
     text: r.text,
+    noteFont: r.note_font ?? '',
+    noteColor: r.note_color ?? '',
     createdAt: r.created_at
   }
 }
@@ -737,7 +741,7 @@ function rowToBoardItem(r: BoardItemRow): BoardItem {
 export function listBoardItems(boardId: number): BoardItem[] {
   const rows = getDb()
     .prepare(
-      `SELECT id, board_id, asset_id, type, x, y, width, height, z, text, created_at
+      `SELECT id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, created_at
        FROM board_items WHERE board_id = ? ORDER BY z ASC`
     )
     .all(boardId) as BoardItemRow[]
@@ -769,22 +773,35 @@ export function addBoardItem(
     height: item.height,
     z,
     text: item.text ?? '',
+    noteFont: '',
+    noteColor: '',
     createdAt
   }
 }
 
-/** 更新白板元素（动态 SET，x/y/width/height/z/text 可部分更新） */
+/** 更新白板元素（动态 SET，x/y/width/height/z/text/noteFont/noteColor 可部分更新） */
 export function updateBoardItem(
   id: string,
-  patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text'>>
+  patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor'>>
 ): void {
   const db = getDb()
   const sets: string[] = []
   const params: unknown[] = []
-  for (const key of ['x', 'y', 'width', 'height', 'z', 'text'] as const) {
-    if (patch[key] !== undefined) {
-      sets.push(`${key} = ?`)
-      params.push(patch[key])
+  const colMap: Record<string, string> = {
+    x: 'x',
+    y: 'y',
+    width: 'width',
+    height: 'height',
+    z: 'z',
+    text: 'text',
+    noteFont: 'note_font',
+    noteColor: 'note_color'
+  }
+  for (const key of Object.keys(colMap) as (keyof typeof colMap)[]) {
+    const v = patch[key as keyof typeof patch]
+    if (v !== undefined) {
+      sets.push(`${colMap[key]} = ?`)
+      params.push(v)
     }
   }
   if (sets.length === 0) return

@@ -7,7 +7,9 @@ export type ViewType =
   | { type: 'trash' }
   | { type: 'folder'; id: number }
   | { type: 'tag'; id: number }
-  | { type: 'boards' }
+
+/** 白板布局模式：split=素材库+白板分屏, board=白板全屏 */
+export type BoardViewMode = 'split' | 'board'
 
 export type SortBy = 'imported' | 'name' | 'size' | 'star'
 
@@ -20,10 +22,14 @@ interface LibraryState {
   tagGroups: TagGroup[]
   folders: Folder[]
   boards: Board[]
-  /** 当前白板的元素（view.type === 'boards' 时有效） */
+  /** 当前白板的元素（activeBoardId 非空时有效） */
   boardItems: BoardItem[]
-  /** 白板工作区当前打开的白板 id（null = 未打开） */
+  /** 当前打开的白板 id（null = 未打开） */
   activeBoardId: number | null
+  /** 白板布局模式 */
+  boardViewMode: BoardViewMode
+  /** 白板面板宽度（split 模式） */
+  boardViewWidth: number
   stats: { total: number; deleted: number; tombstones: number }
 
   view: ViewType
@@ -74,9 +80,13 @@ interface LibraryState {
   refreshBoards: () => Promise<void>
   /** 加载指定白板的元素 */
   refreshBoardItems: (boardId: number) => Promise<void>
-  /** 打开白板工作区并切到指定白板 */
+  /** 打开/切换白板（设置 activeBoardId + 加载元素） */
   openBoard: (boardId: number) => void
   setActiveBoardId: (boardId: number | null) => void
+  setBoardViewMode: (m: BoardViewMode) => void
+  setBoardViewWidth: (w: number) => void
+  /** 发送素材到当前白板（照抄 MOTZ：3 列错开摆放,返回已存在的 id） */
+  sendAssetsToBoard: (ids: string[]) => Promise<string[]>
   refreshStats: () => Promise<void>
   refreshAll: () => Promise<void>
 
@@ -141,6 +151,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   boards: [],
   boardItems: [],
   activeBoardId: null,
+  boardViewMode: 'split',
+  boardViewWidth: Number(localStorage.getItem('lumen.board.width')) || 480,
   stats: { total: 0, deleted: 0, tombstones: 0 },
 
   view: { type: 'all' },
@@ -169,28 +181,75 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   setView: (view) => {
     set({ view, selection: [], previewId: null, similarTo: null, aiSearch: null, aiSearchPending: null })
-    if (view.type === 'boards') {
-      // 白板工作区:刷新白板列表 + 素材托盘需要素材;若已打开白板则刷新其元素
-      void get().refreshBoards()
-      void get().refreshAssets()
-      const ab = get().activeBoardId
-      if (ab != null) void get().refreshBoardItems(ab)
-    } else {
-      // 离开工作区清激活白板
-      if (get().activeBoardId != null) set({ activeBoardId: null })
-      void get().refreshAssets()
-    }
-  },
-  /** 打开白板工作区并切到指定白板 */
-  openBoard: (boardId) => {
-    set({ activeBoardId: boardId, view: { type: 'boards' }, selection: [], previewId: null, similarTo: null, aiSearch: null, aiSearchPending: null })
-    void get().refreshBoards()
     void get().refreshAssets()
+  },
+  /** 打开/切换白板（画布常驻,切换当前白板） */
+  openBoard: (boardId) => {
+    set({ activeBoardId: boardId, selection: [], previewId: null, similarTo: null, aiSearch: null, aiSearchPending: null })
     void get().refreshBoardItems(boardId)
   },
   setActiveBoardId: (boardId) => {
     set({ activeBoardId: boardId })
     if (boardId != null) void get().refreshBoardItems(boardId)
+  },
+  setBoardViewMode: (boardViewMode) => {
+    set({ boardViewMode })
+    if (boardViewMode === 'board' || boardViewMode === 'split') {
+      const ab = get().activeBoardId
+      if (ab != null) void get().refreshBoardItems(ab)
+    }
+  },
+  setBoardViewWidth: (boardViewWidth) => {
+    try {
+      localStorage.setItem('lumen.board.width', String(boardViewWidth))
+    } catch {
+      /* 忽略 */
+    }
+    set({ boardViewWidth })
+  },
+  /** 发送素材到当前白板（照抄 MOTZ sendAssetsToBoard：3 列错开 + 按宽高比定尺寸） */
+  sendAssetsToBoard: async (ids) => {
+    const s = get()
+    if (s.activeBoardId == null) return []
+    const uniqueIds = Array.from(new Set(ids.filter(Boolean)))
+    if (uniqueIds.length === 0) return []
+    const existing = new Set(s.boardItems.filter((i) => i.assetId).map((i) => i.assetId))
+    const newIds = uniqueIds.filter((id) => !existing.has(id))
+    const existingIds = uniqueIds.filter((id) => existing.has(id))
+    if (newIds.length > 0) {
+      const originX = 96 + ((s.boardItems.length * 42) % 260)
+      const originY = 90 + ((s.boardItems.length * 34) % 180)
+      let cursorX = originX
+      let cursorY = originY
+      let rowHeight = 0
+      for (let i = 0; i < newIds.length; i++) {
+        if (i > 0 && i % 3 === 0) {
+          cursorX = originX
+          cursorY += rowHeight
+          rowHeight = 0
+        }
+        const asset = s.assets.find((a) => a.id === newIds[i])
+        const maxW = 280
+        let w = 240
+        let h = 0
+        if (asset && asset.width > 0 && asset.height > 0) {
+          w = Math.min(maxW, asset.width)
+          h = w * (asset.height / Math.max(1, asset.width))
+        }
+        await window.api.addBoardItem(s.activeBoardId, {
+          assetId: newIds[i],
+          type: 'asset',
+          x: Math.round(cursorX),
+          y: Math.round(cursorY),
+          width: Math.round(w),
+          height: Math.round(h)
+        })
+        cursorX += w
+        rowHeight = Math.max(rowHeight, h || w * 0.75)
+      }
+      await s.refreshBoardItems(s.activeBoardId)
+    }
+    return existingIds
   },
   setKeyword: (keyword) => {
     set({ keyword })

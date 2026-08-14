@@ -10,9 +10,37 @@ import ScrambleText from './components/ScrambleText'
 import ConfirmDialog from './components/ConfirmDialog'
 import UpdateNotes from './components/UpdateNotes'
 import AiDialog from './components/AiDialog'
-import BoardWorkspace from './components/BoardWorkspace'
+import BoardPanel from './components/BoardPanel'
 import { loadShortcuts, matchesShortcut } from './shortcuts'
 import type { UpdateStatus } from '@shared/types'
+
+/** 素材库与白板面板之间的拖拽分隔条（照抄 MOTZ main-pane-resizer） */
+function BoardResizer() {
+  const setBoardViewWidth = useLibraryStore((s) => s.setBoardViewWidth)
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = useLibraryStore.getState().boardViewWidth
+    const onMove = (ev: PointerEvent) => {
+      const w = Math.min(900, Math.max(280, startW - (ev.clientX - startX)))
+      setBoardViewWidth(w)
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+  return (
+    <div
+      aria-label="拖动调整白板宽度"
+      title="拖动调整白板宽度"
+      className="w-1 shrink-0 cursor-col-resize border-x border-[var(--border)] bg-[var(--bg-panel)] transition-colors duration-100 hover:bg-[var(--accent-deep)]"
+      onPointerDown={onPointerDown}
+    />
+  )
+}
 
 let clipListenerRegistered = false
 
@@ -23,6 +51,7 @@ export default function App() {
   const previewId = useLibraryStore((s) => s.previewId)
   const editorId = useLibraryStore((s) => s.editorId)
   const view = useLibraryStore((s) => s.view)
+  const boardViewMode = useLibraryStore((s) => s.boardViewMode)
   const aiDialogOpen = useLibraryStore((s) => s.aiDialogOpen)
   const selection = useLibraryStore((s) => s.selection)
   const [dragOver, setDragOver] = useState(false)
@@ -48,6 +77,15 @@ export default function App() {
 
   useEffect(() => {
     void refreshAll()
+    // 启动自动打开第一个白板(白板常驻右侧,无白板则保持空态)
+    const st = useLibraryStore.getState()
+    void st.refreshBoards().then(() => {
+      const boards = useLibraryStore.getState().boards
+      const current = useLibraryStore.getState().activeBoardId
+      if (boards.length > 0 && (current == null || !boards.some((b) => b.id === current))) {
+        useLibraryStore.getState().openBoard(boards[0].id)
+      }
+    })
     // 浏览器剪藏导入后自动刷新
     if (!clipListenerRegistered) {
       clipListenerRegistered = true
@@ -171,13 +209,17 @@ export default function App() {
       <div className="flex min-h-0 flex-1">
         <Sidebar />
         <main className="flex min-w-0 flex-1 flex-col" style={{ background: 'var(--bg-base)' }}>
-          {view.type === 'boards' ? (
-            <BoardWorkspace />
+          {boardViewMode === 'board' ? (
+            <BoardPanel />
           ) : (
-            <>
-              <Toolbar />
-              <Gallery />
-            </>
+            <div className="flex min-h-0 flex-1">
+              <div className="flex min-w-0 flex-1 flex-col">
+                <Toolbar />
+                <Gallery />
+              </div>
+              <BoardResizer />
+              <BoardPanel />
+            </div>
           )}
         </main>
         <Inspector />

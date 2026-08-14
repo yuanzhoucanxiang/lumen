@@ -49,6 +49,22 @@ export default function Inspector() {
     await useLibraryStore.getState().refreshAssets()
   }
 
+  /** 批量发送选中素材到当前白板（照抄 MOTZ sendSelectionToBoard） */
+  const sendSelectionToBoard = async () => {
+    const st = useLibraryStore.getState()
+    if (selection.length === 0) return
+    if (st.activeBoardId == null) {
+      st.showToast('请先新建白板（白板面板右侧 + 号）')
+      return
+    }
+    const existingIds = await st.sendAssetsToBoard(selection)
+    st.showToast(
+      existingIds.length > 0
+        ? '选中的素材已在当前白板中'
+        : `已发送 ${selection.length} 张到当前白板`
+    )
+  }
+
   useEffect(() => {
     setComment(asset?.comment ?? '')
     setTagInput('')
@@ -95,8 +111,17 @@ export default function Inspector() {
           {selection.length > 1 ? (
             <div className="w-full">
               <p className="mono text-[12px] tracking-[0.08em]">已选择 {selection.length} 个素材</p>
-              {/* 批量评分 */}
+              {/* 批量发送到白板（照抄 MOTZ sendSelectionToBoard） */}
               <div className="mt-3 text-left">
+                <button
+                  className="btn-ghost w-full text-[12px]"
+                  onClick={() => void sendSelectionToBoard()}
+                >
+                  发送到当前白板
+                </button>
+              </div>
+              {/* 批量评分 */}
+              <div className="mt-4 text-left">
                 <div className="section-title mb-1.5">批量评分</div>
                 <div className="flex gap-1" role="group" aria-label="批量评分">
                   {[1, 2, 3, 4, 5].map((n) => (

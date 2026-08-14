@@ -326,23 +326,6 @@ export default function Sidebar() {
     useLibraryStore.getState().openBoard(b.id)
   }
 
-  /** 进入白板工作区(无白板时先建「默认白板」;有则打开第一个) */
-  const openBoardsWorkspace = async () => {
-    const s = useLibraryStore.getState()
-    if (s.boards.length === 0) {
-      const b = await window.api.createBoard('默认白板')
-      await s.refreshBoards()
-      s.openBoard(b.id)
-      return
-    }
-    const current = s.activeBoardId
-    if (current != null && s.boards.some((b) => b.id === current)) {
-      s.setView({ type: 'boards' })
-    } else {
-      s.openBoard(s.boards[0].id)
-    }
-  }
-
   /** 新建分组（可顺带把某个标签移入） */
   const submitNewGroup = async () => {
     const name = groupInput.trim()
@@ -563,12 +546,6 @@ export default function Sidebar() {
           count={stats.deleted}
           onClick={() => setView({ type: 'trash' })}
         />
-        <NavItem
-          active={view.type === 'boards'}
-          icon="shapes"
-          label="白板"
-          onClick={() => void openBoardsWorkspace()}
-        />
       </div>
 
       {/* 文件夹 */}
@@ -674,7 +651,7 @@ export default function Sidebar() {
             ) : (
               <NavItem
                 key={b.id}
-                active={view.type === 'boards' && activeBoardId === b.id}
+                active={activeBoardId === b.id}
                 icon="shapes"
                 label={b.name}
                 onClick={() => useLibraryStore.getState().openBoard(b.id)}

@@ -79,6 +79,10 @@ export interface BoardItem {
   z: number
   /** note 类型的文字内容 */
   text: string
+  /** note 字体（CSS font-family） */
+  noteFont: string
+  /** note 文字颜色（hex） */
+  noteColor: string
   createdAt: number
 }
 

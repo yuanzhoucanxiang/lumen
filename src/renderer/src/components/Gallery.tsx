@@ -145,6 +145,26 @@ function AssetCard({
     await window.api.updateAsset(a.id, { star })
     useLibraryStore.getState().updateAssetLocal(a.id, { star })
   }
+  // 发送到白板（照抄 MOTZ send-chip）：已发送显示 ✓,点击提示已在并选中画布元素
+  const boardSent = useLibraryStore((s) => s.boardItems.some((i) => i.assetId === a.id))
+  const sendToBoard = async () => {
+    const st = useLibraryStore.getState()
+    if (st.activeBoardId == null) {
+      st.showToast('请先新建白板（白板面板右侧 + 号）')
+      return
+    }
+    const ids = st.selection.includes(a.id) && st.selection.length > 1 ? st.selection : [a.id]
+    const existingIds = await st.sendAssetsToBoard(ids)
+    st.showToast(
+      existingIds.length > 0
+        ? ids.length > 1
+          ? '选中的素材已在当前白板中'
+          : '这个素材已在当前白板中'
+        : ids.length > 1
+          ? `已发送 ${ids.length} 张到当前白板`
+          : '已发送到当前白板'
+    )
+  }
 
   return (
     <div
@@ -200,6 +220,23 @@ function AssetCard({
               <span className="mono text-[9px] uppercase tracking-[0.2em]">.{a.ext}</span>
             </div>
           )}
+
+          {/* 发送到白板（照抄 MOTZ send-chip,右下角,避开右上选中角标与底部星级栏） */}
+          <button
+            aria-label={boardSent ? `${a.name} 已在当前白板` : `发送 ${a.name} 到白板`}
+            title={boardSent ? '已在当前白板' : '发送到当前白板'}
+            className={`absolute bottom-1.5 right-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-sm border transition-colors duration-100 ${
+              boardSent
+                ? 'border-[var(--accent)] bg-[var(--accent)] text-[var(--on-accent)]'
+                : 'border-white/25 bg-black/50 text-white/70 opacity-0 hover:border-[var(--accent)] hover:text-[var(--accent)] group-hover:opacity-100'
+            }`}
+            onClick={(e) => {
+              e.stopPropagation()
+              void sendToBoard()
+            }}
+          >
+            <Icon name={boardSent ? 'check' : 'import'} size={10} strokeWidth={2.5} />
+          </button>
 
           {/* 选中角标：青色方块 */}
           {selected && (

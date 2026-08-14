@@ -130,6 +130,10 @@ function migrate(d: Database.Database): void {
     priority: 'INTEGER NOT NULL DEFAULT 0',
     excluded: 'INTEGER NOT NULL DEFAULT 0'
   })
+  ensureColumns(d, 'board_items', {
+    note_font: "TEXT NOT NULL DEFAULT ''",
+    note_color: "TEXT NOT NULL DEFAULT ''"
+  })
 
   // 回填迁移:把当前回收站里的软删记录一次性写入 tombstone,
   // 让现有已删除文件也能阻止重启/监控重导入。幂等(已存在则跳过)。
