@@ -1,16 +1,16 @@
 import { useCallback, useRef, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
-import BoardCanvas, { type BoardCanvasApi, type BoardTool } from './BoardCanvas'
+import BoardCanvas, { APPEARANCE_PRESETS, type BoardCanvasApi, type BoardTool } from './BoardCanvas'
 
-/** 画布外观预设（bg 键 → 颜色,与 BoardCanvas 同步） */
+/** 画布外观预设（与 BoardCanvas 共用一份色值,此处只补显示名） */
 const BG_PRESETS: { key: string; label: string; color: string }[] = [
-  { key: 'dark', label: '深色', color: '#141310' },
-  { key: 'gray', label: '中灰', color: '#2b2924' },
-  { key: 'light', label: '浅灰', color: '#e8e8e8' },
-  { key: 'white', label: '白色', color: '#ffffff' },
-  { key: 'black', label: '黑色', color: '#090908' }
-]
+  { key: 'dark', label: '深色' },
+  { key: 'gray', label: '中灰' },
+  { key: 'light', label: '浅灰' },
+  { key: 'white', label: '白色' },
+  { key: 'black', label: '黑色' }
+].map((p) => ({ ...p, color: APPEARANCE_PRESETS[p.key] }))
 
 interface BoardAppearance {
   bg: string
@@ -46,6 +46,7 @@ export default function BoardPanel() {
   const [zoom, setZoom] = useState(1)
   const [tool, setTool] = useState<BoardTool>('select')
   const [appearanceOpen, setAppearanceOpen] = useState(false)
+  const [hist, setHist] = useState({ undo: false, redo: false })
   const canvasApiRef = useRef<BoardCanvasApi | null>(null)
 
   const board = boards.find((b) => b.id === activeBoardId)
@@ -62,6 +63,7 @@ export default function BoardPanel() {
 
   /** 缩放滑块与画布滚轮/快捷键双向同步 */
   const onViewportChange = useCallback((s: number) => setZoom(s), [])
+  const onHistoryChange = useCallback((canUndo: boolean, canRedo: boolean) => setHist({ undo: canUndo, redo: canRedo }), [])
   const onZoomChange = (v: number) => {
     setZoom(v)
     canvasApiRef.current?.zoomTo(v)
@@ -81,24 +83,37 @@ export default function BoardPanel() {
 
   const exportBoard = async () => {
     if (!hasBoard) return
-    const r = await window.api.exportBoardFile(activeBoardId!)
-    if (r) useLibraryStore.getState().showToast(`白板已导出：${r.target}`)
+    try {
+      const r = await window.api.exportBoardFile(activeBoardId!)
+      if (r) useLibraryStore.getState().showToast(`白板已导出：${r.target}`)
+    } catch (e) {
+      useLibraryStore.getState().showToast(`导出失败：${(e as Error).message}`)
+    }
   }
 
   const importBoard = async () => {
-    const r = await window.api.importBoardFile()
-    if (r) {
-      await refreshBoards()
-      openBoard(r.boardId)
-      useLibraryStore.getState().showToast(`已导入白板「${r.name}」（${r.imported} 个元素）`)
+    try {
+      const r = await window.api.importBoardFile()
+      if (r) {
+        await refreshBoards()
+        openBoard(r.boardId)
+        useLibraryStore.getState().showToast(`已导入白板「${r.name}」（${r.imported} 个元素）`)
+      }
+    } catch (e) {
+      // 损坏的 .lumenboard(JSON 解析/ZIP 结构错误)在此给用户反馈,不再静默无响应
+      useLibraryStore.getState().showToast(`导入失败：${(e as Error).message}`)
     }
   }
 
   const exportSvg = async () => {
     if (!hasBoard || !canvasApiRef.current) return
-    const svg = await canvasApiRef.current.exportSvg()
-    const r = await window.api.exportBoardSvg(activeBoardId!, svg)
-    if (r) useLibraryStore.getState().showToast(`已导出 SVG：${r.target}`)
+    try {
+      const svg = await canvasApiRef.current.exportSvg()
+      const r = await window.api.exportBoardSvg(activeBoardId!, svg)
+      if (r) useLibraryStore.getState().showToast(`已导出 SVG：${r.target}`)
+    } catch (e) {
+      useLibraryStore.getState().showToast(`SVG 导出失败：${(e as Error).message}`)
+    }
   }
 
   const toolBtnCls = (active: boolean) =>
@@ -219,7 +234,8 @@ export default function BoardPanel() {
         <button
           aria-label="撤销"
           title="撤销（Ctrl+Z）"
-          className={toolBtnCls(false)}
+          className={`${toolBtnCls(false)} disabled:opacity-40 disabled:hover:bg-transparent`}
+          disabled={!hist.undo}
           onClick={() => void canvasApiRef.current?.undo()}
         >
           <Icon name="undo" size={13} />
@@ -227,7 +243,8 @@ export default function BoardPanel() {
         <button
           aria-label="重做"
           title="重做（Ctrl+Shift+Z / Ctrl+Y）"
-          className={toolBtnCls(false)}
+          className={`${toolBtnCls(false)} disabled:opacity-40 disabled:hover:bg-transparent`}
+          disabled={!hist.redo}
           onClick={() => void canvasApiRef.current?.redo()}
         >
           <Icon name="redo" size={13} />
@@ -342,6 +359,7 @@ export default function BoardPanel() {
         tool={tool}
         onToolChange={setTool}
         onViewportChange={onViewportChange}
+        onHistoryChange={onHistoryChange}
         onApiReady={(api) => (canvasApiRef.current = api)}
       />
     </div>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 import BoardCanvas from './BoardCanvas'
@@ -12,17 +12,26 @@ export default function FloatingBoard({ boardId }: { boardId: number }) {
   const boards = useLibraryStore((s) => s.boards)
   const refreshBoards = useLibraryStore((s) => s.refreshBoards)
   const refreshBoardItems = useLibraryStore((s) => s.refreshBoardItems)
+  const [currentBoardId, setCurrentBoardId] = useState(boardId)
   const [zoom, setZoom] = useState(1)
   const canvasApiRef = useRef<{ zoomTo: (s: number) => void } | null>(null)
+  // 稳定回调：内联箭头会让 BoardCanvas 的滚轮监听每帧重挂
+  const onViewportChange = useCallback((s: number) => setZoom(s), [])
 
-  // 初始化 store：激活该白板并加载元素/白板列表
+  // 主进程复用已开的浮动窗时会发 board:switch 通知切换白板
   useEffect(() => {
-    useLibraryStore.setState({ activeBoardId: boardId, view: { type: 'all' }, selection: [], previewId: null, editorId: null })
-    void refreshBoards()
-    void refreshBoardItems(boardId)
-  }, [boardId, refreshBoards, refreshBoardItems])
+    window.api.onBoardSwitch((id) => setCurrentBoardId(id))
+  }, [])
 
-  const board = boards.find((b) => b.id === boardId)
+  // 初始化 store：激活该白板并加载元素/白板列表。
+  // boardViewMode 置 'board'：浮动窗无素材库,画布快捷键应始终生效
+  useEffect(() => {
+    useLibraryStore.setState({ activeBoardId: currentBoardId, boardViewMode: 'board', view: { type: 'all' }, selection: [], previewId: null, editorId: null })
+    void refreshBoards()
+    void refreshBoardItems(currentBoardId)
+  }, [currentBoardId, refreshBoards, refreshBoardItems])
+
+  const board = boards.find((b) => b.id === currentBoardId)
 
   return (
     <div className="flex h-screen min-h-0 flex-col bg-[var(--bg-base)] text-[var(--text-main)]">
@@ -60,7 +69,7 @@ export default function FloatingBoard({ boardId }: { boardId: number }) {
         </div>
       </div>
       <BoardCanvas
-        onViewportChange={(s) => setZoom(s)}
+        onViewportChange={onViewportChange}
         onApiReady={(api) => (canvasApiRef.current = api)}
       />
     </div>

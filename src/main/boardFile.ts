@@ -19,6 +19,7 @@ import {
   listBoards,
   queryAssets,
   updateAsset,
+  updateBoardAppearance,
   updateBoardGuides,
   updateBoardItem
 } from './repository'
@@ -27,17 +28,17 @@ import { importFiles } from './importer'
 import { logger } from './logger'
 import { zipRead, zipStore } from './exporter'
 import type { ZipEntry } from './exporter'
+import { VIDEO_EXTS } from '../shared/types'
 import type { BoardItem } from '../shared/types'
 
 const MANIFEST = 'manifest.json'
 const ASSET_DIR = 'assets'
-const VIDEO_EXTS = ['mp4', 'webm', 'mov', 'mkv', 'avi', 'wmv', 'm4v']
 
 /** 导出白板为 .lumenboard 文件 */
 export function exportBoardToFile(boardId: number, targetPath: string): { count: number; target: string } {
   const db = getDb()
-  const board = db.prepare('SELECT id, name, guides FROM boards WHERE id = ?').get(boardId) as
-    | { id: number; name: string; guides: string }
+  const board = db.prepare('SELECT id, name, guides, appearance FROM boards WHERE id = ?').get(boardId) as
+    | { id: number; name: string; guides: string; appearance: string }
     | undefined
   if (!board) throw new Error('白板不存在')
   const items = listBoardItems(boardId)
@@ -76,7 +77,7 @@ export function exportBoardToFile(boardId: number, targetPath: string): { count:
     format: 'lumenboard',
     version: 1,
     exportedAt: Date.now(),
-    board: { name: board.name, guides: board.guides },
+    board: { name: board.name, guides: board.guides, appearance: board.appearance },
     files,
     items: items.map((i) => {
       const { boardId: _b, ...rest } = i
@@ -109,7 +110,7 @@ interface Manifest {
   app: string
   format: string
   version: number
-  board: { name: string; guides: string }
+  board: { name: string; guides: string; appearance?: string }
   files: Record<string, { file: string; name: string; size: number }>
   items: ManifestItem[]
 }
@@ -131,8 +132,16 @@ export async function importBoardFromFile(filePath: string): Promise<{ boardId: 
     for (const [fname, buf] of entries) {
       if (!fname.startsWith(`${ASSET_DIR}/`)) continue
       const base = fname.slice(ASSET_DIR.length + 1)
+      // 防 Zip Slip：条目名由外部文件控制，只接受 assets/ 下的单段安全文件名，
+      // 否则 join(tmpDir, base) 可被 ../ 带出临时目录任意写文件
+      if (!base || base.includes('/') || base.includes('\\') || base.includes('..')) {
+        logger.warn('[boardFile]', `跳过可疑的 ZIP 条目: ${fname}`)
+        continue
+      }
       const assetId = base.replace(/\.[^.]+$/, '')
-      const tmp = join(tmpDir, `lumenboard-${tmpFiles.length}-${base}`)
+      // 写盘文件名白名单化（NTFS 冒号会写进备用数据流等奇异路径）
+      const safeName = base.replace(/[^A-Za-z0-9._-]/g, '_')
+      const tmp = join(tmpDir, `lumenboard-${tmpFiles.length}-${safeName}`)
       writeFileSync(tmp, buf)
       tmpFiles.push({ tmp, assetId, idx: tmpFiles.length })
     }
@@ -170,6 +179,14 @@ export async function importBoardFromFile(filePath: string): Promise<{ boardId: 
     if (listBoards().some((b) => b.name === name)) name = `${boardName}（导入）`
     const board = createBoard(name)
     updateBoardGuides(board.id, guides)
+    // 画布外观（背景/网格）随文件还原
+    if (manifest.board?.appearance) {
+      try {
+        updateBoardAppearance(board.id, manifest.board.appearance)
+      } catch {
+        /* 外观 JSON 异常时保持默认，不阻断导入 */
+      }
+    }
 
     // 5. 重建元素（保持 z 顺序；asset 映射失败的丢弃）
     let imported = 0
@@ -232,13 +249,14 @@ export async function importBoardFromFile(filePath: string): Promise<{ boardId: 
   } finally {
     // 安全删除临时目录：Windows Defender 实时扫描可能短暂锁定刚写的文件(EPERM)。
     // 清理失败绝不抛出（否则会把成功导入变成错误返回）；残留目录在系统临时目录,由系统策略回收。
+    // 异步等待而非 Atomics.wait 同步阻塞(主进程卡死所有 IPC 最坏 2 秒)。
     for (let i = 0; i < 10; i++) {
       try {
         rmSync(tmpDir, { recursive: true, force: true })
         break
       } catch (e) {
         if (i === 9) logger.warn('[boardFile]', `临时目录删除失败(10次重试): ${(e as Error).message}`)
-        else Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200)
+        else await new Promise((r) => setTimeout(r, 200))
       }
     }
   }

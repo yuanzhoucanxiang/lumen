@@ -130,6 +130,36 @@ async function main() {
     return { shapes: items.filter((i) => i.type === 'shape').length, kinds: s, svg: document.querySelectorAll('svg[data-shape]').length }
   })()`)
   check('手绘笔绘制出 pen 形状', pen.shapes >= 1 && pen.kinds.includes('pen') && pen.svg === pen.shapes, `kinds=${pen.kinds} svg=${pen.svg}`)
+  /* ---------- 2b. 手绘 V 形回笔：包围盒必须覆盖全部采样点(回归:旧算法用首尾算 h≈0 笔画丢失) ---------- */
+  await run(`(() => {
+    const frame = ${FRAME}
+    const rect = frame.getBoundingClientRect()
+    const mk = (x, y, type) => new PointerEvent(type, { bubbles: true, cancelable: true, clientX: rect.left + x, clientY: rect.top + y, button: 0, pointerId: 31, isPrimary: true })
+    frame.dispatchEvent(mk(400, 180, 'pointerdown'))
+    frame.dispatchEvent(mk(440, 300, 'pointermove'))
+    frame.dispatchEvent(mk(480, 320, 'pointermove'))
+    frame.dispatchEvent(mk(540, 220, 'pointermove'))
+    frame.dispatchEvent(mk(560, 180, 'pointermove'))
+    frame.dispatchEvent(mk(560, 180, 'pointerup'))
+  })()`)
+  await sleep(400)
+  const penV = await run(`return (async () => {
+    const items = await window.api.listBoardItems(${boardId})
+    const pens = items.filter((i) => i.type === 'shape' && (() => { try { return JSON.parse(i.shape).kind === 'pen' } catch { return false } })())
+    const v = pens[pens.length - 1]
+    if (!v) return { ok: false }
+    let spec = null
+    try { spec = JSON.parse(v.shape) } catch { spec = null }
+    const xs = (spec?.points ?? []).map((p) => p[0])
+    const ys = (spec?.points ?? []).map((p) => p[1])
+    return { ok: true, w: v.width, h: v.height, normOk: xs.every((n) => n >= -0.01 && n <= 1.01) && ys.every((n) => n >= -0.01 && n <= 1.01) }
+  })()`)
+  check(
+    '手绘 V 形回笔包围盒完整(宽>80 高>80 归一化有效)',
+    penV.ok && penV.w > 80 && penV.h > 80 && penV.normOk,
+    JSON.stringify(penV)
+  )
+
 
   /* ---------- 3. 矩形：拖拽绘制 ---------- */
   await run(`(${toolBtn('矩形')}).click()`)

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Asset, AssetQuery, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSearchProgress, AiSuggestionItem, AppSettings, Board, BoardItem, DupeGroup, ExportOptions, Folder, ImportResult, LibraryInfo, Tag, TagGroup, UpdateStatus } from '../shared/types'
+import type { Asset, AssetQuery, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSearchProgress, AiSuggestionItem, AppSettings, Board, BoardItem, BoardItemPatch, DupeGroup, ExportOptions, Folder, ImportResult, LibraryInfo, Tag, TagGroup, UpdateStatus } from '../shared/types'
 
 const api = {
   /* 库管理 */
@@ -139,9 +139,9 @@ const api = {
       noteFontSize?: number
     }
   ): Promise<BoardItem> => ipcRenderer.invoke('board:addItem', boardId, item),
-  updateBoardItem: (id: string, patch: Partial<BoardItem>): Promise<void> =>
+  updateBoardItem: (id: string, patch: BoardItemPatch): Promise<void> =>
     ipcRenderer.invoke('board:updateItem', id, patch),
-  updateBoardItems: (items: { id: string; patch: Partial<BoardItem> }[]): Promise<void> =>
+  updateBoardItems: (items: { id: string; patch: BoardItemPatch }[]): Promise<void> =>
     ipcRenderer.invoke('board:updateItems', items),
   deleteBoardItem: (id: string): Promise<void> => ipcRenderer.invoke('board:deleteItem', id),
   bringBoardItemToFront: (id: string, boardId: number): Promise<void> =>
@@ -183,6 +183,11 @@ const api = {
   /* 剪藏通知 */
   onClipImported: (cb: (count: number) => void): void => {
     ipcRenderer.on('clip:imported', (_e, count: number) => cb(count))
+  },
+
+  /* 浮动白板窗：主进程复用窗口时通知切换白板 */
+  onBoardSwitch: (cb: (boardId: number) => void): void => {
+    ipcRenderer.on('board:switch', (_e, boardId: number) => cb(boardId))
   },
 
   /* 自动更新 */

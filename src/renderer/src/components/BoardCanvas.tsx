@@ -26,8 +26,8 @@ const DEFAULT_SHAPE_STYLE = { color: '#5aa0ff', sw: 2.5 }
 const SHAPE_COLORS = ['#5aa0ff', '#ff6b6b', '#ffd166', '#4ade80', '#c792ea', '#e8eef7']
 /** 形状可选线宽 */
 const SHAPE_WIDTHS = [1.5, 2.5, 4, 6, 8]
-/** 画布外观预设（bg 键 → 颜色） */
-const APPEARANCE_PRESETS: Record<string, string> = {
+/** 画布外观预设（bg 键 → 颜色）。导出给 BoardPanel 色板共用,两处不许再各自维护 */
+export const APPEARANCE_PRESETS: Record<string, string> = {
   dark: '#191c20',
   gray: '#262a31',
   light: '#e8e8e8',
@@ -154,18 +154,23 @@ export default function BoardCanvas({
   onApiReady,
   tool = 'select',
   onViewportChange,
-  onToolChange
+  onToolChange,
+  onHistoryChange
 }: {
   onApiReady?: (api: BoardCanvasApi) => void
   tool?: BoardTool
   onViewportChange?: (s: number) => void
   onToolChange?: (tool: BoardTool) => void
+  onHistoryChange?: (canUndo: boolean, canRedo: boolean) => void
 }) {
   const theme = useTheme()
   const pixel = theme === 'pixel-glitch'
   const boardItems = useLibraryStore((s) => s.boardItems)
   const assets = useLibraryStore((s) => s.assets)
   const boards = useLibraryStore((s) => s.boards)
+  const boardViewMode = useLibraryStore((s) => s.boardViewMode)
+  const boardViewModeRef = useRef(boardViewMode)
+  boardViewModeRef.current = boardViewMode
   const refreshBoardItems = useLibraryStore((s) => s.refreshBoardItems)
   const refreshBoards = useLibraryStore((s) => s.refreshBoards)
   const activeBoardId = useLibraryStore((s) => s.activeBoardId)
@@ -193,7 +198,12 @@ export default function BoardCanvas({
     )
     if (missing.length === 0) return
     let cancelled = false
-    void Promise.all(missing.map((id) => window.api.getAsset(id))).then((found) => {
+    // 单个素材已被删除时 getAsset 会 reject：逐个 catch,不让一个坏 id 拖垮整批缓存
+    void Promise.all(
+      missing.map((id) =>
+        window.api.getAsset(id).catch(() => null)
+      )
+    ).then((found) => {
       if (cancelled) return
       setBoardAssetCache((current) => {
         const next = { ...current }
@@ -249,22 +259,39 @@ export default function BoardCanvas({
   // 工具 prop 的 ref 镜像（事件回调里读最新值）
   const toolRef = useRef(tool)
   toolRef.current = tool
+  // 绘制中途切换工具：取消进行中的笔画（Esc 有取消,换工具此前没有）
+  useEffect(() => {
+    if (drawingRef.current) {
+      drawingRef.current = null
+      setDrawPreview(null)
+    }
+  }, [tool])
   /** 文字对象把编辑态与成品态分开；样式同时作为下一次新建文字的默认值。 */
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [noteDefaults, setNoteDefaults] = useState<Required<NoteStylePatch>>({ noteFont: '', noteColor: '#e8eef7', noteFontSize: 16 })
 
   /* ---------- 撤销/重做（按当前白板,切换白板即清空） ---------- */
   const histRef = useRef<{ undo: BoardItem[][]; redo: BoardItem[][] }>({ undo: [], redo: [] })
+  const onHistoryChangeRef = useRef(onHistoryChange)
+  onHistoryChangeRef.current = onHistoryChange
+  /** 历史栈变化时通知工具栏（驱动撤销/重做按钮禁用态） */
+  const notifyHistory = () => {
+    const h = histRef.current
+    onHistoryChangeRef.current?.(h.undo.length > 0, h.redo.length > 0)
+  }
   useEffect(() => {
     histRef.current = { undo: [], redo: [] }
+    notifyHistory()
   }, [activeBoardId])
   const pushHistory = () => {
     const h = histRef.current
     h.undo.push(boardItemsRef.current.map((i) => ({ ...i, shape: i.shape })))
     if (h.undo.length > 60) h.undo.shift()
     h.redo = []
+    notifyHistory()
   }
   /** 快照 diff 应用：删除多余 / 新增缺失 / 更新差异字段 */
+  const histBusyRef = useRef(false)
   const applySnapshot = async (target: BoardItem[]) => {
     if (boardIdRef.current == null) return
     const cur = useLibraryStore.getState().boardItems
@@ -306,17 +333,31 @@ export default function BoardCanvas({
   }
   const undo = async () => {
     const h = histRef.current
+    if (histBusyRef.current) return
     const prev = h.undo.pop()
     if (!prev) return
-    h.redo.push(useLibraryStore.getState().boardItems.map((i) => ({ ...i, shape: i.shape })))
-    await applySnapshot(prev)
+    histBusyRef.current = true
+    try {
+      h.redo.push(useLibraryStore.getState().boardItems.map((i) => ({ ...i, shape: i.shape })))
+      await applySnapshot(prev)
+    } finally {
+      histBusyRef.current = false
+      notifyHistory()
+    }
   }
   const redo = async () => {
     const h = histRef.current
+    if (histBusyRef.current) return
     const next = h.redo.pop()
     if (!next) return
-    h.undo.push(useLibraryStore.getState().boardItems.map((i) => ({ ...i, shape: i.shape })))
-    await applySnapshot(next)
+    histBusyRef.current = true
+    try {
+      h.undo.push(useLibraryStore.getState().boardItems.map((i) => ({ ...i, shape: i.shape })))
+      await applySnapshot(next)
+    } finally {
+      histBusyRef.current = false
+      notifyHistory()
+    }
   }
 
   /* ---------- 复制/粘贴 ---------- */
@@ -330,24 +371,31 @@ export default function BoardCanvas({
   }
   const addItemCopies = async (src: BoardItem[], dx: number, dy: number) => {
     if (boardIdRef.current == null || src.length === 0) return
-    pushHistory()
-    for (const it of src) {
-      await window.api.addBoardItem(boardIdRef.current, {
-        type: it.type,
-        assetId: it.assetId,
-        x: Math.round(it.x + dx),
-        y: Math.round(it.y + dy),
-        width: it.width,
-        height: it.height,
-        text: it.text,
-        shape: it.shape ?? undefined,
-        opacity: it.opacity ?? 100,
-        noteFont: it.noteFont ?? '',
-        noteColor: it.noteColor ?? '',
-        noteFontSize: it.noteFontSize ?? 16
-      })
+    // 粘贴与撤销/重做共用 busy 位：快速连按时丢弃后续请求,避免多个 async 交错互相踩踏
+    if (histBusyRef.current) return
+    histBusyRef.current = true
+    try {
+      pushHistory()
+      for (const it of src) {
+        await window.api.addBoardItem(boardIdRef.current, {
+          type: it.type,
+          assetId: it.assetId,
+          x: Math.round(it.x + dx),
+          y: Math.round(it.y + dy),
+          width: it.width,
+          height: it.height,
+          text: it.text,
+          shape: it.shape ?? undefined,
+          opacity: it.opacity ?? 100,
+          noteFont: it.noteFont ?? '',
+          noteColor: it.noteColor ?? '',
+          noteFontSize: it.noteFontSize ?? 16
+        })
+      }
+      await refreshBoardItems(boardIdRef.current)
+    } finally {
+      histBusyRef.current = false
     }
-    await refreshBoardItems(boardIdRef.current)
   }
   const duplicateSelection = () => addItemCopies(boardItemsRef.current.filter((i) => selectedIdsRef.current.includes(i.id)), 24, 24)
   const pasteClipboard = () => addItemCopies(clipboardRef.current, 24, 24)
@@ -388,11 +436,51 @@ export default function BoardCanvas({
     await window.api.updateBoardItems(updates)
     if (boardIdRef.current != null) await refreshBoardItems(boardIdRef.current)
   }
-  // 窗口失焦时兜底落库,避免微调状态卡死
+  // 窗口失焦时兜底：微调落库 + 收尾所有进行中的手势（Alt+Tab 后收不到 pointerup/keyup，
+  // 否则空格卡死、元素停在中间态永不落库、组包围盒消失）
   useEffect(() => {
-    const onBlur = () => void flushNudge()
+    const onBlur = () => {
+      void flushNudge()
+      spaceDownRef.current = false
+      setSpaceDown(false)
+      if (panRef.current) {
+        panRef.current = null
+        setPanning(false)
+        applyViewport({ ...viewportRef.current })
+      }
+      if (drawingRef.current) {
+        drawingRef.current = null
+        setDrawPreview(null)
+      }
+      if (marqueeRef.current) finishMarquee()
+      if (guideDragRef.current) {
+        // 参考线拖动中断：guidesRef 已随 move 更新,直接按当前值持久化
+        guideDragRef.current = null
+        const cur = guidesRef.current
+        if (boardIdRef.current != null) {
+          void window.api.setBoardGuides(boardIdRef.current, JSON.stringify(cur)).then(() => refreshBoards())
+        }
+      }
+      const d = dragRef.current
+      if (d) {
+        // 元素拖动回滚到原位（与"按下后才按空格转平移"同策略：不落库半途位移）
+        for (const id of d.ids) {
+          const o = d.origs.get(id)
+          const el = itemEls.current.get(id)
+          if (o && el) {
+            el.style.left = `${o.x}px`
+            el.style.top = `${o.y}px`
+            el.style.width = `${o.w}px`
+            el.style.height = `${o.h}px`
+          }
+        }
+        dragRef.current = null
+        if (groupBoxRef.current) groupBoxRef.current.style.display = 'flex'
+      }
+    }
     window.addEventListener('blur', onBlur)
     return () => window.removeEventListener('blur', onBlur)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // boardId 的 ref 镜像（回调闭包里避免过期）
@@ -552,6 +640,8 @@ export default function BoardCanvas({
     setMarquee(null)
     setDrawPreview(null)
     drawingRef.current = null
+    // 正在编辑的 note 随 boardItems 替换被卸载,textarea 卸载不触发 blur:显式退出编辑态
+    setEditingNoteId(null)
     if (surfaceRef.current) surfaceRef.current.style.transform = 'translate3d(0px, 0px, 0px) scale(1)'
     onViewportChange?.(1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -621,7 +711,19 @@ export default function BoardCanvas({
     onApiReady?.({
       zoomTo: (s) => {
         const ns = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, s))
-        applyViewport({ s: ns, x: viewportRef.current.x, y: viewportRef.current.y })
+        // 以画布中心为锚（与滚轮/±快捷键一致），否则滑块缩放时内容向左上/右下漂移
+        const frame = frameRef.current
+        const v = viewportRef.current
+        if (!frame || ns === v.s) {
+          applyViewport({ s: ns, x: v.x, y: v.y })
+          return
+        }
+        const rect = frame.getBoundingClientRect()
+        const anchorX = rect.width / 2
+        const anchorY = rect.height / 2
+        const boardX = (anchorX - v.x) / v.s
+        const boardY = (anchorY - v.y) / v.s
+        applyViewport({ s: ns, x: anchorX - boardX * ns, y: anchorY - boardY * ns })
       },
       resetView: () => {
         applyViewport({ s: 1, x: 0, y: 0 })
@@ -686,7 +788,9 @@ export default function BoardCanvas({
       if (it.type === 'asset' && it.assetId) {
         const asset = assetById.get(it.assetId) ?? (await window.api.getAsset(it.assetId))
         if (!asset) continue
-        const dataUrl = await fetchToDataUrl(`${assetThumbUrl(asset)}&e=${asset.edited ?? 0}`)
+        // assetThumbUrl 已含 edited 戳;不可出缩略图的格式返回 ''(fetch('') 会抓当前页面)
+        const thumb = assetThumbUrl(asset)
+        const dataUrl = thumb ? await fetchToDataUrl(thumb) : ''
         const ih = it.height > 0 ? it.height : it.width * (aspectCacheRef.current[it.assetId] ?? 0.75)
         if (dataUrl) {
           parts.push(`<image href="${dataUrl}" x="${ex}" y="${ey}" width="${it.width}" height="${ih}" opacity="${op}" preserveAspectRatio="none"/>`)
@@ -694,8 +798,10 @@ export default function BoardCanvas({
           parts.push(`<rect x="${ex}" y="${ey}" width="${it.width}" height="${ih}" fill="none" stroke="#888" stroke-dasharray="4 3"/>`)
         }
       } else if (it.type === 'note') {
-        const color = it.noteColor || '#e8eef7'
-        const font = it.noteFont || 'sans-serif'
+        // noteColor/noteFont 可能源于恶意 .lumenboard 导入：注入 SVG 前白名单化/转义
+        const rawColor = it.noteColor || '#e8eef7'
+        const color = /^#[0-9a-f]{3,8}$/i.test(rawColor) ? rawColor : '#e8eef7'
+        const font = (it.noteFont || 'sans-serif').replace(/[<>"'\\]/g, '')
         const text = xmlEscape(it.text).replace(/\n/g, '<br/>')
         parts.push(
           `<foreignObject x="${ex}" y="${ey}" width="${it.width}" height="${it.height}" opacity="${op}"><div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;color:${color};font-family:${font};font-size:${it.noteFontSize || 16}px;line-height:1.35;padding:4px;box-sizing:border-box;overflow:hidden;white-space:pre-wrap">${text}</div></foreignObject>`
@@ -843,6 +949,9 @@ export default function BoardCanvas({
     if (!frame) return
     const onWheelNative = (e: WheelEvent) => {
       e.preventDefault()
+      // 元素拖动/缩放/平移进行中禁止滚轮缩放：松手落库按按下时的视口换算,
+      // 中途变焦会让 dx/dy 与 origs 口径不一致,元素落错位置
+      if (dragRef.current || panRef.current) return
       const rect = frame.getBoundingClientRect()
       const v = viewportRef.current
       const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.s * Math.exp(-e.deltaY * 0.0015)))
@@ -935,11 +1044,25 @@ export default function BoardCanvas({
 
   /** 实时预览（画布坐标原始点,渲染时归一化） */
   const updateDrawPreview = (d: NonNullable<typeof drawingRef.current>) => {
-    const x = Math.min(d.startX, d.curX)
-    const y = Math.min(d.startY, d.curY)
-    const w = Math.max(1, Math.abs(d.curX - d.startX))
-    const h = Math.max(1, Math.abs(d.curY - d.startY))
     const style = shapeStyleRef.current
+    let x: number, y: number, w: number, h: number
+    if (d.kind === 'pen') {
+      // pen 的包围盒必须覆盖全部采样点：回笔形状(V/S/圈)的首尾范围远小于实际笔画
+      x = Infinity; y = Infinity; w = -Infinity; h = -Infinity
+      for (const [px, py] of d.points) {
+        if (px < x) x = px
+        if (py < y) y = py
+        if (px > w) w = px
+        if (py > h) h = py
+      }
+      w = Math.max(1, w - x)
+      h = Math.max(1, h - y)
+    } else {
+      x = Math.min(d.startX, d.curX)
+      y = Math.min(d.startY, d.curY)
+      w = Math.max(1, Math.abs(d.curX - d.startX))
+      h = Math.max(1, Math.abs(d.curY - d.startY))
+    }
     let pts: [number, number][]
     if (d.kind === 'pen') {
       pts = d.points.map(([px, py]) => [px - x, py - y])
@@ -960,10 +1083,24 @@ export default function BoardCanvas({
     drawingRef.current = null
     setDrawPreview(null)
     if (!d || boardIdRef.current == null) return
-    const x = Math.min(d.startX, d.curX)
-    const y = Math.min(d.startY, d.curY)
-    const w = Math.abs(d.curX - d.startX)
-    const h = Math.abs(d.curY - d.startY)
+    let x: number, y: number, w: number, h: number
+    if (d.kind === 'pen') {
+      // 与预览同口径：包围盒取全部采样点,而非首尾两点
+      x = Infinity; y = Infinity; w = -Infinity; h = -Infinity
+      for (const [px, py] of d.points) {
+        if (px < x) x = px
+        if (py < y) y = py
+        if (px > w) w = px
+        if (py > h) h = py
+      }
+      w = Math.max(0, w - x)
+      h = Math.max(0, h - y)
+    } else {
+      x = Math.min(d.startX, d.curX)
+      y = Math.min(d.startY, d.curY)
+      w = Math.abs(d.curX - d.startX)
+      h = Math.abs(d.curY - d.startY)
+    }
     const style = shapeStyleRef.current
     const color = style.color
     const sw = style.sw
@@ -1023,7 +1160,19 @@ export default function BoardCanvas({
     await refreshBoardItems(boardIdRef.current)
   }
 
+  /** 画布交互即聚焦 frame：split 模式下把键盘接管到画布（frame tabIndex=-1 可编程聚焦） */
+  const focusFrame = (target: EventTarget | null) => {
+    const el = target as HTMLElement | null
+    if (el && typeof el.closest === 'function' && el.closest('input, textarea, select')) return
+    try {
+      frameRef.current?.focus()
+    } catch {
+      /* 忽略 */
+    }
+  }
+
   const onPointerDown = (e: React.PointerEvent) => {
+    focusFrame(e.target)
     // 中键或空格+左键：平移画布
     if (e.button === 1 || (e.button === 0 && spaceDownRef.current)) {
       e.preventDefault()
@@ -1063,7 +1212,12 @@ export default function BoardCanvas({
       setDrawPreview({ kind: t, x: pt.x, y: pt.y, w: 1, h: 1, points: [[0, 0]], color: shapeStyleRef.current.color, sw: shapeStyleRef.current.sw })
       return
     }
-    // 空白处按下：开始框选（Shift=追加模式）
+    // 空白处按下：开始框选（Shift=追加模式）。捕获指针,允许移出画布继续框选
+    try {
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    } catch {
+      /* 合成事件忽略 */
+    }
     const pt = canvasPointFromClient(e.clientX, e.clientY)
     marqueeRef.current = { startX: pt.x, startY: pt.y, curX: pt.x, curY: pt.y, additive: e.shiftKey, moved: false }
     setCtxMenu(null)
@@ -1148,14 +1302,21 @@ export default function BoardCanvas({
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
-      const inInput = !!target && typeof target.closest === 'function' && !!target.closest('input, textarea')
-      if (e.key === ' ' && !inInput) {
+      const closest = (sel: string): boolean =>
+        !!target && typeof target.closest === 'function' && !!target.closest(sel)
+      const editable = closest('input, textarea, select, [contenteditable="true"]')
+      // split 模式下焦点在素材库/工具栏时,画布快捷键让位（否则劫持图库的 Ctrl+A/方向键/Delete）;
+      // 白板全屏始终生效。画布 pointerdown 会聚焦 frame,交互过画布即接管键盘。
+      if (boardViewModeRef.current !== 'board' && !closest('[data-board-frame]')) return
+      if (e.key === ' ' && !editable) {
         spaceDownRef.current = true
         setSpaceDown(true)
         e.preventDefault()
       }
-      // 绘图进行中：Esc 取消
+      // 绘制进行中：Esc 取消
       if (e.key === 'Escape') {
+        // note 编辑中的 Esc 由 textarea 自身处理(提交退出),这里不再清空选中
+        if (editable) return
         if (drawingRef.current) {
           drawingRef.current = null
           setDrawPreview(null)
@@ -1166,14 +1327,18 @@ export default function BoardCanvas({
         setSel([])
         return
       }
-      if (inInput) return
+      if (editable) return
       const key = e.key.toLowerCase()
       if (e.key === 'Delete' && selectedIdsRef.current.length > 0) {
         const ids = [...selectedIdsRef.current]
-        pushHistory()
         setSel([])
-        for (const id of ids) void window.api.deleteBoardItem(id)
-        if (boardId != null) void refreshBoardItems(boardId)
+        // 逐个并发发起但不等待就刷新,listBoardItems 可能先于删除返回旧数据 → 已删元素"闪回"。
+        // 等全部删除落库后再刷新。
+        void (async () => {
+          pushHistory()
+          await Promise.all(ids.map((id) => window.api.deleteBoardItem(id)))
+          if (boardIdRef.current != null) await refreshBoardItems(boardIdRef.current)
+        })()
         return
       }
       if ((e.ctrlKey || e.metaKey) && key === 'a') {
@@ -1282,6 +1447,7 @@ export default function BoardCanvas({
   /* ---------- 元素拖动 / 组移动 / 8 向缩放 / 组缩放 ---------- */
   const onItemPointerDown = (e: React.PointerEvent, item: BoardItem, mode: 'move' | 'resize', dir?: ResizeDir) => {
     if (e.button !== 0) return
+    focusFrame(e.target)
     // 空格+左键始终属于画布平移。这里不阻止冒泡，让 frame 接管 pointer，
     // 即使起点落在素材上也不能启动元素拖动。
     if (spaceDownRef.current) return
@@ -1438,10 +1604,17 @@ export default function BoardCanvas({
     if (!d) return
     dragRef.current = null
     if (groupBoxRef.current) groupBoxRef.current.style.display = 'flex'
+    const rawDx = e.clientX - d.startX
+    const rawDy = e.clientY - d.startY
+    // 未发生位移的按下-松开 = 纯点击：交给随后的 click(选中/置顶)处理,
+    // 不写库不入栈,否则每次点击都往撤销历史塞无意义快照(move/resize 同理)
+    if (Math.abs(rawDx) < 0.5 && Math.abs(rawDy) < 0.5) return
+    // 真实拖动后抑制尾随 click(避免拖动后再触发一次置顶+快照)
+    suppressItemClickUntilRef.current = Date.now() + 240
     // 移动/缩放前入栈（此时 store 还是拖动前状态）
     pushHistory()
-    const dx = (e.clientX - d.startX) / viewportRef.current.s
-    const dy = (e.clientY - d.startY) / viewportRef.current.s
+    const dx = rawDx / viewportRef.current.s
+    const dy = rawDy / viewportRef.current.s
     const updates: { id: string; patch: Partial<BoardItem> }[] = []
     if (d.mode === 'move') {
       for (const id of d.ids) {
@@ -1485,6 +1658,10 @@ export default function BoardCanvas({
   const onItemClick = async (item: BoardItem) => {
     if (Date.now() < suppressItemClickUntilRef.current) return
     if (boardId != null) {
+      // 已在顶层：不写库不入栈（否则每次点击都污染撤销历史）
+      let maxZ = -Infinity
+      for (const i of boardItemsRef.current) if (i.z > maxZ) maxZ = i.z
+      if (item.z >= maxZ) return
       pushHistory()
       await window.api.bringBoardItemToFront(item.id, boardId)
       await refreshBoardItems(boardId)
@@ -1540,7 +1717,8 @@ export default function BoardCanvas({
     let gridY = startY
     let assetIdx = 0
     for (const it of target) {
-      const h = it.height > 0 ? it.height : it.width * 0.75
+      // 高度口径与拖动包围盒一致（aspectCache 推算）
+      const h = effHeight(it)
       if (mode === 'row') {
         await window.api.updateBoardItem(it.id, { x: startX + cursor, y: startY })
         cursor += it.width
@@ -1553,8 +1731,14 @@ export default function BoardCanvas({
           gridY += rowHeight
           rowHeight = 0
         }
-        await window.api.updateBoardItem(it.id, { x: gridX, y: gridY, width: 240, height: h })
-        gridX += 240
+        if (it.type === 'asset') {
+          // 网格排列统一素材卡片尺寸;note/shape 保持原尺寸,只摆位置(否则破坏文字/形状)
+          await window.api.updateBoardItem(it.id, { x: gridX, y: gridY, width: 240, height: Math.round(h) })
+          gridX += 240
+        } else {
+          await window.api.updateBoardItem(it.id, { x: gridX, y: gridY })
+          gridX += it.width
+        }
         rowHeight = Math.max(rowHeight, h)
       }
       assetIdx++
@@ -1628,7 +1812,8 @@ export default function BoardCanvas({
   /* ---------- 素材宽高比（用于 height=0 自动计算） ---------- */
   const onImgLoad = (item: BoardItem, e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget
-    if (img.naturalWidth > 0 && item.assetId) {
+    // naturalHeight 也要 >0：损坏图片的 aspect 会算出 Infinity
+    if (img.naturalWidth > 0 && img.naturalHeight > 0 && item.assetId) {
       setAspectCache((prev) => ({ ...prev, [item.assetId!]: img.naturalWidth / img.naturalHeight }))
     }
   }
@@ -1653,7 +1838,8 @@ export default function BoardCanvas({
     <div
       ref={frameRef}
       data-board-frame
-      className="relative min-h-0 flex-1 overflow-hidden"
+      tabIndex={-1}
+      className="relative min-h-0 flex-1 overflow-hidden outline-none"
       style={{
         backgroundColor: bgColor,
         cursor: panning ? 'grabbing' : spaceDown ? 'grab' : marquee ? 'crosshair' : tool !== 'select' ? 'crosshair' : 'default'
@@ -1661,6 +1847,7 @@ export default function BoardCanvas({
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
       onPointerLeave={onPointerUp}
       onDragOver={onDragOver}
       onDrop={onDrop}
@@ -1768,6 +1955,7 @@ export default function BoardCanvas({
               onPointerDown={(e) => onItemPointerDown(e, item, 'move')}
               onPointerMove={onItemPointerMove}
               onPointerUp={(e) => void onItemPointerUp(e)}
+              onPointerCancel={(e) => void onItemPointerUp(e)}
               onClick={(e) => {
                 e.stopPropagation()
                 void onItemClick(item)
@@ -1785,24 +1973,16 @@ export default function BoardCanvas({
               onContextMenu={(e) => openCtxMenu(e, item)}
             >
               {item.type === 'asset' && asset ? (
-                asset.ext === 'mp4' || asset.ext === 'webm' || asset.ext === 'mov' ? (
-                  <video
-                    src={`${window.api.storyboardUrl(item.assetId!)}&e=${asset.edited ?? 0}`}
-                    className="pointer-events-none h-full w-full object-cover"
-                    style={{ opacity: (item.opacity ?? 100) / 100 }}
-                    muted
-                    playsInline
-                  />
-                ) : (
-                  <img
-                    src={assetThumbUrl(asset)}
-                    className="pointer-events-none h-full w-full object-cover"
-                    style={{ opacity: (item.opacity ?? 100) / 100 }}
-                    alt={asset.name}
-                    draggable={false}
-                    onLoad={(e) => onImgLoad(item, e)}
-                  />
-                )
+                /* 视频也用 <img> 显示故事板四宫格（assetThumbUrl 对视频返回故事板 URL）：
+                   <video> 无法解码静态图片,此前 mp4/webm/mov 在画布上显示为空白 */
+                <img
+                  src={assetThumbUrl(asset)}
+                  className="pointer-events-none h-full w-full object-cover"
+                  style={{ opacity: (item.opacity ?? 100) / 100 }}
+                  alt={asset.name}
+                  draggable={false}
+                  onLoad={(e) => onImgLoad(item, e)}
+                />
               ) : item.type === 'shape' && item.shape ? (
                 (() => {
                   let shape: ShapeSpec | null = null
@@ -1910,10 +2090,12 @@ export default function BoardCanvas({
                         if (spaceDownRef.current) return
                         e.stopPropagation()
                         e.preventDefault()
+                        focusFrame(e.target)
                         onItemPointerDown(e, item, 'resize', handle)
                       }}
                       onPointerMove={onItemPointerMove}
                       onPointerUp={(e) => void onItemPointerUp(e)}
+                      onPointerCancel={(e) => void onItemPointerUp(e)}
                     />
                   ))}
                 </div>

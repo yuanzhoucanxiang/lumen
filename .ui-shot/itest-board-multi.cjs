@@ -77,7 +77,7 @@ async function main() {
   check('应用重载后就绪', ready, `boardId=${boardId}`)
   // 进入白板模式（viewMode 默认 off,白板面板不可见）
   await run(`(() => {
-    const btn = [...document.querySelectorAll('nav[aria-label="素材库导航"] > div.mt-2 button')].find((b) => b.textContent.trim().startsWith('白板'))
+    const btn = document.querySelector('nav[aria-label="素材库导航"] button[aria-label="白板"]')
     btn.click()
   })()`)
   await sleep(500)

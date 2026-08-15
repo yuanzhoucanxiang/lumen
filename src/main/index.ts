@@ -12,6 +12,7 @@ import { cleanTrashOlderThan } from './repository'
 import { initUpdater } from './updater'
 import { initLogger, logger } from './logger'
 import { backupDatabase } from './backup'
+import { closeFloatingBoard, openFloatingBoard } from './floatingBoard'
 import { ipcMain } from 'electron'
 
 /** asset: 协议响应的 MIME 映射（视频/音频播放依赖正确的 Content-Type） */
@@ -27,54 +28,6 @@ const MIME_BY_EXT: Record<string, string> = {
 }
 
 let mainWindow: BrowserWindow | null = null
-
-/** 白板浮动置顶窗口（对标 PureRef：参考作画时贴在绘图软件旁边） */
-let floatingWindow: BrowserWindow | null = null
-
-/** 打开白板浮动置顶窗口（已存在则聚焦） */
-function openFloatingBoard(boardId: number): void {
-  if (floatingWindow && !floatingWindow.isDestroyed()) {
-    floatingWindow.focus()
-    return
-  }
-  floatingWindow = new BrowserWindow({
-    width: 680,
-    height: 520,
-    minWidth: 320,
-    minHeight: 240,
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    show: false,
-    title: 'LUMEN 白板',
-    backgroundColor: '#1c1d21',
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: true,
-      contextIsolation: true
-    }
-  })
-  // floating 层级：常驻普通窗口之上、全屏之下
-  floatingWindow.setAlwaysOnTop(true, 'floating')
-  floatingWindow.on('ready-to-show', () => floatingWindow?.show())
-  floatingWindow.on('closed', () => {
-    floatingWindow = null
-  })
-  const query = { floating: '1', board: String(boardId) }
-  if (process.env['ELECTRON_RENDERER_URL']) {
-    const u = new URL(process.env['ELECTRON_RENDERER_URL'])
-    u.searchParams.set('floating', '1')
-    u.searchParams.set('board', String(boardId))
-    void floatingWindow.loadURL(u.toString())
-  } else {
-    void floatingWindow.loadFile(join(__dirname, '../renderer/index.html'), { query })
-  }
-}
-
-function closeFloatingBoard(): void {
-  if (floatingWindow && !floatingWindow.isDestroyed()) floatingWindow.close()
-}
 
 // asset: 协议必须声明为 privileged scheme（stream: true），否则 <video>/<audio> 无法播放该协议内容。
 // 必须在 app ready 之前调用。

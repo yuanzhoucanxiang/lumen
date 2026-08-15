@@ -13,6 +13,7 @@ import { importFiles } from './importer'
 import { exportToFolder, exportToZip } from './exporter'
 import { logFilePath } from './logger'
 import { backupDatabase, backupLibraryToZip } from './backup'
+import { closeFloatingBoardIfBoard } from './floatingBoard'
 import {
   addTagToAssets,
   addToFolder,
@@ -364,7 +365,11 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('boards:list', () => listBoards())
   ipcMain.handle('boards:create', (_e, name: string) => createBoard(name))
   ipcMain.handle('boards:rename', (_e, id: number, name: string) => renameBoard(id, name))
-  ipcMain.handle('boards:delete', (_e, id: number) => deleteBoard(id))
+  ipcMain.handle('boards:delete', (_e, id: number) => {
+    deleteBoard(id)
+    // 浮动窗正显示该白板时联动关闭（否则画布静默清空、标题回退）
+    closeFloatingBoardIfBoard(id)
+  })
   ipcMain.handle('board:items', (_e, boardId: number) => listBoardItems(boardId))
   ipcMain.handle(
     'board:addItem',

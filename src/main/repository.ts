@@ -307,6 +307,8 @@ export function deleteAssets(ids: string[], permanent: boolean): void {
       db.prepare('DELETE FROM assets WHERE id = ?').run(id)
       db.prepare('DELETE FROM asset_tags WHERE asset_id = ?').run(id)
       db.prepare('DELETE FROM asset_folders WHERE asset_id = ?').run(id)
+      // 级联清理白板引用：否则画布渲染空白幽灵框、.lumenboard/SVG 导出静默丢元素
+      db.prepare('DELETE FROM board_items WHERE asset_id = ?').run(id)
     }
   } else {
     const stmt = db.prepare('UPDATE assets SET deleted_at = ? WHERE id = ?')
@@ -873,6 +875,7 @@ export function updateBoardItems(
     shape: 'shape'
   }
   const run = db.transaction(() => {
+    const touched = new Set<number>()
     for (const { id, patch } of items) {
       const sets: string[] = []
       const params: unknown[] = []
@@ -887,16 +890,14 @@ export function updateBoardItems(
       const row = db.prepare('SELECT board_id FROM board_items WHERE id = ?').get(id) as { board_id: number } | undefined
       if (!row) continue
       db.prepare(`UPDATE board_items SET ${sets.join(', ')} WHERE id = ?`).run(...params, id)
+      touched.add(row.board_id)
+    }
+    // updated_at 刷新并入事务：与元素更新原子提交
+    for (const boardId of touched) {
+      db.prepare('UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), boardId)
     }
   })
   run()
-  // 批量更新后统一刷新 boards.updated_at
-  const touched = getDb()
-    .prepare(
-      `SELECT DISTINCT board_id FROM board_items WHERE id IN (${items.map(() => '?').join(',')})`
-    )
-    .all(...items.map((i) => i.id)) as { board_id: number }[]
-  for (const t of touched) db.prepare('UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), t.board_id)
 }
 
 export function deleteBoardItem(id: string): void {
@@ -906,10 +907,10 @@ export function deleteBoardItem(id: string): void {
   if (row) db.prepare('UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), row.board_id)
 }
 
-/** 置顶：z = 当前最大值 + 1 */
+/** 置顶：z = 当前最大值 + 1（起点 -1 与 addBoardItem 一致,空画板首元素 z=0） */
 export function bringBoardItemToFront(id: string, boardId: number): void {
   const db = getDb()
-  const z = (db.prepare('SELECT COALESCE(MAX(z), 0) + 1 AS z FROM board_items WHERE board_id = ?').get(boardId) as { z: number }).z
+  const z = (db.prepare('SELECT COALESCE(MAX(z), -1) + 1 AS z FROM board_items WHERE board_id = ?').get(boardId) as { z: number }).z
   db.prepare('UPDATE board_items SET z = ? WHERE id = ?').run(z, id)
   db.prepare('UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), boardId)
 }

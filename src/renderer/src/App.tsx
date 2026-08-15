@@ -123,9 +123,13 @@ export default function App() {
       const target = e.target as HTMLElement
       const inInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
       const s = useLibraryStore.getState()
-      // 白板全屏时素材库不可见：库级快捷键(删除/撤销/全选/评分/方向键)全部让位给画布
-      // (否则白板里按 Delete 会连带删除素材库选中项)
-      if (s.boardViewMode === 'board') return
+      // 白板全屏或焦点在画布内时素材库不可见/不活跃：
+      // 库级快捷键(删除/撤销/全选/评分/方向键)让位给画布
+      // (否则白板里按 Delete/Ctrl+A 会连带操作素材库选中项)
+      const boardActive =
+        s.boardViewMode === 'board' ||
+        (typeof target.closest === 'function' && !!target.closest('[data-board-frame]'))
+      if (boardActive) return
       if (e.key === 'Delete') {
         if (inInput) return
         void s.deleteSelection(s.view.type === 'trash')

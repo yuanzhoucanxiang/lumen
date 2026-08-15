@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { VIDEO_EXTS } from '@shared/types'
 import type { Asset, Board, BoardItem, Folder, Tag, TagGroup } from '@shared/types'
 
 export type ViewType =
@@ -153,7 +154,14 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   activeBoardId: null,
   // 白板默认关闭：素材库全屏,需要时通过主导航「白板」进入（不再常驻右侧挤占素材库）
   boardViewMode: 'off',
-  boardViewWidth: Number(localStorage.getItem('lumen.board.width')) || 480,
+  // 隐私模式/禁用存储时 localStorage 会抛 SecurityError,store 在模块加载时求值,不能让白屏
+  boardViewWidth: (() => {
+    try {
+      return Number(localStorage.getItem('lumen.board.width')) || 480
+    } catch {
+      return 480
+    }
+  })(),
   stats: { total: 0, deleted: 0, tombstones: 0 },
 
   view: { type: 'all' },
@@ -494,9 +502,6 @@ export function zoomToWidth(zoom: number): number {
   const steps = [96, 128, 176, 232, 300, 380]
   return steps[Math.min(Math.max(zoom, 1), 6) - 1]
 }
-
-/** 视频扩展名集合 */
-const VIDEO_EXTS = ['mp4', 'webm', 'mov', 'mkv', 'avi', 'wmv', 'm4v']
 
 /**
  * 素材缩略图 URL。

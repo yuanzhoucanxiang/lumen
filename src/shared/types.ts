@@ -281,3 +281,11 @@ export interface UpdateStatus {
   /** 新版本更新内容（release notes） */
   notes?: string
 }
+
+/** 白板元素可更新字段（主进程/预加载/渲染层共用签名,防止误传 id/boardId 等） */
+export type BoardItemPatch = Partial<
+  Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'noteFontSize' | 'opacity' | 'shape'>
+>
+
+/** 视频扩展名集合（主进程导出/故事板与渲染层缩略图 URL 共用,避免两处漂移） */
+export const VIDEO_EXTS = ['mp4', 'webm', 'mov', 'mkv', 'avi', 'wmv', 'm4v']

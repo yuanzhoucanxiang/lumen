@@ -131,6 +131,7 @@ export function zipRead(buf: Buffer): Map<string, Buffer> {
   for (let i = 0; i < entryCount; i++) {
     if (buf.readUInt32LE(cdOffset) !== 0x02014b50) throw new Error('ZIP 中央目录损坏')
     const method = buf.readUInt16LE(cdOffset + 10)
+    const crc = buf.readUInt32LE(cdOffset + 16)
     const compSize = buf.readUInt32LE(cdOffset + 20)
     const nameLen = buf.readUInt16LE(cdOffset + 28)
     const extraLen = buf.readUInt16LE(cdOffset + 30)
@@ -143,10 +144,16 @@ export function zipRead(buf: Buffer): Map<string, Buffer> {
       const lNameLen = buf.readUInt16LE(localOffset + 26)
       const lExtraLen = buf.readUInt16LE(localOffset + 28)
       const dataStart = localOffset + 30 + lNameLen + lExtraLen
+      // 越界即报错（伪造/截断的文件不得静默返回截断数据）
+      if (dataStart < 0 || dataStart + compSize > buf.length) throw new Error(`ZIP 数据越界: ${name}`)
       const data = buf.subarray(dataStart, dataStart + compSize)
-      if (method === 0) out.set(name, Buffer.from(data))
-      else if (method === 8) out.set(name, inflateRawSync(data))
+      let content: Buffer
+      if (method === 0) content = Buffer.from(data)
+      else if (method === 8) content = inflateRawSync(data)
       else throw new Error(`不支持的 ZIP 压缩方式: ${method}`)
+      // CRC32 校验：损坏/伪造数据在此拦截，避免把坏图当新素材走导入管线入库
+      if (crc32(content) !== crc) throw new Error(`ZIP 数据校验失败(CRC32): ${name}`)
+      out.set(name, content)
     }
     cdOffset += 46 + nameLen + extraLen + commentLen
   }
