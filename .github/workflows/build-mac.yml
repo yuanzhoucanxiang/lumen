@@ -2,9 +2,13 @@
 #
 # 触发方式：
 #   1. 推送 v* tag（release.cjs 发布流程的 git push --tags 会自动触发）：
-#      构建 macos-13(x64) + macos-14(arm64) 两套 dmg/zip,上传到
+#      构建 x64 + arm64 两套 dmg/zip,上传到
 #      yuanzhoucanxiang/shiguang-materials 的对应 Release(与 Windows 包同版本)。
 #   2. 手动 workflow_dispatch：只出构建产物(Actions Artifacts),不上传 Release。
+#
+# 构建机说明：两个架构都跑 macos-14(arm64)。x64 为交叉编译(electron-builder
+# 原生支持),同时把 ffmpeg-static 换成 darwin-x64 二进制(它的安装脚本按
+# 安装机架构下载,交叉构建必须换)。不用 macos-13(Intel):免费档排队可达 1h+。
 #
 # 前置条件（一次性）：
 #   - 源码仓库 Settings → Secrets and variables → Actions 新建 secret `RELEASE_PAT`：
@@ -40,7 +44,7 @@ jobs:
       matrix:
         include:
           - arch: x64
-            runner: macos-13
+            runner: macos-14
           - arch: arm64
             runner: macos-14
     env:
@@ -57,6 +61,16 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Swap ffmpeg to ${{ matrix.arch }} binary (cross-build fix)
+        # ffmpeg-static 安装脚本按 npm ci 时的机器架构下载(arm64),交叉构建 x64 包必须换回 x64 二进制
+        if: matrix.arch == 'x64'
+        run: |
+          TAG=$(node -e "console.log(require('ffmpeg-static/package.json')['ffmpeg-static']['binary-release-tag'])")
+          curl -fL -o node_modules/ffmpeg-static/ffmpeg \
+            "https://github.com/eugeneware/ffmpeg-static/releases/download/${TAG}/ffmpeg-darwin-x64"
+          chmod +x node_modules/ffmpeg-static/ffmpeg
+          file node_modules/ffmpeg-static/ffmpeg
 
       - name: Build macOS ${{ matrix.arch }}
         # build:mac = make-icons(含 icns) + typecheck + electron-vite build + electron-builder --mac
