@@ -1,0 +1,163 @@
+# macOS 安装包自动构建（方案 A：无需本地 Mac）
+#
+# 触发方式：
+#   1. 推送 v* tag（release.cjs 发布流程的 git push --tags 会自动触发）：
+#      构建 macos-13(x64) + macos-14(arm64) 两套 dmg/zip,上传到
+#      yuanzhoucanxiang/shiguang-materials 的对应 Release(与 Windows 包同版本)。
+#   2. 手动 workflow_dispatch：只出构建产物(Actions Artifacts),不上传 Release。
+#
+# 前置条件（一次性）：
+#   - 源码仓库 Settings → Secrets and variables → Actions 新建 secret `RELEASE_PAT`：
+#     一个对 yuanzhoucanxiang/shiguang-materials 有 Contents 读写权限的
+#     Personal Access Token(fine-grained 选该仓库 + Contents: Read and write,
+#     或 classic 勾 repo)。没有该 secret 时构建仍成功,只是产物留在 Artifacts,
+#     需要手动上传 Release。
+#
+# 产物：
+#   - Lumen-<ver>-x64.dmg / Lumen-<ver>-arm64.dmg   (安装包)
+#   - Lumen-<ver>-x64.zip / Lumen-<ver>-arm64.zip   (自动更新用,含 blockmap)
+#   - latest-mac.yml                                (合并双架构的更新元数据)
+#
+# 注意：未签名/未公证,首次打开需 右键→打开 或系统设置放行(见 README「macOS 安装」)。
+
+name: Build macOS
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-mac:
+    name: build-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-13
+          - arch: arm64
+            runner: macos-14
+    env:
+      # 无签名证书：禁止 electron-builder 自动探测签名身份,跳过 codesign/notarize
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build macOS ${{ matrix.arch }}
+        # build:mac = make-icons(含 icns) + typecheck + electron-vite build + electron-builder --mac
+        run: npm run build:mac -- --${{ matrix.arch }} --publish never
+
+      - name: Rename update metadata (per-arch, merged later)
+        run: |
+          if [ -f dist/latest-mac.yml ]; then
+            mv dist/latest-mac.yml dist/latest-mac-${{ matrix.arch }}.yml
+            echo "metadata: dist/latest-mac-${{ matrix.arch }}.yml"
+          else
+            echo "::warning::latest-mac.yml 未生成(blockmap/更新元数据可能缺失)"
+          fi
+        shell: bash
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumen-mac-${{ matrix.arch }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.blockmap
+            dist/latest-mac-*.yml
+          retention-days: 14
+
+      - name: Upload to GitHub Release (tag flow, requires RELEASE_PAT)
+        if: startsWith(github.ref, 'refs/tags/') && env.GH_TOKEN != ''
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          # release.cjs 先建 Release 再推 tag;等待安装包仓库的 Release 就绪(最多 5 分钟)
+          for i in $(seq 1 20); do
+            if gh release view "$TAG" --repo yuanzhoucanxiang/shiguang-materials >/dev/null 2>&1; then
+              break
+            fi
+            echo "等待 Release $TAG 创建… ($i/20)"
+            sleep 15
+          done
+          FILES=""
+          for f in dist/*.dmg dist/*.zip dist/*.blockmap; do
+            [ -f "$f" ] && FILES="$FILES $f"
+          done
+          if [ -z "$FILES" ]; then
+            echo "::error::没有可上传的安装包产物"
+            exit 1
+          fi
+          gh release upload "$TAG" $FILES \
+            --repo yuanzhoucanxiang/shiguang-materials --clobber
+          echo "已上传 $FILES"
+
+  merge-update-metadata:
+    name: merge-latest-mac.yml
+    needs: [build-mac]
+    runs-on: ubuntu-latest
+    if: always() && !cancelled()
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: lumen-mac-*
+          merge-multiple: true
+          path: dist
+
+      - name: Merge update metadata
+        shell: bash
+        run: |
+          ls -la dist/
+          if [ -f dist/latest-mac-x64.yml ] && [ -f dist/latest-mac-arm64.yml ]; then
+            node scripts/merge-latest-mac.cjs dist/latest-mac-x64.yml dist/latest-mac-arm64.yml dist/latest-mac.yml
+          else
+            echo "::warning::缺少某一架构的 latest-mac-*.yml,跳过合并"
+            exit 0
+          fi
+
+      - name: Upload merged latest-mac.yml
+        if: startsWith(github.ref, 'refs/tags/') && env.GH_TOKEN != '' && hashFiles('dist/latest-mac.yml') != ''
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          for i in $(seq 1 20); do
+            if gh release view "$TAG" --repo yuanzhoucanxiang/shiguang-materials >/dev/null 2>&1; then
+              break
+            fi
+            sleep 15
+          done
+          gh release upload "$TAG" dist/latest-mac.yml \
+            --repo yuanzhoucanxiang/shiguang-materials --clobber
+          echo "已上传合并后的 latest-mac.yml"
+
+      - name: Keep merged metadata as artifact (manual runs)
+        if: hashFiles('dist/latest-mac.yml') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumen-mac-merged-metadata
+          path: dist/latest-mac.yml
+          retention-days: 14

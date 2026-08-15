@@ -52,8 +52,30 @@ src/
 npm install              # postinstall 会自动 electron-rebuild better-sqlite3
 npm run dev              # 开发模式（主进程重启 + 渲染 HMR）
 npm run typecheck        # 类型检查（node + web）
-npm run build:win        # typecheck + 构建 + electron-builder 打包
+npm run build:win        # typecheck + 构建 + electron-builder 打包（Windows）
+npm run build:mac        # 同上（macOS，需在 Mac 上运行；首次需装 Xcode Command Line Tools）
 ```
+
+## macOS 安装
+
+macOS 安装包（Intel `x64` 与 Apple Silicon `arm64` 两种）由 GitHub Actions 在推送 `v*` tag 时自动构建，随 Windows 包一起发布到 <https://github.com/yuanzhoucanxiang/shiguang-materials/releases/latest>：
+
+1. 下载 `Lumen-<版本>-x64.dmg`（Intel）或 `Lumen-<版本>-arm64.dmg`（Apple Silicon），打开后把 LUMEN 拖入 Applications。
+2. **首次打开必须放行**（应用未签名、未公证，macOS Gatekeeper 会拦截）：
+   - 方式一：在「访达」中 **右键 LUMEN.app → 打开**，在弹窗中点「打开」；
+   - 方式二：系统设置 → 隐私与安全性 → 滚动到「安全性」→「仍要打开」。
+3. 若提示「已损坏，无法打开」（浏览器下载附加的隔离属性所致），终端执行：
+
+   ```bash
+   xattr -cr /Applications/LUMEN.app
+   ```
+
+4. 自动更新在 macOS 走 zip 差分更新；每次更新后首次启动同样需要按第 2 步放行一次。
+
+> 双架构自动更新元数据（latest-mac.yml）由 CI 的 `merge-update-metadata` 任务合并，
+> 两个架构的更新互不覆盖。源码仓库的 Actions 需配置 `RELEASE_PAT` secret
+> （对 `yuanzhoucanxiang/shiguang-materials` 有 Contents 读写权限的 PAT）才会把产物
+> 上传到 Release；未配置时产物保留在 Actions Artifacts，可手动下载上传。
 
 ### 国内网络环境
 

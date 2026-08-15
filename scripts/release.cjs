@@ -4,11 +4,12 @@
  * 用法：
  *   node scripts/release.cjs                # 发布（版本号 patch+1，notes.md 存在则用之，否则从工作日志生成草稿）
  *   node scripts/release.cjs --bump minor   # 次版本号 +1
+ *   node scripts/release.cjs --platform mac # 打 macOS 包（需在 Mac 上运行；双架构请走 GitHub Actions build-mac.yml）
  *   node scripts/release.cjs --dry-run      # 只生成草稿 + 校验 + 显示将要执行的命令，不打包不发布
  *   node scripts/release.cjs --notes my.md  # 指定 notes 文件
  *   node scripts/release.cjs --no-git       # 不执行 git tag/push（仅 gh release）
  *
- * 流程：版本 bump → notes 生成/校验 → npm run build:win → gh release create → git tag + push
+ * 流程：版本 bump → notes 生成/校验 → build:win|build:mac → gh release create → git tag + push
  */
 const { execSync } = require('child_process')
 const { existsSync, readFileSync, writeFileSync, rmSync, readdirSync } = require('fs')
@@ -26,6 +27,8 @@ const bump = args.includes('--bump')
 const dryRun = args.includes('--dry-run')
 const noGit = args.includes('--no-git')
 const notesArg = args.includes('--notes') ? args[args.indexOf('--notes') + 1] : null
+const platform = args.includes('--platform') ? args[args.indexOf('--platform') + 1] : 'win'
+if (!['win', 'mac'].includes(platform)) fail(`不支持的平台: ${platform}（仅 win / mac）`)
 
 const ok = (m) => console.log('  ✓', m)
 const fail = (m) => {
@@ -86,17 +89,27 @@ validateNotes(notes)
 
 /* ---------------- 4. 构建 ---------------- */
 if (!dryRun) {
-  console.log('构建中 (npm run build:win)…')
-  execSync('npm run build:win', { cwd: ROOT, stdio: 'inherit' })
+  const buildCmd = platform === 'mac' ? 'npm run build:mac' : 'npm run build:win'
+  console.log(`构建中 (${buildCmd})…`)
+  execSync(buildCmd, { cwd: ROOT, stdio: 'inherit' })
   ok('打包完成')
 }
 
 /* ---------------- 5. 发布 ---------------- */
-const setupExe = `dist/Lumen-${newVer}-setup.exe`
-const blockmap = `dist/Lumen-${newVer}-setup.exe.blockmap`
-const latestYml = 'dist/latest.yml'
-if (!dryRun && !existsSync(join(ROOT, setupExe))) {
-  fail(`未找到安装包: ${setupExe}（构建失败？）`)
+// 平台产物清单:win = exe + blockmap + latest.yml;mac = dmg/zip(+blockmap) + latest-mac.yml
+const distDir = join(ROOT, 'dist')
+const assets =
+  platform === 'mac'
+    ? existsSync(distDir)
+      ? readdirSync(distDir).filter((f) => /\.dmg$/.test(f) || /\.zip(\.blockmap)?$/.test(f) || f === 'latest-mac.yml')
+      : []
+    : [`dist/Lumen-${newVer}-setup.exe`, `dist/Lumen-${newVer}-setup.exe.blockmap`, 'dist/latest.yml']
+if (!dryRun) {
+  const missing = assets.filter((f) => !existsSync(join(ROOT, f)))
+  if (missing.length > 0) {
+    fail(`未找到产物: ${missing.join(', ')}（构建失败？）`)
+  }
+  if (assets.length === 0) fail('dist 下没有可发布的产物')
 }
 
 const tag = `v${newVer}`
@@ -105,9 +118,7 @@ const RELEASE_REPO = 'yuanzhoucanxiang/shiguang-materials'
 const cmd = [
   'gh release create',
   tag,
-  setupExe,
-  blockmap,
-  latestYml,
+  ...assets,
   `--repo ${RELEASE_REPO}`,
   `--title "LUMEN v${newVer}"`,
   `--notes-file "${notesFilePath || '<generated-notes.md>'}"`
@@ -140,12 +151,16 @@ if (!noGit) {
 }
 
 /* ---------------- 7. 清理 dist 历史安装包 ---------------- */
-// 每个安装包 ~140MB,不清理会累积数 GB;发布成功后只保留当前版本 + latest.yml
-const distDir = join(ROOT, 'dist')
+// 每个安装包 ~140MB,不清理会累积数 GB;发布成功后只保留当前版本 + latest*.yml
 if (existsSync(distDir)) {
   const removed = []
   for (const f of readdirSync(distDir)) {
-    if (/^Lumen-[\d.]+-setup\.exe(\.blockmap)?$/.test(f) && !f.startsWith(`Lumen-${newVer}-setup.exe`)) {
+    const isOldWin = /^Lumen-[\d.]+-setup\.exe(\.blockmap)?$/.test(f) && !f.startsWith(`Lumen-${newVer}-setup.exe`)
+    const isOldMac =
+      platform === 'mac' &&
+      /^Lumen-[\d.]+-(x64|arm64)\.(dmg|zip)(\.blockmap)?$/.test(f) &&
+      !f.startsWith(`Lumen-${newVer}-`)
+    if (isOldWin || isOldMac) {
       rmSync(join(distDir, f), { force: true })
       removed.push(f)
     }

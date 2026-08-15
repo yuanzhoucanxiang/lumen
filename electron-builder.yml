@@ -18,6 +18,16 @@ files:
 win:
   executableName: ShiGuangMaterials
   icon: build/icon.ico
+# macOS:未签名/未公证,首次打开需右键→打开或系统设置放行(见 README「macOS 安装」)
+# CI(.github/workflows/build-mac.yml)在 macos-13(x64)/macos-14(arm64) 分别构建并上传 Release
+mac:
+  executableName: LUMEN
+  icon: build/icon.icns
+  category: public.app-category.graphics-design
+  artifactName: Lumen-${version}-${arch}.${ext}
+  target:
+    - dmg
+    - zip
 asarUnpack:
   - '**/node_modules/ffmpeg-static/**'
 nsis:
