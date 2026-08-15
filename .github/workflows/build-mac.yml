@@ -12,10 +12,10 @@
 #
 # 前置条件（一次性）：
 #   - 源码仓库 Settings → Secrets and variables → Actions 新建 secret `RELEASE_PAT`：
-#     一个对 yuanzhoucanxiang/shiguang-materials 有 Contents 读写权限的
-#     Personal Access Token(fine-grained 选该仓库 + Contents: Read and write,
-#     或 classic 勾 repo)。没有该 secret 时构建仍成功,只是产物留在 Artifacts,
-#     需要手动上传 Release。
+#     **必须用 classic Personal Access Token**（勾选 `repo` 整组即可;安装包仓库是
+#     公开的,最小权限勾 `public_repo` 也够）——fine-grained token 无法上传 Release
+#     资产(uploads.github.com 对其返回 403 "Resource not accessible")。
+#     没有该 secret 时构建仍成功,只是产物留在 Artifacts,需要手动上传 Release。
 #
 # 产物：
 #   - Lumen-<ver>-x64.dmg / Lumen-<ver>-arm64.dmg   (安装包)

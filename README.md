@@ -74,8 +74,9 @@ macOS 安装包（Intel `x64` 与 Apple Silicon `arm64` 两种）由 GitHub Acti
 
 > 双架构自动更新元数据（latest-mac.yml）由 CI 的 `merge-update-metadata` 任务合并，
 > 两个架构的更新互不覆盖。源码仓库的 Actions 需配置 `RELEASE_PAT` secret
-> （对 `yuanzhoucanxiang/shiguang-materials` 有 Contents 读写权限的 PAT）才会把产物
-> 上传到 Release；未配置时产物保留在 Actions Artifacts，可手动下载上传。
+> （**classic PAT**，勾 `repo` 或 `public_repo`；fine-grained token 无法上传 Release
+> 资产，会 403）才会把产物上传到 Release；未配置时产物保留在 Actions Artifacts，
+> 可手动下载上传。
 
 ### 国内网络环境
 
