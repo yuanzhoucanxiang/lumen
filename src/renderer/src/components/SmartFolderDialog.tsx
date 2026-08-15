@@ -117,52 +117,53 @@ export default function SmartFolderDialog({
 
   return (
     <div
-      className="anim-overlay overlay fixed inset-0 z-[400] flex items-center justify-center"
+      className="anim-overlay overlay fixed inset-0 z-[400] flex items-center justify-center p-4"
       onClick={onClose}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={editFolder ? '编辑智能文件夹' : '新建智能文件夹'}
-        className="anim-dialog dialog modal-scroll max-h-[85vh] w-[440px] overflow-y-auto p-5"
+        className="anim-dialog dialog flex max-h-[calc(100vh-32px)] w-[min(440px,calc(100vw-32px))] flex-col overflow-hidden p-0"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="mb-4 text-[15px] font-semibold">
+        <h2 className="shrink-0 border-b border-[var(--border)] px-5 pb-4 pt-5 text-[15px] font-semibold">
           {editFolder ? '编辑智能文件夹' : '新建智能文件夹'}
         </h2>
 
-        <Section title="名称">
-          <input
-            autoFocus
-            aria-label="智能文件夹名称"
-            className="field-input w-full"
-            placeholder="智能文件夹名称…"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </Section>
-
-        <Section title="关键词（名称/注释包含）">
-          <input
-            aria-label="关键词"
-            className="field-input w-full"
-            placeholder="可选…"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-          />
-        </Section>
-
-        {tags.length > 0 && (
-          <Section title="包含标签（同时满足）">
-            <div className="flex flex-wrap gap-1.5">
-              {tags.map((t) => (
-                <Chip key={t.id} active={tagIds.includes(t.id)} onClick={() => toggleTag(t.id)}>
-                  {t.name}
-                </Chip>
-              ))}
-            </div>
+        <div className="modal-scroll min-h-0 overflow-y-auto px-5 py-4">
+          <Section title="名称">
+            <input
+              autoFocus
+              aria-label="智能文件夹名称"
+              className="field-input w-full"
+              placeholder="智能文件夹名称…"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
           </Section>
-        )}
+
+          <Section title="关键词（名称/注释包含）">
+            <input
+              aria-label="关键词"
+              className="field-input w-full"
+              placeholder="可选…"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+            />
+          </Section>
+
+          {tags.length > 0 && (
+            <Section title="包含标签（同时满足）">
+              <div className="flex flex-wrap gap-1.5">
+                {tags.map((t) => (
+                  <Chip key={t.id} active={tagIds.includes(t.id)} onClick={() => toggleTag(t.id)}>
+                    {t.name}
+                  </Chip>
+                ))}
+              </div>
+            </Section>
+          )}
 
         <Section title="格式">
           <div className="flex flex-wrap gap-1.5">
@@ -302,8 +303,9 @@ export default function SmartFolderDialog({
             )}
           </div>
         </Section>
+        </div>
 
-        <div className="mt-5 flex justify-end gap-2">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
           <button className="btn-ghost" onClick={onClose}>
             取消
           </button>

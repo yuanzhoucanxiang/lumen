@@ -1423,6 +1423,54 @@ body::before {
   pointer-events: none;
 }
 
+/* 通用确认弹窗：标题和操作区固定，长消息只在正文区域滚动。 */
+.confirm-dialog {
+  display: flex;
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(640px, calc(100vh - 32px));
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.confirm-dialog__header {
+  flex: 0 0 auto;
+  padding: 18px 20px 13px;
+  border-bottom: 1px solid var(--border);
+}
+
+.confirm-dialog__body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 20px 18px;
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 13px 20px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+  box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.12);
+}
+
+.update-card {
+  display: flex;
+  max-height: calc(100vh - 48px);
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.update-card__notes {
+  min-height: 0;
+  flex: 0 1 auto;
+  overscroll-behavior: contain;
+}
+
 /* 设置与帮助中心：偏好设置和内置教程共享同一套信息架构 */
 .settings-hub {
   position: relative;

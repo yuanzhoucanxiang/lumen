@@ -28,19 +28,31 @@ export default function ConfirmDialog({
 
   return (
     <div
-      className="anim-overlay overlay fixed inset-0 z-[500] flex items-center justify-center"
+      className="anim-overlay overlay fixed inset-0 z-[500] flex items-center justify-center p-4"
       onClick={onClose}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="anim-dialog dialog modal-scroll w-[380px] p-5"
+        aria-describedby="confirm-dialog-message"
+        className="confirm-dialog anim-dialog dialog"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="mb-2 text-[15px] font-semibold">{title}</h2>
-        <p className="mb-5 whitespace-pre-wrap text-[13px] leading-relaxed text-[var(--text-dim)]">{message}</p>
-        <div className="flex justify-end gap-2">
+        <header className="confirm-dialog__header">
+          <h2 className="text-[15px] font-semibold">{title}</h2>
+        </header>
+
+        <div className="confirm-dialog__body modal-scroll">
+          <p
+            id="confirm-dialog-message"
+            className="whitespace-pre-wrap text-[13px] leading-relaxed text-[var(--text-dim)]"
+          >
+            {message}
+          </p>
+        </div>
+
+        <footer className="confirm-dialog__actions">
           <button className="btn-ghost" onClick={onClose}>
             取消
           </button>
@@ -54,7 +66,7 @@ export default function ConfirmDialog({
           >
             {confirmLabel}
           </button>
-        </div>
+        </footer>
       </div>
     </div>
   )

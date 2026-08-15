@@ -41,15 +41,15 @@ export default function ExportDialog({
   }
 
   return (
-    <div className="anim-overlay overlay fixed inset-0 z-[400] flex items-center justify-center" onClick={onClose}>
+    <div className="anim-overlay overlay fixed inset-0 z-[400] flex items-center justify-center p-4" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"
         aria-label="导出素材"
-        className="anim-dialog dialog w-[440px] p-5"
+        className="anim-dialog dialog flex max-h-[calc(100vh-32px)] w-[min(440px,calc(100vw-32px))] flex-col overflow-hidden p-0"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-center justify-between">
+        <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-5 pb-4 pt-5">
           <h2 className="flex items-center gap-2 text-[15px] font-semibold">
             <Icon name="import" size={15} />
             导出素材
@@ -64,73 +64,77 @@ export default function ExportDialog({
           </button>
         </div>
 
-        {/* 导出方式 */}
-        <div className="mb-4">
-          <div className="section-title mb-2">导出方式</div>
-          <div className="flex gap-2" role="radiogroup" aria-label="导出方式">
-            {(
-              [
-                { key: 'folder', label: '导出到文件夹', hint: '保持为文件' },
-                { key: 'zip', label: '打包为 ZIP', hint: '含 metadata.json' }
-              ] as const
-            ).map((m) => (
-              <button
-                key={m.key}
-                role="radio"
-                aria-checked={mode === m.key}
-                className={`flex-1 rounded-sm border px-3 py-2 text-left text-[12px] transition-colors duration-100 ${
-                  mode === m.key
-                    ? 'border-[var(--accent)] bg-[var(--accent-soft)]'
-                    : 'border-[var(--border)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)]'
-                }`}
-                onClick={() => setMode(m.key)}
-              >
-                <div className="font-medium">{m.label}</div>
-                <div className="mt-0.5 text-[11px] text-[var(--text-dim)]">{m.hint}</div>
-              </button>
-            ))}
+        <div className="modal-scroll min-h-0 overflow-y-auto px-5 py-4">
+          {/* 导出方式 */}
+          <div className="mb-4">
+            <div className="section-title mb-2">导出方式</div>
+            <div className="flex gap-2" role="radiogroup" aria-label="导出方式">
+              {(
+                [
+                  { key: 'folder', label: '导出到文件夹', hint: '保持为文件' },
+                  { key: 'zip', label: '打包为 ZIP', hint: '含 metadata.json' }
+                ] as const
+              ).map((m) => (
+                <button
+                  key={m.key}
+                  role="radio"
+                  aria-checked={mode === m.key}
+                  className={`flex-1 rounded-sm border px-3 py-2 text-left text-[12px] transition-colors duration-100 ${
+                    mode === m.key
+                      ? 'border-[var(--accent)] bg-[var(--accent-soft)]'
+                      : 'border-[var(--border)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)]'
+                  }`}
+                  onClick={() => setMode(m.key)}
+                >
+                  <div className="font-medium">{m.label}</div>
+                  <div className="mt-0.5 text-[11px] text-[var(--text-dim)]">{m.hint}</div>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* 命名模板 */}
-        <div className="mb-4">
-          <div className="section-title mb-2">命名方式</div>
-          <div className="space-y-1.5">
-            {NAMING_OPTIONS.map((o) => (
-              <button
-                key={o.key}
-                role="radio"
-                aria-checked={naming === o.key}
-                className={`flex w-full items-center justify-between rounded-sm border px-3 py-1.5 text-left text-[12px] transition-colors duration-100 ${
-                  naming === o.key
-                    ? 'border-[var(--accent)] bg-[var(--accent-soft)]'
-                    : 'border-[var(--border)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)]'
-                }`}
-                onClick={() => setNaming(o.key)}
-              >
-                <span className="font-medium">{o.label}</span>
-                <span className="text-[11px] text-[var(--text-dim)]">{o.hint}</span>
-              </button>
-            ))}
+          {/* 命名模板 */}
+          <div className="mb-4">
+            <div className="section-title mb-2">命名方式</div>
+            <div className="space-y-1.5">
+              {NAMING_OPTIONS.map((o) => (
+                <button
+                  key={o.key}
+                  role="radio"
+                  aria-checked={naming === o.key}
+                  className={`flex w-full items-center justify-between rounded-sm border px-3 py-1.5 text-left text-[12px] transition-colors duration-100 ${
+                    naming === o.key
+                      ? 'border-[var(--accent)] bg-[var(--accent-soft)]'
+                      : 'border-[var(--border)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)]'
+                  }`}
+                  onClick={() => setNaming(o.key)}
+                >
+                  <span className="font-medium">{o.label}</span>
+                  <span className="text-[11px] text-[var(--text-dim)]">{o.hint}</span>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* 按标签分文件夹 */}
-        <button
-          role="checkbox"
-          aria-checked={groupByTag}
-          className="flex w-full items-center gap-2 rounded-sm border border-[var(--border)] px-3 py-2 text-left text-[12px] transition-colors duration-100 hover:bg-[var(--bg-hover)]"
-          onClick={() => setGroupByTag(!groupByTag)}
-        >
-          <Icon name="check" size={13} className={groupByTag ? 'text-[var(--accent)]' : 'text-transparent'} />
-          <span>
-            <span className="font-medium">按标签分文件夹</span>
-            <span className="ml-2 text-[11px] text-[var(--text-dim)]">按第一个标签归入子文件夹，无标签归入「未分类」</span>
-          </span>
-        </button>
+          {/* 按标签分文件夹 */}
+          <button
+            role="checkbox"
+            aria-checked={groupByTag}
+            className="flex w-full items-center gap-2 rounded-sm border border-[var(--border)] px-3 py-2 text-left text-[12px] transition-colors duration-100 hover:bg-[var(--bg-hover)]"
+            onClick={() => setGroupByTag(!groupByTag)}
+          >
+            <Icon name="check" size={13} className={groupByTag ? 'text-[var(--accent)]' : 'text-transparent'} />
+            <span>
+              <span className="font-medium">按标签分文件夹</span>
+              <span className="ml-2 text-[11px] text-[var(--text-dim)]">
+                按第一个标签归入子文件夹，无标签归入「未分类」
+              </span>
+            </span>
+          </button>
+        </div>
 
         {/* 底部 */}
-        <div className="mt-5 flex justify-end gap-2">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
           <button className="btn-ghost" onClick={onClose}>
             取消
           </button>

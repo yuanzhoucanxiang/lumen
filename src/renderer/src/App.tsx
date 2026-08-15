@@ -297,7 +297,7 @@ export default function App() {
 
       {/* 更新提示卡片 */}
       {upd && (upd.state === 'available' || upd.state === 'downloading') && !updDismissed && (
-        <div className="anim-dialog menu fixed bottom-6 right-6 z-[190] w-72 p-3.5">
+        <div className="update-card anim-dialog menu fixed bottom-6 right-6 z-[190] w-72 p-3.5">
           {upd.state === 'available' ? (
             <>
               <p className="text-[13px] font-medium">
@@ -305,7 +305,7 @@ export default function App() {
                 <span className="mono text-[var(--accent-text)]">v{upd.version}</span>
               </p>
               {upd.notes && (
-                <div className="modal-scroll mt-2 max-h-28 overflow-y-auto border-l-2 border-[var(--accent-deep)] pl-2 text-[11px] leading-relaxed text-[var(--text-dim)]">
+                <div className="update-card__notes modal-scroll mt-2 max-h-28 overflow-y-auto border-l-2 border-[var(--accent-deep)] pl-2 text-[11px] leading-relaxed text-[var(--text-dim)]">
                   <UpdateNotes notes={upd.notes} />
                 </div>
               )}
