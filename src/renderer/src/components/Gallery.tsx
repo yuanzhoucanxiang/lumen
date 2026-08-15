@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { assetEditable, assetStoryboardUrl, assetThumbUrl, useLibraryStore, zoomToWidth } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
@@ -17,6 +17,10 @@ const HOVER_PREVIEW_W = 288
 const HOVER_PREVIEW_MAX_H = 306
 const HOVER_PREVIEW_GAP = 12
 const HOVER_PREVIEW_MARGIN = 10
+const CONTEXT_MENU_MARGIN = 8
+const CONTEXT_MENU_ANIM_SAFE_Y = 8
+const FOLDER_SUBMENU_W = 176
+const FOLDER_SUBMENU_ROW_H = 31
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi', 'wmv', 'm4v'])
 
 function fmtSize(n: number): string {
@@ -316,6 +320,8 @@ export default function Gallery() {
   const view = useLibraryStore((s) => s.view)
   const folders = useLibraryStore((s) => s.folders)
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
+  const [folderSubmenu, setFolderSubmenu] = useState({ open: false, left: false, up: false })
   /** 导出对话框的素材范围 */
   const [exportIds, setExportIds] = useState<string[] | null>(null)
   const [hoverPv, setHoverPv] = useState<{ a: Asset; x: number; y: number } | null>(null)
@@ -383,13 +389,15 @@ export default function Gallery() {
   const [scrollTop, setScrollTop] = useState(0)
 
   // 监听容器尺寸（依赖 assets.length：空态分支不挂载容器，加载完成后需重新绑定）
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = containerRef.current
     if (!el) return
-    const ro = new ResizeObserver(() => {
+    const measure = () => {
       setContainerW(el.clientWidth - 32) // 左右 padding
       setViewportH(el.clientHeight)
-    })
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
   }, [assets.length === 0])
@@ -457,6 +465,37 @@ export default function Gallery() {
     [menu, assets]
   )
   const normalFolders = folders.filter((f) => !f.isSmart)
+
+  /** 一级菜单按渲染后的真实尺寸钳制，避免条目数变化时底部或右侧越界。 */
+  useLayoutEffect(() => {
+    const el = contextMenuRef.current
+    if (!menu || !el) return
+    // offset 尺寸不受 anim-menu 入场 transform 影响；getBoundingClientRect 会在首帧低估高度。
+    const width = el.offsetWidth
+    const height = el.offsetHeight
+    const nextX = Math.max(CONTEXT_MENU_MARGIN, Math.min(menu.x, window.innerWidth - width - CONTEXT_MENU_MARGIN))
+    const nextY = Math.max(
+      CONTEXT_MENU_MARGIN,
+      Math.min(menu.y, window.innerHeight - height - CONTEXT_MENU_MARGIN - CONTEXT_MENU_ANIM_SAFE_Y)
+    )
+    if (nextX !== menu.x || nextY !== menu.y) {
+      setMenu({ ...menu, x: nextX, y: nextY })
+    }
+  }, [menu, contextAsset, normalFolders.length, view.type])
+
+  /** 二级文件夹菜单独立判断四向空间；过高时内部滚动。 */
+  const openFolderSubmenu = (el: HTMLElement): void => {
+    const rect = el.getBoundingClientRect()
+    const height = Math.min(
+      normalFolders.length * FOLDER_SUBMENU_ROW_H + 10,
+      window.innerHeight - CONTEXT_MENU_MARGIN * 2
+    )
+    const roomRight = window.innerWidth - rect.right - CONTEXT_MENU_MARGIN
+    const roomLeft = rect.left - CONTEXT_MENU_MARGIN
+    const left = roomRight < FOLDER_SUBMENU_W && roomLeft > roomRight
+    const up = rect.top + height > window.innerHeight - CONTEXT_MENU_MARGIN
+    setFolderSubmenu({ open: true, left, up })
+  }
 
   const doDelete = async () => {
     const s = useLibraryStore.getState()
@@ -596,9 +635,10 @@ export default function Gallery() {
               e.stopPropagation()
               endHover()
               if (!selection.includes(item.a.id)) setSelection([item.a.id])
+              setFolderSubmenu({ open: false, left: false, up: false })
               setMenu({
-                x: Math.min(e.clientX, window.innerWidth - 220),
-                y: Math.min(e.clientY, window.innerHeight - 340),
+                x: e.clientX,
+                y: e.clientY,
                 id: item.a.id
               })
             }
@@ -689,13 +729,24 @@ export default function Gallery() {
       )}
 
       {/* 右键菜单 */}
-      {menu && contextAsset && (
-        <div
-          role="menu"
-          className="anim-menu menu fixed z-[300] w-52 py-1"
-          style={{ left: menu.x, top: menu.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
+      {menu && contextAsset && createPortal(
+        <>
+          <div
+            className="fixed inset-0 z-[290]"
+            onPointerDown={() => setMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setMenu(null)
+            }}
+          />
+          <div
+            ref={contextMenuRef}
+            role="menu"
+            data-asset-context-menu
+            className="anim-menu menu fixed z-[300] w-52 py-1"
+            style={{ left: menu.x, top: menu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
           <button
             role="menuitem"
             className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
@@ -780,14 +831,29 @@ export default function Gallery() {
             </button>
           )}
           {normalFolders.length > 0 && (
-            <div className="relative group/fld">
+            <div
+              className="relative"
+              onMouseEnter={(e) => openFolderSubmenu(e.currentTarget)}
+              onMouseLeave={() => setFolderSubmenu((state) => ({ ...state, open: false }))}
+            >
               <button
                 role="menuitem"
+                aria-haspopup="menu"
+                aria-expanded={folderSubmenu.open}
                 className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
               >
-                添加到文件夹 ▸
+                {folderSubmenu.left ? '◂ 添加到文件夹' : '添加到文件夹 ▸'}
               </button>
-              <div className="menu absolute left-full top-0 hidden w-44 py-1 group-hover/fld:block">
+              <div
+                role="menu"
+                data-folder-submenu
+                data-placement-x={folderSubmenu.left ? 'left' : 'right'}
+                data-placement-y={folderSubmenu.up ? 'up' : 'down'}
+                className={`menu absolute z-10 w-44 max-w-[calc(100vw-16px)] overflow-y-auto py-1 ${
+                  folderSubmenu.open ? 'block' : 'hidden'
+                } ${folderSubmenu.left ? 'right-full' : 'left-full'} ${folderSubmenu.up ? 'bottom-0' : 'top-0'}`}
+                style={{ maxHeight: `calc(100vh - ${CONTEXT_MENU_MARGIN * 2}px)` }}
+              >
                 {normalFolders.map((f) => (
                   <button
                     key={f.id}
@@ -836,9 +902,11 @@ export default function Gallery() {
               恢复
             </button>
           )}
-        </div>
+          </div>
+        </>,
+        document.body
       )}
-      {revertId && (
+      {revertId && createPortal((
         <ConfirmDialog
           title="恢复原图"
           message="将丢弃当前编辑结果，恢复为原始图片。此操作不可撤销。"
@@ -856,9 +924,10 @@ export default function Gallery() {
           }}
           onClose={() => setRevertId(null)}
         />
-      )}
-      {exportIds !== null && (
-        <ExportDialog ids={exportIds} onClose={() => setExportIds(null)} />
+      ), document.body)}
+      {exportIds !== null && createPortal(
+        <ExportDialog ids={exportIds} onClose={() => setExportIds(null)} />,
+        document.body
       )}
       </div>
     </div>
