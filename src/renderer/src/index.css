@@ -1125,6 +1125,8 @@ body::before {
 
 .archive-filterbar__search .field-input {
   border-radius: 2px 0 0 2px;
+  padding-left: 36px;
+  padding-right: 10px;
 }
 
 .archive-filterbar__search-mode {

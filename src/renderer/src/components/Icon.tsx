@@ -83,6 +83,15 @@ const PATHS = {
       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
     </>
   ),
+  /* 重复素材检查：叠放素材 + 放大镜，区别于普通复制 */
+  duplicateSearch: (
+    <>
+      <path d="M4 13.5V6.2A2.2 2.2 0 0 1 6.2 4h7.3" />
+      <rect x="7" y="7" width="10.5" height="10.5" rx="2" />
+      <circle cx="16.5" cy="16.5" r="3.5" />
+      <path d="m19.1 19.1 2.4 2.4" />
+    </>
+  ),
   chevronDown: <path d="m6 9 6 6 6-6" />,
   chevronUp: <path d="m6 15 6-6 6 6" />,
   chevronLeft: <path d="m15 6-6 6 6 6" />,

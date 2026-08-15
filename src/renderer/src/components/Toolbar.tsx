@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import type { SortBy } from '@renderer/stores/libraryStore'
 import ColorWheel from './ColorWheel'
@@ -44,15 +45,16 @@ function Popover({
   useEffect(() => {
     if (open && anchorRef.current) {
       const r = anchorRef.current.getBoundingClientRect()
+      const toolbarBottom = anchorRef.current.closest('.archive-filterbar')?.getBoundingClientRect().bottom ?? r.bottom
       setPos({
         x: Math.max(8, Math.min(r.left, window.innerWidth - width - 8)),
-        y: r.bottom + 8
+        y: Math.max(r.bottom + 8, toolbarBottom + 6)
       })
     }
   }, [open, anchorRef, width])
 
   if (!open || !pos) return null
-  return (
+  return createPortal(
     <>
       <div
         className="fixed inset-0 z-[150]"
@@ -69,7 +71,8 @@ function Popover({
       >
         {children}
       </div>
-    </>
+    </>,
+    document.body
   )
 }
 
@@ -487,10 +490,10 @@ export default function Toolbar() {
       <button
         className="btn-ghost flex items-center gap-1.5 whitespace-nowrap px-2.5"
         aria-label="扫描相似或重复图片"
-        title="扫描相似/重复图片"
+        title="重复素材检查"
         onClick={() => setDupeOpen(true)}
       >
-        <Icon name="copy" size={13} />
+        <Icon name="duplicateSearch" size={17} strokeWidth={1.9} />
       </button>
 
       {/* 批量操作（回收站视图，纯图标按钮） */}
@@ -570,9 +573,9 @@ export default function Toolbar() {
       </div>
       </div>
 
-      {dupeOpen && <DupeModal onClose={() => setDupeOpen(false)} />}
+      {dupeOpen && createPortal(<DupeModal onClose={() => setDupeOpen(false)} />, document.body)}
 
-      {confirm?.type === 'deleteSel' && (
+      {confirm?.type === 'deleteSel' && createPortal((
         <ConfirmDialog
           title="永久删除所选素材？"
           message={`将永久删除 ${selection.length} 个素材及其文件，此操作无法撤销。`}
@@ -580,8 +583,8 @@ export default function Toolbar() {
           onConfirm={() => useLibraryStore.getState().deleteSelection(true)}
           onClose={() => setConfirm(null)}
         />
-      )}
-      {confirm?.type === 'emptyTrash' && (
+      ), document.body)}
+      {confirm?.type === 'emptyTrash' && createPortal((
         <ConfirmDialog
           title="清空回收站？"
           message="回收站中的所有素材将被永久删除，此操作无法撤销。"
@@ -589,7 +592,7 @@ export default function Toolbar() {
           onConfirm={() => useLibraryStore.getState().emptyTrash()}
           onClose={() => setConfirm(null)}
         />
-      )}
+      ), document.body)}
     </div>
   )
 }
