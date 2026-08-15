@@ -59,10 +59,12 @@ if (bump !== 'none' && !dryRun) {
 
 /* ---------------- 2. notes 生成 ---------------- */
 let notes = ''
+let notesFilePath = ''
 const useFile = notesArg || existsSync(NOTES_FILE)
 if (useFile) {
   const f = notesArg ? join(ROOT, notesArg) : NOTES_FILE
   if (!existsSync(f)) fail(`notes 文件不存在: ${f}`)
+  notesFilePath = f
   notes = readFileSync(f, 'utf-8').trim()
   ok(`使用 notes 文件: ${f}`)
 } else {
@@ -74,6 +76,7 @@ if (useFile) {
     console.log('----------------------------------------')
   } else {
     writeFileSync(NOTES_FILE, notes + '\n', 'utf-8')
+    notesFilePath = NOTES_FILE
     ok('已从工作日志生成 notes 草稿 → notes.md（编辑后再次运行即可发布）')
   }
 }
@@ -107,7 +110,7 @@ const cmd = [
   latestYml,
   `--repo ${RELEASE_REPO}`,
   `--title "LUMEN v${newVer}"`,
-  `--notes "${notes.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`
+  `--notes-file "${notesFilePath || '<generated-notes.md>'}"`
 ].join(' ')
 
 if (dryRun) {
