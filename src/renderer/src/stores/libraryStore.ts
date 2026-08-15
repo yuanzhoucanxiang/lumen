@@ -25,6 +25,10 @@ interface LibraryState {
   boards: Board[]
   /** 当前白板的元素（activeBoardId 非空时有效） */
   boardItems: BoardItem[]
+  /** boardItems 属于哪个白板(null=加载中/未知),参考架「已放置」判定用 */
+  boardItemsBoardId: number | null
+  /** 外部添加(参考架/发送)的前状态快照,BoardCanvas 消费入撤销栈后清空 */
+  boardHistoryHint: { boardId: number; snapshot: BoardItem[] } | null
   /** 当前打开的白板 id（null = 未打开） */
   activeBoardId: number | null
   /** 白板布局模式 */
@@ -151,6 +155,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   folders: [],
   boards: [],
   boardItems: [],
+  /** boardItems 属于哪个白板(null=加载中/未知),参考架「已放置」判定用 */
+  boardItemsBoardId: null,
+  boardHistoryHint: null,
   activeBoardId: null,
   // 白板默认关闭：素材库全屏,需要时通过主导航「白板」进入（不再常驻右侧挤占素材库）
   boardViewMode: 'off',
@@ -201,9 +208,19 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     })
     void get().refreshAssets()
   },
-  /** 打开/切换白板（画布常驻,切换当前白板） */
+  /** 打开/切换白板（画布常驻,切换当前白板）。立即清空元素:旧板元素不属于新板,
+      且参考架的「已放置」判定在加载完成前必须显示为未知(boardItemsBoardId=null) */
   openBoard: (boardId) => {
-    set({ activeBoardId: boardId, selection: [], previewId: null, similarTo: null, aiSearch: null, aiSearchPending: null })
+    set({
+      activeBoardId: boardId,
+      selection: [],
+      previewId: null,
+      similarTo: null,
+      aiSearch: null,
+      aiSearchPending: null,
+      boardItems: [],
+      boardItemsBoardId: null
+    })
     void get().refreshBoardItems(boardId)
   },
   setActiveBoardId: (boardId) => {
@@ -235,6 +252,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     const newIds = uniqueIds.filter((id) => !existing.has(id))
     const existingIds = uniqueIds.filter((id) => existing.has(id))
     if (newIds.length > 0) {
+      // 记录添加前快照,BoardCanvas 消费后入撤销栈(参考架/素材库发送同样可 Ctrl+Z)
+      set({ boardHistoryHint: { boardId: s.activeBoardId, snapshot: s.boardItems.map((i) => ({ ...i })) } })
       const originX = 96 + ((s.boardItems.length * 42) % 260)
       const originY = 90 + ((s.boardItems.length * 34) % 180)
       let cursorX = originX
@@ -367,7 +386,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   refreshTagGroups: async () => set({ tagGroups: await window.api.listTagGroups() }),
   refreshFolders: async () => set({ folders: await window.api.listFolders() }),
   refreshBoards: async () => set({ boards: await window.api.listBoards() }),
-  refreshBoardItems: async (boardId) => set({ boardItems: await window.api.listBoardItems(boardId) }),
+  refreshBoardItems: async (boardId) =>
+    set({ boardItems: await window.api.listBoardItems(boardId), boardItemsBoardId: boardId }),
   refreshStats: async () => set({ stats: await window.api.getLibraryStats() }),
 
   refreshAll: async () => {

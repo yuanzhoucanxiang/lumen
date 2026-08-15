@@ -55,6 +55,8 @@ export default function BoardReferencePanel() {
     () => new Set(boardItems.flatMap((item) => (item.assetId ? [item.assetId] : []))),
     [boardItems]
   )
+  // 元素清单是否对得上当前白板:切板后加载完成前为未知,此时禁用添加(防重复入板)
+  const placedKnown = useLibraryStore((state) => state.boardItemsBoardId) === useLibraryStore((state) => state.activeBoardId)
   const source = sourceName(view, folders, tags)
 
   if (collapsed) {
@@ -139,7 +141,8 @@ export default function BoardReferencePanel() {
           <div className="grid grid-cols-2 gap-2">
             {assets.map((asset) => {
               const thumb = assetThumbUrl(asset)
-              const alreadyPlaced = placed.has(asset.id)
+              const alreadyPlaced = placedKnown && placed.has(asset.id)
+              const addDisabled = alreadyPlaced || !placedKnown
               return (
                 <article
                   key={asset.id}
@@ -157,8 +160,8 @@ export default function BoardReferencePanel() {
                     )}
                     <button
                       aria-label={alreadyPlaced ? `${asset.name} 已在白板中` : `添加 ${asset.name} 到白板`}
-                      title={alreadyPlaced ? '已在当前白板' : '添加到当前白板'}
-                      disabled={alreadyPlaced}
+                      title={alreadyPlaced ? '已在当前白板' : placedKnown ? '添加到当前白板' : '白板元素加载中…'}
+                      disabled={addDisabled}
                       className={`board-reference-card__add ${alreadyPlaced ? 'is-placed' : ''}`}
                       onClick={(event) => {
                         event.stopPropagation()

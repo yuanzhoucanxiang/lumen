@@ -122,6 +122,9 @@ export async function importBoardFromFile(filePath: string): Promise<{ boardId: 
   if (!manifestBuf) throw new Error('.lumenboard 缺少 manifest.json')
   const manifest = JSON.parse(manifestBuf.toString('utf-8')) as Manifest
   if (manifest.app !== 'LUMEN' || manifest.format !== 'lumenboard') throw new Error('不是有效的 LUMEN 白板文件')
+  if (manifest.version != null && manifest.version > 1) {
+    throw new Error(`白板文件版本过高(version=${manifest.version}),请升级 LUMEN 后再导入`)
+  }
   const boardName = String(manifest.board?.name ?? '导入的白板')
   const guides = String(manifest.board?.guides ?? '[]')
 

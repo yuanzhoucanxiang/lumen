@@ -248,6 +248,13 @@ export default function BoardCanvas({
   // ref 镜像：导出 SVG 等异步回调避免闭包过期
   const appearanceRef = useRef(appearance)
   appearanceRef.current = appearance
+  // 点阵背景 DOM（平移时直改,不逐帧走 React state——否则点阵要等松手才跟上）
+  const gridRef = useRef<HTMLDivElement>(null)
+  /** 按视口偏移更新点阵背景 transform(取模使网格无限延伸) */
+  const applyGridTransform = (v: Viewport) => {
+    const gs = appearanceRef.current.gridSize
+    if (gridRef.current) gridRef.current.style.transform = `translate(${v.x % gs}px, ${v.y % gs}px)`
+  }
 
   /* ---------- 绘图工具状态 ---------- */
   // 进行中的绘制（画布坐标）
@@ -283,6 +290,22 @@ export default function BoardCanvas({
     histRef.current = { undo: [], redo: [] }
     notifyHistory()
   }, [activeBoardId])
+  /** 外部添加(参考架/素材库发送)进入撤销历史：store 记录添加前快照,这里消费入栈 */
+  useEffect(() => {
+    const hint = useLibraryStore.getState().boardHistoryHint
+    if (!hint) return
+    if (hint.boardId !== activeBoardId) {
+      useLibraryStore.setState({ boardHistoryHint: null })
+      return
+    }
+    const h = histRef.current
+    h.undo.push(hint.snapshot.map((i) => ({ ...i, shape: i.shape })))
+    if (h.undo.length > 60) h.undo.shift()
+    h.redo = []
+    notifyHistory()
+    useLibraryStore.setState({ boardHistoryHint: null })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boardItems, activeBoardId])
   const pushHistory = () => {
     const h = histRef.current
     h.undo.push(boardItemsRef.current.map((i) => ({ ...i, shape: i.shape })))
@@ -453,14 +476,8 @@ export default function BoardCanvas({
         setDrawPreview(null)
       }
       if (marqueeRef.current) finishMarquee()
-      if (guideDragRef.current) {
-        // 参考线拖动中断：guidesRef 已随 move 更新,直接按当前值持久化
-        guideDragRef.current = null
-        const cur = guidesRef.current
-        if (boardIdRef.current != null) {
-          void window.api.setBoardGuides(boardIdRef.current, JSON.stringify(cur)).then(() => refreshBoards())
-        }
-      }
+      const gd = guideDragRef.current
+      if (gd) void finishGuideDrag(gd.startX, gd.startY)
       const d = dragRef.current
       if (d) {
         // 元素拖动回滚到原位（与"按下后才按空格转平移"同策略：不落库半途位移）
@@ -493,6 +510,7 @@ export default function BoardCanvas({
       viewportRef.current = next
       setViewport(next)
       if (surfaceRef.current) surfaceRef.current.style.transform = `translate3d(${next.x}px, ${next.y}px, 0) scale(${next.s})`
+      applyGridTransform(next)
       onViewportChange?.(next.s)
     },
     [onViewportChange]
@@ -546,11 +564,14 @@ export default function BoardCanvas({
 
   /* ---------- 参考线（对标 PureRef 参考辅助） ---------- */
   interface Guide {
+    /** 稳定标识（新建时生成,旧数据缺省时按位置+方向回退） */
+    id?: string
     x?: number
     y?: number
     horizontal: boolean
   }
   const [guides, setGuides] = useState<Guide[]>([])
+  const guideId = () => 'g' + Math.random().toString(36).slice(2, 8)
   // 白板切换时从 store 的 boards 解析参考线（用 activeBoardId：boardId 声明在后面,render 求值 deps 会 TDZ）
   useEffect(() => {
     const b = boards.find((x) => x.id === activeBoardId)
@@ -563,8 +584,8 @@ export default function BoardCanvas({
     }
     setGuides(g)
   }, [boards, activeBoardId])
-  // 拖动中的参考线（实时改局部 state,松手持久化）
-  const guideDragRef = useRef<{ index: number; horizontal: boolean; startX: number; startY: number; orig: number } | null>(null)
+  // 拖动中的参考线（拖动只改 DOM 不触发 React 渲染,松手落定+持久化）
+  const guideDragRef = useRef<{ index: number; horizontal: boolean; startX: number; startY: number; orig: number; el?: HTMLElement | null } | null>(null)
   // guides 的 ref 镜像：pointerup 可能发生在 setGuides 重渲染前,闭包里的 guides 会过期
   const guidesRef = useRef<Guide[]>([])
   guidesRef.current = guides
@@ -586,30 +607,36 @@ export default function BoardCanvas({
     } catch {
       /* 合成事件忽略 */
     }
-    guideDragRef.current = { index, horizontal: g.horizontal, startX: e.clientX, startY: e.clientY, orig: g.horizontal ? g.y ?? 0 : g.x ?? 0 }
+    guideDragRef.current = { index, horizontal: g.horizontal, startX: e.clientX, startY: e.clientY, orig: g.horizontal ? g.y ?? 0 : g.x ?? 0, el: e.currentTarget as HTMLElement }
   }
   const onGuidePointerMove = (e: React.PointerEvent) => {
     const d = guideDragRef.current
     if (!d) return
     const delta = (d.horizontal ? e.clientY - d.startY : e.clientX - d.startX) / viewportRef.current.s
-    setGuides((prev) =>
-      prev.map((g, i) => (i === d.index ? (d.horizontal ? { ...g, y: Math.round(d.orig + delta) } : { ...g, x: Math.round(d.orig + delta) }) : g))
-    )
+    // 拖动中直接改线身 DOM（此前每帧 setGuides 会重渲染整棵画布）
+    const pos = Math.round(d.orig + delta)
+    if (d.el) {
+      if (d.horizontal) d.el.style.top = `${pos}px`
+      else d.el.style.left = `${pos}px`
+    }
   }
-  const onGuidePointerUp = async (e: React.PointerEvent) => {
+  /** 落定参考线拖动：从 drag 起点重算最终位置（不依赖可能过期的闭包 state）并持久化 */
+  const finishGuideDrag = async (clientX: number, clientY: number) => {
     const d = guideDragRef.current
     if (!d) return
     guideDragRef.current = null
-    // 从 drag 起点重算目标位置（不依赖可能过期的闭包 state）
-    const delta = (d.horizontal ? e.clientY - d.startY : e.clientX - d.startX) / viewportRef.current.s
+    const delta = (d.horizontal ? clientY - d.startY : clientX - d.startX) / viewportRef.current.s
     const next = guidesRef.current.map((g, i) =>
       i === d.index ? (d.horizontal ? { ...g, y: Math.round(d.orig + delta) } : { ...g, x: Math.round(d.orig + delta) }) : g
     )
     setGuides(next)
-    if (boardId != null) {
-      await window.api.setBoardGuides(boardId, JSON.stringify(next))
+    if (boardIdRef.current != null) {
+      await window.api.setBoardGuides(boardIdRef.current, JSON.stringify(next))
       await refreshBoards()
     }
+  }
+  const onGuidePointerUp = async (e: React.PointerEvent) => {
+    await finishGuideDrag(e.clientX, e.clientY)
   }
   const openGuideMenu = (e: React.MouseEvent, index: number) => {
     e.preventDefault()
@@ -626,7 +653,9 @@ export default function BoardCanvas({
   const addGuideFromMenu = async (horizontal: boolean) => {
     if (boardId == null) return
     const pt = canvasPointFromClient(ctxMenu?.x ?? 0, ctxMenu?.y ?? 0)
-    const next = horizontal ? [...guides, { horizontal, y: Math.round(pt.y) }] : [...guides, { horizontal, x: Math.round(pt.x) }]
+    const next: Guide[] = horizontal
+      ? [...guides, { id: guideId(), horizontal, y: Math.round(pt.y) }]
+      : [...guides, { id: guideId(), horizontal, x: Math.round(pt.x) }]
     await persistGuides(next)
     setCtxMenu(null)
   }
@@ -1231,6 +1260,7 @@ export default function BoardCanvas({
       if (surfaceRef.current) {
         surfaceRef.current.style.transform = `translate3d(${next.x}px, ${next.y}px, 0) scale(${next.s})`
       }
+      applyGridTransform(next)
       return
     }
     const d = drawingRef.current
@@ -1289,14 +1319,25 @@ export default function BoardCanvas({
   /* ---------- 多窗口同步：窗口获得焦点时刷新（浮动窗与主窗互相看到对方改动） ---------- */
   useEffect(() => {
     const onFocus = () => {
-      if (activeBoardId != null) {
-        void refreshBoardItems(activeBoardId)
-        void refreshBoards()
+      if (activeBoardId == null) return
+      // 本地手势/文字编辑进行中不刷新:异步回写会与 DOM 中间态/编辑内容交错覆盖
+      if (
+        dragRef.current ||
+        drawingRef.current ||
+        panRef.current ||
+        guideDragRef.current ||
+        nudgeRef.current ||
+        marqueeRef.current ||
+        editingNoteId != null
+      ) {
+        return
       }
+      void refreshBoardItems(activeBoardId)
+      void refreshBoards()
     }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-  }, [activeBoardId, refreshBoardItems, refreshBoards])
+  }, [activeBoardId, refreshBoardItems, refreshBoards, editingNoteId])
 
   /* ---------- 键盘（空格平移 / Delete 删除选中 / Ctrl+A 全选 / Esc 取消） ---------- */
   useEffect(() => {
@@ -1904,6 +1945,7 @@ export default function BoardCanvas({
       {/* 点阵背景（画布外观：开关 + 密度 + 颜色随背景亮度自适应） */}
       {appearance.grid && (
         <div
+          ref={gridRef}
           data-grid
           className="pointer-events-none absolute inset-0"
           style={{
@@ -2104,8 +2146,9 @@ export default function BoardCanvas({
           )
         })}
 
-        {/* 多选时的组包围盒 + 8 向组缩放手柄（照抄 MOTZ group-selection） */}
-        {multiSelected && !dragRef.current && selectionBBox && (
+        {/* 多选时的组包围盒 + 8 向组缩放手柄（照抄 MOTZ group-selection）。
+            拖动/缩放进行中由 groupBoxRef.style.display='none' 隐藏(不读 ref 做条件渲染) */}
+        {multiSelected && selectionBBox && (
           <div
             ref={groupBoxRef}
             data-group-box
@@ -2172,11 +2215,11 @@ export default function BoardCanvas({
           </svg>
         )}
 
-        {/* 参考线（对标 PureRef 参考辅助）：可拖动、右键删除 */}
+        {/* 参考线（对标 PureRef 参考辅助）：可拖动、右键删除。key 用稳定 id(旧数据按位置回退) */}
         {guides.map((g, i) =>
           g.horizontal ? (
             <div
-              key={`guide-h-${i}`}
+              key={g.id ?? `guide-h-${g.y ?? 0}-${i}`}
               data-guide="h"
               data-guide-index={i}
               className="absolute cursor-ns-resize"
@@ -2184,11 +2227,12 @@ export default function BoardCanvas({
               onPointerDown={(e) => startGuideDrag(i, g, e)}
               onPointerMove={onGuidePointerMove}
               onPointerUp={(e) => void onGuidePointerUp(e)}
+              onPointerCancel={(e) => void onGuidePointerUp(e)}
               onContextMenu={(e) => openGuideMenu(e, i)}
             />
           ) : (
             <div
-              key={`guide-v-${i}`}
+              key={g.id ?? `guide-v-${g.x ?? 0}-${i}`}
               data-guide="v"
               data-guide-index={i}
               className="absolute cursor-ew-resize"
@@ -2196,6 +2240,7 @@ export default function BoardCanvas({
               onPointerDown={(e) => startGuideDrag(i, g, e)}
               onPointerMove={onGuidePointerMove}
               onPointerUp={(e) => void onGuidePointerUp(e)}
+              onPointerCancel={(e) => void onGuidePointerUp(e)}
               onContextMenu={(e) => openGuideMenu(e, i)}
             />
           )

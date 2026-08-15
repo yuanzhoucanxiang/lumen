@@ -52,11 +52,15 @@ interface ZipEntry {
 export type { ZipEntry }
 
 /** 纯 JS ZIP 写入（store 无压缩，图片类素材压不动） */
-export function zipStore(entries: ZipEntry[]): Buffer {  const locals: Buffer[] = []
+export function zipStore(entries: ZipEntry[]): Buffer {
+  if (entries.length > 65535) throw new Error('ZIP 条目数超出 65535(不支持 ZIP64),请分批导出')
+  const locals: Buffer[] = []
   const centrals: Buffer[] = []
   let offset = 0
   for (const e of entries) {
+    if (e.data.length > 0xffffffff) throw new Error(`ZIP 条目超过 4GB(不支持 ZIP64): ${e.name}`)
     const nameBuf = Buffer.from(e.name, 'utf-8')
+    if (nameBuf.length > 65535) throw new Error(`ZIP 文件名过长: ${e.name}`)
     const crc = crc32(e.data)
 
     // Local file header（bit 11 = UTF-8 文件名）
@@ -115,13 +119,20 @@ export function zipStore(entries: ZipEntry[]): Buffer {  const locals: Buffer[] 
  * 兼容其他工具重压缩过的文件。目录条目忽略。
  */
 export function zipRead(buf: Buffer): Map<string, Buffer> {
-  // 从尾部倒查 EOCD 签名（注释最长 65535 字节）
+  // 从尾部倒查 EOCD 签名（注释最长 65535 字节）。
+  // 注意：ZIP 注释区在真 EOCD 之后,倒查可能先命中注释内容里的假签名,
+  // 命中后用 EOCD 里的 cdSize/cdOffset 做自洽校验,不通过则继续向前找
   let eocd = -1
   const searchStart = Math.max(0, buf.length - 22 - 65535)
   for (let i = buf.length - 22; i >= searchStart; i--) {
     if (buf.readUInt32LE(i) === 0x06054b50) {
-      eocd = i
-      break
+      const cdSize = buf.readUInt32LE(i + 12)
+      const cdOffset = buf.readUInt32LE(i + 16)
+      // 中央目录需完整落在文件内
+      if (cdOffset + cdSize <= buf.length) {
+        eocd = i
+        break
+      }
     }
   }
   if (eocd < 0) throw new Error('不是有效的 ZIP 文件')

@@ -19,9 +19,7 @@ import {
   addToFolder,
   assetPaths,
   assignTagToGroup,
-  cleanTrashOlderThan,
-  createFolder,
-  createTag,
+  createFolder,  createTag,
   createTagGroup,
   deleteAssets,
   deleteFolder,
@@ -160,8 +158,6 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
 
   ipcMain.handle('assets:get', (_e, id: string) => getAssetById(id))
 
-  ipcMain.handle('asset:paths', (_e, id: string) => assetPaths(id))
-
   ipcMain.handle('asset:applyEdit', async (_e, id: string, dataUrl: string) => {
     await applyEdit(id, dataUrl)
   })
@@ -183,8 +179,6 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('assets:findSimilar', async (_e, id: string, maxDistance?: number) =>
     findSimilar(id, maxDistance ?? 10)
   )
-
-  ipcMain.handle('trash:cleanOld', () => cleanTrashOlderThan(30))
 
   /* ---------------- 设置 ---------------- */
   // settings:get 返回 AI key 脱敏（只返回 hasKey + 末 4 位，完整 key 不进渲染进程）

@@ -141,6 +141,26 @@ async function main() {
     check('参考素材使用专用 MIME 拖入', dragResult.ok && dragResult.types.includes('application/x-eaglelike-assets'), JSON.stringify(dragResult))
     check('拖放后素材真实进入当前白板', afterItems > beforeItems, `${beforeItems} → ${afterItems}`)
 
+    // 参考架「+」按钮发送(store 外部添加)也可撤销：Ctrl+Z 应移除该元素
+    // (已放置的卡片按钮禁用,选一个未放置的)
+    const beforeAddClick = await run(`return (await window.api.listBoardItems(${boardId})).length`)
+    await run(`(() => {
+      const cards = [...document.querySelectorAll('[data-board-reference-asset]')]
+      const card = cards.find((c) => !c.querySelector('.board-reference-card__add').disabled)
+      const btn = card?.querySelector('.board-reference-card__add')
+      if (btn) btn.click()
+    })()`)
+    await sleep(600)
+    const afterAddClick = await run(`return (await window.api.listBoardItems(${boardId})).length`)
+    await run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }))`)
+    await sleep(500)
+    const afterUndoAdd = await run(`return (await window.api.listBoardItems(${boardId})).length`)
+    check(
+      '参考架添加可撤销(Ctrl+Z 移除)',
+      afterAddClick === beforeAddClick + 1 && afterUndoAdd === beforeAddClick,
+      `${beforeAddClick} → ${afterAddClick} → ${afterUndoAdd}`
+    )
+
     const positionBeforePan = await run(`return (await window.api.listBoardItems(${boardId})).map((item) => ({ id: item.id, x: item.x, y: item.y }))`)
     const panResult = await run(`return (() => {
       const item = document.querySelector('[data-board-item]')
