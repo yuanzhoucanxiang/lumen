@@ -62,16 +62,32 @@ export interface Board {
   updatedAt: number
   /** 参考线 JSON：[{x?,y?,horizontal:boolean}],vertical=有 x,horizontal=有 y */
   guides: string
+  /** 画布外观 JSON：{bg:'dark'|'gray'|'light'|'white'|'black'|'#rrggbb', grid:boolean, gridSize:number} */
+  appearance: string
 }
 
-/** 白板元素（图片/视频/文字） */
+/** 形状元素规格（points 为元素内归一化坐标 0-1，渲染时乘 width/height） */
+export interface ShapeSpec {
+  /** pen=手绘折线, line=直线, arrow=箭头, rect=矩形, ellipse=椭圆 */
+  kind: 'pen' | 'line' | 'arrow' | 'rect' | 'ellipse'
+  /** pen: [[x,y],...] 折线点; line/arrow: [[x,y],[x,y]] 两端点 */
+  points: number[][]
+  /** 描边颜色 hex */
+  color: string
+  /** 描边宽度（元素单位） */
+  sw: number
+  /** 填充色 hex（rect/ellipse 可选，默认无填充） */
+  fill?: string
+}
+
+/** 白板元素（图片/视频/文字/形状） */
 export interface BoardItem {
   id: string
   boardId: number
-  /** 关联素材 id（note 类型为 null） */
+  /** 关联素材 id（note/shape 类型为 null） */
   assetId: string | null
-  /** 'asset' = 图片/视频, 'note' = 文字 */
-  type: 'asset' | 'note'
+  /** 'asset' = 图片/视频, 'note' = 文字, 'shape' = 矢量形状 */
+  type: 'asset' | 'note' | 'shape'
   x: number
   y: number
   width: number
@@ -87,6 +103,8 @@ export interface BoardItem {
   noteColor: string
   /** 元素透明度 0-100（100=不透明,对标 PureRef 参考图透明度对比） */
   opacity: number
+  /** shape 类型的规格 JSON（ShapeSpec） */
+  shape: string | null
   createdAt: number
 }
 

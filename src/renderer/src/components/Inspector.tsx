@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { assetThumbUrl, useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 import Markdown from './Markdown'
+import { useTheme } from '../theme'
 
 function fmtSize(n: number): string {
   if (n < 1024) return `${n} B`
@@ -10,6 +11,8 @@ function fmtSize(n: number): string {
 }
 
 export default function Inspector() {
+  const theme = useTheme()
+  const pixel = theme === 'pixel-glitch'
   const assets = useLibraryStore((s) => s.assets)
   const selection = useLibraryStore((s) => s.selection)
   const tags = useLibraryStore((s) => s.tags)
@@ -98,10 +101,18 @@ export default function Inspector() {
   return (
     <aside
       aria-label="素材详情"
-      className="flex w-64 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-panel)]"
+      data-inspector
+      className="archive-inspector flex w-[252px] shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-panel)]"
     >
+      <header className="archive-inspector__header">
+        <div>
+          <span className="mono">{pixel ? 'TRACE PANEL' : 'INSPECTION RECORD'}</span>
+          <strong>{asset ? (pixel ? '素材解析' : '素材检视记录') : (pixel ? '等待信号' : '等待选片')}</strong>
+        </div>
+        <span className="archive-inspector__folio mono">{asset ? String(asset.id).slice(-4).padStart(4, '0') : '----'}</span>
+      </header>
       {!asset ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2.5 p-4 text-center text-[12px] text-[var(--text-dim)]">
+        <div className="archive-inspector__empty flex flex-1 flex-col items-center justify-center gap-2.5 p-4 text-center text-[12px] text-[var(--text-dim)]">
           <span
             aria-hidden="true"
             className="flex h-12 w-12 items-center justify-center border border-dashed border-[var(--border-strong)] text-[var(--text-faint)]"
@@ -181,9 +192,9 @@ export default function Inspector() {
           )}
         </div>
       ) : (
-        <div className="modal-scroll flex-1 overflow-y-auto p-3.5">
+        <div key={asset.id} className="archive-inspector__body modal-scroll flex-1 overflow-y-auto p-4">
           {/* 预览 */}
-          <div className="mb-3 flex h-44 items-center justify-center border border-[var(--border)] bg-[#0d0f12] p-1.5">
+          <div className="inspection-print mb-4 flex h-48 items-center justify-center border border-[var(--border)] bg-[#0d0f12] p-2">
             {assetThumbUrl(asset) ? (
               <img
                 src={assetThumbUrl(asset)}

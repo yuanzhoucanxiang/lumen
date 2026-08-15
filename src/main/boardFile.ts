@@ -91,7 +91,7 @@ export function exportBoardToFile(boardId: number, targetPath: string): { count:
 interface ManifestItem {
   id: string
   assetId: string | null
-  type: 'asset' | 'note'
+  type: 'asset' | 'note' | 'shape'
   x: number
   y: number
   width: number
@@ -101,6 +101,7 @@ interface ManifestItem {
   noteFont: string
   noteColor: string
   opacity: number
+  shape: string | null
 }
 
 interface Manifest {
@@ -204,6 +205,19 @@ export async function importBoardFromFile(filePath: string): Promise<{ boardId: 
           await updateBoardItem(row.id, { z: it.z, opacity: it.opacity ?? 100, noteFont: it.noteFont ?? '', noteColor: it.noteColor ?? '' })
           imported++
         }
+      } else if (it.type === 'shape' && it.shape) {
+        const row = await addItemSafe(board.id, {
+          type: 'shape',
+          x: it.x,
+          y: it.y,
+          width: it.width,
+          height: it.height,
+          shape: it.shape
+        })
+        if (row) {
+          await updateBoardItem(row.id, { z: it.z, opacity: it.opacity ?? 100 })
+          imported++
+        }
       }
     }
     logger.info('[boardFile]', `导入完成: 白板「${name}」${imported} 个元素`)
@@ -226,7 +240,7 @@ export async function importBoardFromFile(filePath: string): Promise<{ boardId: 
 /** 与 addBoardItem 同签名但类型收窄（错误不抛出,记日志返回 null） */
 async function addItemSafe(
   boardId: number,
-  item: { assetId?: string | null; type: 'asset' | 'note'; x: number; y: number; width: number; height: number; text?: string }
+  item: { assetId?: string | null; type: 'asset' | 'note' | 'shape'; x: number; y: number; width: number; height: number; text?: string; shape?: string }
 ): Promise<BoardItem | null> {
   try {
     return addBoardItem(boardId, item)

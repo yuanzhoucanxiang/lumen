@@ -11,6 +11,7 @@ import ConfirmDialog from './components/ConfirmDialog'
 import UpdateNotes from './components/UpdateNotes'
 import AiDialog from './components/AiDialog'
 import BoardPanel from './components/BoardPanel'
+import ArchiveHeader from './components/ArchiveHeader'
 import { loadShortcuts, matchesShortcut } from './shortcuts'
 import type { UpdateStatus } from '@shared/types'
 
@@ -121,6 +122,9 @@ export default function App() {
       const target = e.target as HTMLElement
       const inInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
       const s = useLibraryStore.getState()
+      // 白板全屏时素材库不可见：库级快捷键(删除/撤销/全选/评分/方向键)全部让位给画布
+      // (否则白板里按 Delete 会连带删除素材库选中项)
+      if (s.boardViewMode === 'board') return
       if (e.key === 'Delete') {
         if (inInput) return
         void s.deleteSelection(s.view.type === 'trash')
@@ -182,7 +186,7 @@ export default function App() {
 
   return (
     <div
-      className="flex h-full flex-col"
+      className="archive-shell flex h-full flex-col"
       onDragOver={(e) => {
         e.preventDefault()
         if (e.dataTransfer.types.includes('Files')) setDragOver(true)
@@ -199,12 +203,13 @@ export default function App() {
     >
       <div className="flex min-h-0 flex-1">
         <Sidebar />
-        <main className="flex min-w-0 flex-1 flex-col" style={{ background: 'var(--bg-base)' }}>
+        <main className="archive-workspace flex min-h-0 min-w-0 flex-1 flex-col" style={{ background: 'var(--bg-base)' }}>
           {boardViewMode === 'board' ? (
             <BoardPanel />
           ) : boardViewMode === 'split' ? (
             <div className="flex min-h-0 flex-1">
               <div className="flex min-w-0 flex-1 flex-col">
+                <ArchiveHeader />
                 <Toolbar />
                 <Gallery />
               </div>
@@ -213,13 +218,15 @@ export default function App() {
             </div>
           ) : (
             // 纯素材库：白板关闭时不渲染分屏与白板面板
-            <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <ArchiveHeader />
               <Toolbar />
               <Gallery />
             </div>
           )}
         </main>
-        <Inspector />
+        {/* 白板全屏时素材详情面板无意义(库里没有可见选中项),隐藏让画布更宽 */}
+        {boardViewMode !== 'board' && <Inspector />}
       </div>
 
       {previewId && <Preview />}

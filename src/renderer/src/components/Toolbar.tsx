@@ -89,7 +89,7 @@ function FilterButton({
     <button
       aria-label={label}
       aria-pressed={active}
-      className={`flex items-center gap-1.5 whitespace-nowrap border px-2.5 py-1.5 text-[12px] tracking-[0.03em] transition-colors duration-100 ${
+      className={`archive-filter flex items-center gap-1.5 whitespace-nowrap border px-2.5 py-1.5 text-[12px] tracking-[0.03em] transition-colors duration-100 ${
         active
           ? 'border-[var(--accent-deep)] bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]'
           : 'border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]'
@@ -214,9 +214,10 @@ export default function Toolbar() {
 
   return (
     <div
-      className="flex h-12 shrink-0 items-center gap-2.5 overflow-x-auto border-b border-[var(--border)] bg-[var(--bg-panel)] px-3"
+      className="archive-filterbar flex h-14 shrink-0 items-stretch overflow-hidden border-b border-[var(--border)] bg-[var(--bg-panel)]"
       onScroll={() => setOpenPanel(null)}
     >
+      <div className="archive-filterbar__scroller flex min-w-0 flex-1 items-center gap-2 overflow-x-auto px-3">
       {/* 导入按钮 */}
       <button className="btn-primary flex items-center gap-1.5 whitespace-nowrap" onClick={() => void importDialog()}>
         <Icon name="import" size={14} strokeWidth={2.2} />
@@ -224,7 +225,7 @@ export default function Toolbar() {
       </button>
 
       {/* 搜索 / AI 智能搜索 */}
-      <div className="relative w-56 min-w-[110px] shrink">
+      <div className="archive-filterbar__search relative flex w-48 min-w-[132px] shrink">
         <Icon
           name={aiMode ? 'sparkles' : 'search'}
           size={13}
@@ -235,7 +236,7 @@ export default function Toolbar() {
         <input
           ref={aiSearchInputRef}
           aria-label={aiMode ? 'AI 智能搜索' : '搜索素材'}
-          className={`field-input w-full ${aiMode ? 'border-[var(--accent)] pl-8 pr-8' : 'pl-8 pr-8'}`}
+          className={`min-w-0 flex-1 field-input ${aiMode ? 'border-[var(--accent)] pl-8 pr-2' : 'pl-8 pr-2'}`}
           placeholder={aiMode ? '描述画面，如「暗黑城堡带雾」…' : '搜索名称或注释…'}
           value={aiMode ? aiQuery : keyword}
           onChange={(e) => (aiMode ? setAiQuery(e.target.value) : setKeyword(e.target.value))}
@@ -248,7 +249,7 @@ export default function Toolbar() {
           aria-label={aiMode ? '退出 AI 搜索' : 'AI 智能搜索'}
           aria-pressed={aiMode}
           title={aiMode ? '退出 AI 搜索' : 'AI 智能搜索（自然语言找图）'}
-          className={`absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm transition-colors duration-100 ${
+          className={`archive-filterbar__search-mode flex h-[30px] w-8 shrink-0 items-center justify-center border transition-colors duration-100 ${
             aiMode
               ? 'bg-[var(--accent-soft)] text-[var(--accent)]'
               : 'text-[var(--text-faint)] hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]'
@@ -264,6 +265,19 @@ export default function Toolbar() {
           </div>
         )}
       </div>
+
+      {/* 高频动作保持在搜索旁，不能被后面的筛选项挤出可视区 */}
+      {view.type !== 'trash' && selection.length > 0 && (
+        <button
+          className="archive-ai-action btn-ghost flex items-center gap-1.5 whitespace-nowrap"
+          title={`AI 智能处理所选 ${selection.length} 个素材（改名+打标签）`}
+          onClick={() => void doAiProcess()}
+        >
+          <Icon name="sparkles" size={13} />
+          AI 处理
+          <span className="mono tnum text-[10px]">{selection.length}</span>
+        </button>
+      )}
 
       {/* 格式筛选 */}
       <div className="relative" ref={formatRef}>
@@ -399,7 +413,7 @@ export default function Toolbar() {
 
       {/* 未标注筛选 */}
       <FilterButton label="只看未打标签的素材" active={untagged} onClick={toggleUntagged}>
-        未标注
+        未标
       </FilterButton>
 
       {/* 导入时间筛选 */}
@@ -444,7 +458,7 @@ export default function Toolbar() {
           active={false}
           onClick={() => setOpenPanel(openPanel === 'sort' ? null : 'sort')}
         >
-          排序: {sortOptions.find((o) => o.key === sortBy)?.label}
+          {sortOptions.find((o) => o.key === sortBy)?.label}
           <Icon name={sortDesc ? 'arrowDown' : 'arrowUp'} size={12} />
         </FilterButton>
         <Popover open={openPanel === 'sort'} onClose={() => setOpenPanel(null)} width={170} anchorRef={sortRef}>
@@ -470,29 +484,14 @@ export default function Toolbar() {
         </Popover>
       </div>
 
-      <div className="flex-1" />
-
       <button
-        className="btn-ghost flex items-center gap-1.5 whitespace-nowrap"
+        className="btn-ghost flex items-center gap-1.5 whitespace-nowrap px-2.5"
+        aria-label="扫描相似或重复图片"
         title="扫描相似/重复图片"
         onClick={() => setDupeOpen(true)}
       >
         <Icon name="copy" size={13} />
-        查重
       </button>
-
-      {/* 一键 AI 智能处理（选中素材后可直接点，不用进右键菜单） */}
-      {view.type !== 'trash' && selection.length > 0 && (
-        <button
-          className="btn-ghost flex items-center gap-1.5 whitespace-nowrap"
-          title={`AI 智能处理所选 ${selection.length} 个素材（改名+打标签）`}
-          onClick={() => void doAiProcess()}
-        >
-          <Icon name="sparkles" size={13} />
-          AI 处理
-          <span className="mono tnum text-[10px]">{selection.length}</span>
-        </button>
-      )}
 
       {/* 批量操作（回收站视图，纯图标按钮） */}
       {view.type === 'trash' && selection.length > 0 && (
@@ -527,7 +526,10 @@ export default function Toolbar() {
         </button>
       )}
 
+      </div>
+
       {/* 布局切换 */}
+      <div className="archive-filterbar__fixed flex shrink-0 items-center gap-2 px-3">
       <div className="flex items-center border border-[var(--border)]" role="group" aria-label="布局切换">
         {(
           [
@@ -563,8 +565,9 @@ export default function Toolbar() {
           max={6}
           value={zoom}
           onChange={(e) => setZoom(Number(e.target.value))}
-          className="w-24"
+          className="w-16"
         />
+      </div>
       </div>
 
       {dupeOpen && <DupeModal onClose={() => setDupeOpen(false)} />}

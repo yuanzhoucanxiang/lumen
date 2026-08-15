@@ -5,9 +5,11 @@ import SettingsModal from './SettingsModal'
 import MergeTagDialog from './MergeTagDialog'
 import TagManagerDialog from './TagManagerDialog'
 import Icon from './Icon'
-import ScrambleText from './ScrambleText'
+import { useTheme } from '../theme'
 import type { IconName } from './Icon'
 import type { Folder, Tag } from '@shared/types'
+
+const ravenMarkUrl = new URL('../../../../build/raven-icon-source.svg', import.meta.url).href
 
 /** 标签可选颜色 */
 const TAG_COLORS = [
@@ -41,12 +43,13 @@ function NavItem({
 }) {
   return (
     <button
+      aria-label={label}
       aria-current={active ? 'page' : undefined}
       onClick={onClick}
       onContextMenu={onContextMenu}
-      className={`relative flex w-full cursor-pointer items-center gap-2.5 px-2.5 py-[7px] text-left text-[13px] transition-colors duration-100 ${
+      className={`archive-nav-item relative flex w-full cursor-pointer items-center gap-2.5 px-2.5 py-[7px] text-left text-[13px] transition-colors duration-100 ${
         active
-          ? 'bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]'
+          ? 'bg-[var(--accent-soft)] font-medium text-[var(--text-main)]'
           : 'text-[var(--text-main)] hover:bg-[var(--bg-hover)]'
       }`}
     >
@@ -156,6 +159,8 @@ function SectionHeader({
 }
 
 export default function Sidebar() {
+  const theme = useTheme()
+  const pixel = theme === 'pixel-glitch'
   const view = useLibraryStore((s) => s.view)
   const setView = useLibraryStore((s) => s.setView)
   const tags = useLibraryStore((s) => s.tags)
@@ -534,20 +539,23 @@ export default function Sidebar() {
   return (
     <nav
       aria-label="素材库导航"
-      className="flex w-64 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]"
+      className="archive-sidebar flex w-[220px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]"
       onClick={() => setMenu(null)}
     >
       {/* 品牌区 */}
-      <header className="border-b border-[var(--border)] px-4 py-3.5">
-        <h1 className="glitch text-[15px] font-semibold leading-4 tracking-[0.35em]" data-text="LUMEN">
-          LUMEN
-        </h1>
-        <ScrambleText
-          className="mono mt-1.5 block text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]"
-          text={`ARCHIVE // ${String(stats.total).padStart(3, '0')}`}
-        />
+      <header className="archive-brand">
+        <div className="archive-brand__negative">
+          <span className="archive-brand__frame-no mono">{pixel ? 'PX' : '36'}</span>
+          <img className="brand-mark" src={ravenMarkUrl} alt="" draggable={false} />
+        </div>
+        <div className="archive-brand__copy">
+          <span className="archive-brand__edition mono">{pixel ? 'SIGNAL / 02' : 'ARCHIVE / 01'}</span>
+          <h1 className="brand-wordmark">LUMEN</h1>
+          <span className="archive-brand__subtitle mono">{pixel ? 'VISUAL MEMORY TERMINAL' : 'RAVEN PHOTOGRAPHIC INDEX'}</span>
+        </div>
       </header>
 
+      <div className="archive-sidebar__index modal-scroll">
       {/* 主导航 */}
       <div className="mt-2 space-y-px px-2">
         <NavItem
@@ -802,6 +810,8 @@ export default function Sidebar() {
           </div>
         )}
       </section>
+
+      </div>
 
       {/* 右键菜单 */}
       {menu && (
@@ -1072,7 +1082,7 @@ export default function Sidebar() {
       {/* 状态行 */}
       <div className="mono flex items-center gap-1.5 border-t border-[var(--border)] px-3.5 pt-2 text-[11px] uppercase tracking-[0.16em] text-[var(--text-faint)]">
         <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
-        SYNC · LOCAL DB · OK
+        {pixel ? 'LOCAL NODE · ONLINE' : 'LOCAL ARCHIVE · READY'}
       </div>
 
       {/* 库切换器 + 设置 */}

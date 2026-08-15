@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { assetEditable, assetStoryboardUrl, assetThumbUrl, useLibraryStore, zoomToWidth } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 import PixelArt from './PixelArt'
@@ -8,10 +9,14 @@ import ExportDialog from './ExportDialog'
 import type { IconName } from './Icon'
 import type { Asset } from '@shared/types'
 
-const GAP = 14
-const LABEL_H = 26
+const GAP = 18
+const LABEL_H = 30
 const LIST_ROW_H = 40
 const HOVER_PREVIEW_DELAY = 420
+const HOVER_PREVIEW_W = 288
+const HOVER_PREVIEW_MAX_H = 306
+const HOVER_PREVIEW_GAP = 12
+const HOVER_PREVIEW_MARGIN = 10
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi', 'wmv', 'm4v'])
 
 function fmtSize(n: number): string {
@@ -132,6 +137,10 @@ function AssetCard({
   onHoverEnd: () => void
 }) {
   const { a } = item
+  const suffix = `.${a.ext}`
+  const displayName = a.name.toLowerCase().endsWith(suffix.toLowerCase())
+    ? a.name.slice(0, -suffix.length)
+    : a.name
   const [thumbErr, setThumbErr] = useState(false)
   const [thumbFallback, setThumbFallback] = useState(false)
   // 视频：优先故事板封面，故事板缺失(短视频)时回退到首帧缩略图；再失败才显示图标
@@ -191,7 +200,7 @@ function AssetCard({
       }}
     >
       <div
-        className={`relative flex h-full flex-col border bg-[var(--bg-panel)] transition-colors duration-150 ${
+        className={`asset-card relative flex h-full flex-col border bg-[var(--bg-panel)] transition-all duration-150 ${
           selected
             ? 'border-[var(--accent)]'
             : 'border-[var(--border)] group-hover:border-[var(--border-strong)]'
@@ -199,8 +208,12 @@ function AssetCard({
       >
         {selected && <span aria-hidden="true" className="ticks" />}
 
+        <span className="asset-frame-number mono" aria-hidden="true">
+          {String(a.id).slice(-4).padStart(4, '0')}
+        </span>
+
         {/* 图像区 */}
-        <div className="scanlines relative flex items-center justify-center overflow-hidden bg-[#0d0f12]" style={{ height: imgH }}>
+        <div className="asset-media scanlines relative flex items-center justify-center overflow-hidden" style={{ height: imgH }}>
           {thumb ? (
             <img
               src={thumb}
@@ -250,7 +263,7 @@ function AssetCard({
 
           {/* 星级快捷操作 */}
           <div
-            className={`absolute bottom-1.5 left-1/2 flex -translate-x-1/2 gap-0.5 bg-black/70 px-1.5 py-[3px] transition-opacity duration-150 ${
+            className={`asset-rating absolute bottom-1.5 left-1/2 flex -translate-x-1/2 gap-0.5 bg-black/70 px-1.5 py-[3px] transition-opacity duration-150 ${
               a.star > 0 ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
             }`}
             onClick={(e) => e.stopPropagation()}
@@ -272,13 +285,14 @@ function AssetCard({
 
         {/* 名称行 */}
         <div
-          className={`mono flex items-center justify-center truncate px-1.5 text-[11px] tracking-[0.04em] transition-colors duration-150 ${
+          className={`asset-caption flex items-center truncate px-2.5 text-[11px] transition-colors duration-150 ${
             selected ? 'text-[var(--accent-text)]' : 'text-[var(--text-dim)] group-hover:text-[var(--text-main)]'
           }`}
           style={{ height: LABEL_H }}
           title={a.name}
         >
-          {a.name}
+          <span className="min-w-0 flex-1 truncate">{displayName}</span>
+          <span className="asset-caption__stock mono">{a.ext.toUpperCase()}</span>
         </div>
       </div>
     </div>
@@ -308,16 +322,50 @@ export default function Gallery() {
   const [revertId, setRevertId] = useState<string | null>(null)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  /** 悬停放大预览：延迟触发，贴近卡片右侧（空间不足换左侧） */
+  /** 悬停放大预览：只在素材墙可视区内定位，并自动选择卡片左右侧。 */
   const startHover = (a: Asset, el: HTMLElement) => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
     const rect = el.getBoundingClientRect()
     hoverTimer.current = setTimeout(() => {
-      const W = 288
-      const H = 320
-      let x = rect.right + 12
-      if (x + W > window.innerWidth - 8) x = Math.max(8, rect.left - W - 12)
-      const y = Math.max(8, Math.min(rect.top + rect.height / 2 - H / 2, window.innerHeight - H - 8))
+      const galleryRect = containerRef.current?.getBoundingClientRect()
+      const leftBound = Math.max(
+        HOVER_PREVIEW_MARGIN,
+        (galleryRect?.left ?? 0) + HOVER_PREVIEW_MARGIN
+      )
+      const rightBound = Math.min(
+        window.innerWidth - HOVER_PREVIEW_MARGIN,
+        (galleryRect?.right ?? window.innerWidth) - HOVER_PREVIEW_MARGIN
+      )
+      const topBound = Math.max(
+        HOVER_PREVIEW_MARGIN,
+        (galleryRect?.top ?? 0) + HOVER_PREVIEW_MARGIN
+      )
+      const bottomBound = Math.min(
+        window.innerHeight - HOVER_PREVIEW_MARGIN,
+        (galleryRect?.bottom ?? window.innerHeight) - HOVER_PREVIEW_MARGIN
+      )
+
+      const roomRight = rightBound - rect.right - HOVER_PREVIEW_GAP
+      const roomLeft = rect.left - HOVER_PREVIEW_GAP - leftBound
+      let x: number
+      if (roomRight >= HOVER_PREVIEW_W) {
+        x = rect.right + HOVER_PREVIEW_GAP
+      } else if (roomLeft >= HOVER_PREVIEW_W) {
+        x = rect.left - HOVER_PREVIEW_GAP - HOVER_PREVIEW_W
+      } else {
+        const preferred = roomRight >= roomLeft
+          ? rect.right + HOVER_PREVIEW_GAP
+          : rect.left - HOVER_PREVIEW_GAP - HOVER_PREVIEW_W
+        x = Math.min(
+          Math.max(preferred, leftBound),
+          Math.max(leftBound, rightBound - HOVER_PREVIEW_W)
+        )
+      }
+
+      const y = Math.min(
+        Math.max(rect.top, topBound),
+        Math.max(topBound, bottomBound - HOVER_PREVIEW_MAX_H)
+      )
       setHoverPv({ a, x, y })
     }, HOVER_PREVIEW_DELAY)
   }
@@ -521,7 +569,7 @@ export default function Gallery() {
       )}
       <div
         ref={containerRef}
-        className="modal-scroll flex-1 overflow-y-auto p-4"
+        className="contact-sheet modal-scroll flex-1 overflow-y-auto px-5 pb-8 pt-7"
       onScroll={(e) => {
         setScrollTop(e.currentTarget.scrollTop)
         endHover()
@@ -571,9 +619,10 @@ export default function Gallery() {
       </div>
 
       {/* 悬停放大预览（Eagle 式，不拦截鼠标；GIF/视频/音频自动播放） */}
-      {hoverPv && (
+      {hoverPv && createPortal(
         <div
           aria-hidden="true"
+          data-hover-preview
           className="anim-fade pointer-events-none fixed z-[180] w-72 border border-[var(--border-strong)] bg-[var(--bg-raised)] shadow-[var(--shadow-menu)]"
           style={{ left: hoverPv.x, top: hoverPv.y }}
         >
@@ -635,7 +684,8 @@ export default function Gallery() {
               <span className="tnum">{fmtSize(hoverPv.a.size)}</span>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* 右键菜单 */}

@@ -680,7 +680,7 @@ export function cleanTrashOlderThan(days: number): number {
 export function listBoards(): Board[] {
   return getDb()
     .prepare(
-      `SELECT id, name, created_at AS createdAt, updated_at AS updatedAt, guides
+      `SELECT id, name, created_at AS createdAt, updated_at AS updatedAt, guides, appearance
        FROM boards ORDER BY updated_at DESC`
     )
     .all() as Board[]
@@ -690,7 +690,7 @@ export function createBoard(name: string): Board {
   const db = getDb()
   const now = Date.now()
   const info = db.prepare('INSERT INTO boards (name, created_at, updated_at) VALUES (?, ?, ?)').run(name, now, now)
-  return { id: Number(info.lastInsertRowid), name, createdAt: now, updatedAt: now, guides: '[]' }
+  return { id: Number(info.lastInsertRowid), name, createdAt: now, updatedAt: now, guides: '[]', appearance: '{"bg":"dark","grid":true,"gridSize":24}' }
 }
 
 export function renameBoard(id: number, name: string): void {
@@ -718,6 +718,7 @@ interface BoardItemRow {
   note_font: string
   note_color: string
   opacity: number
+  shape: string | null
   created_at: number
 }
 
@@ -726,7 +727,7 @@ function rowToBoardItem(r: BoardItemRow): BoardItem {
     id: r.id,
     boardId: r.board_id,
     assetId: r.asset_id,
-    type: r.type === 'note' ? 'note' : 'asset',
+    type: r.type === 'note' ? 'note' : r.type === 'shape' ? 'shape' : 'asset',
     x: r.x,
     y: r.y,
     width: r.width,
@@ -736,6 +737,7 @@ function rowToBoardItem(r: BoardItemRow): BoardItem {
     noteFont: r.note_font ?? '',
     noteColor: r.note_color ?? '',
     opacity: r.opacity ?? 100,
+    shape: r.shape ?? null,
     createdAt: r.created_at
   }
 }
@@ -743,26 +745,54 @@ function rowToBoardItem(r: BoardItemRow): BoardItem {
 export function listBoardItems(boardId: number): BoardItem[] {
   const rows = getDb()
     .prepare(
-      `SELECT id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, opacity, created_at
+      `SELECT id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, opacity, shape, created_at
        FROM board_items WHERE board_id = ? ORDER BY z ASC`
     )
     .all(boardId) as BoardItemRow[]
   return rows.map(rowToBoardItem)
 }
 
-/** 添加白板元素（asset 或 note），返回完整元素 */
+/** 添加白板元素（asset / note / shape），返回完整元素 */
 export function addBoardItem(
   boardId: number,
-  item: { assetId?: string | null; type: 'asset' | 'note'; x: number; y: number; width: number; height: number; text?: string }
+  item: {
+    assetId?: string | null
+    type: 'asset' | 'note' | 'shape'
+    x: number
+    y: number
+    width: number
+    height: number
+    text?: string
+    shape?: string
+    opacity?: number
+    noteFont?: string
+    noteColor?: string
+  }
 ): BoardItem {
   const db = getDb()
   const id = randomUUID().replace(/-/g, '').slice(0, 16)
   const z = (db.prepare('SELECT COALESCE(MAX(z), -1) + 1 AS z FROM board_items WHERE board_id = ?').get(boardId) as { z: number }).z
   const createdAt = Date.now()
   db.prepare(
-    `INSERT INTO board_items (id, board_id, asset_id, type, x, y, width, height, z, text, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(id, boardId, item.assetId ?? null, item.type, item.x, item.y, item.width, item.height, z, item.text ?? '', createdAt)
+    `INSERT INTO board_items (id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, opacity, shape, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    id,
+    boardId,
+    item.assetId ?? null,
+    item.type,
+    item.x,
+    item.y,
+    item.width,
+    item.height,
+    z,
+    item.text ?? '',
+    item.noteFont ?? '',
+    item.noteColor ?? '',
+    item.opacity ?? 100,
+    item.shape ?? null,
+    createdAt
+  )
   db.prepare('UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), boardId)
   return {
     id,
@@ -775,17 +805,18 @@ export function addBoardItem(
     height: item.height,
     z,
     text: item.text ?? '',
-    noteFont: '',
-    noteColor: '',
-    opacity: 100,
+    noteFont: item.noteFont ?? '',
+    noteColor: item.noteColor ?? '',
+    opacity: item.opacity ?? 100,
+    shape: item.shape ?? null,
     createdAt
   }
 }
 
-/** 更新白板元素（动态 SET，x/y/width/height/z/text/noteFont/noteColor/opacity 可部分更新） */
+/** 更新白板元素（动态 SET，x/y/width/height/z/text/noteFont/noteColor/opacity/shape 可部分更新） */
 export function updateBoardItem(
   id: string,
-  patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'opacity'>>
+  patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'opacity' | 'shape'>>
 ): void {
   const db = getDb()
   const sets: string[] = []
@@ -799,7 +830,8 @@ export function updateBoardItem(
     text: 'text',
     noteFont: 'note_font',
     noteColor: 'note_color',
-    opacity: 'opacity'
+    opacity: 'opacity',
+    shape: 'shape'
   }
   for (const key of Object.keys(colMap) as (keyof typeof colMap)[]) {
     const v = patch[key as keyof typeof patch]
@@ -817,7 +849,7 @@ export function updateBoardItem(
 
 /** 批量更新白板元素（组移动/组缩放等一次性落库，事务原子） */
 export function updateBoardItems(
-  items: { id: string; patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'opacity'>> }[]
+  items: { id: string; patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'opacity' | 'shape'>> }[]
 ): void {
   if (items.length === 0) return
   const db = getDb()
@@ -830,7 +862,8 @@ export function updateBoardItems(
     text: 'text',
     noteFont: 'note_font',
     noteColor: 'note_color',
-    opacity: 'opacity'
+    opacity: 'opacity',
+    shape: 'shape'
   }
   const run = db.transaction(() => {
     for (const { id, patch } of items) {
@@ -878,4 +911,10 @@ export function bringBoardItemToFront(id: string, boardId: number): void {
 export function updateBoardGuides(boardId: number, guidesJson: string): void {
   const db = getDb()
   db.prepare('UPDATE boards SET guides = ?, updated_at = ? WHERE id = ?').run(guidesJson, Date.now(), boardId)
+}
+
+/** 保存白板画布外观（JSON：{bg,grid,gridSize}，整体覆盖） */
+export function updateBoardAppearance(boardId: number, appearanceJson: string): void {
+  const db = getDb()
+  db.prepare('UPDATE boards SET appearance = ?, updated_at = ? WHERE id = ?').run(appearanceJson, Date.now(), boardId)
 }

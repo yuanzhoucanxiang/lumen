@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import Icon from './Icon'
 import { useLibraryStore } from '../stores/libraryStore'
 import { SHORTCUT_DEFS, eventToKeys, loadShortcuts, saveShortcut } from '../shortcuts'
+import { applyTheme, THEMES, useTheme } from '../theme'
 import type { AppSettings } from '@shared/types'
 
 /** 快捷键录制按钮：点击后按新键位保存，Esc 取消 */
@@ -49,6 +50,7 @@ function ShortcutRecorder({ actionId }: { actionId: string }) {
 }
 
 export default function SettingsModal({ onClose }: { onClose: () => void }) {
+  const theme = useTheme()
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [version, setVersion] = useState('')
   const [checking, setChecking] = useState(false)
@@ -145,7 +147,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-label="设置"
-        className="anim-dialog dialog flex max-h-[85vh] w-[480px] flex-col p-5"
+        className="settings-sheet anim-dialog dialog flex max-h-[85vh] w-[600px] flex-col p-7"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
@@ -161,6 +163,50 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
 
         {/* 可滚动内容区（高度超出时内部滚动，标题与底部按钮固定） */}
         <div className="modal-scroll min-h-0 flex-1 space-y-5 overflow-y-auto">
+        {/* 主题 */}
+        <section className="theme-settings" aria-labelledby="theme-settings-title">
+          <div className="mb-2 flex items-end justify-between gap-4">
+            <div>
+              <div id="theme-settings-title" className="section-title">主题</div>
+              <p className="mt-1 text-[11px] text-[var(--text-dim)]">切换完整的界面语言，包括字体、比例、组件轮廓与动效。</p>
+            </div>
+            <span className="mono shrink-0 text-[9px] tracking-[0.12em] text-[var(--text-faint)]">LIVE PREVIEW</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="界面主题">
+            {THEMES.map((item) => {
+              const active = theme === item.id
+              return (
+                <button
+                  key={item.id}
+                  role="radio"
+                  aria-checked={active}
+                  className={`theme-choice ${active ? 'is-active' : ''}`}
+                  onClick={() => {
+                    applyTheme(item.id)
+                    useLibraryStore.getState().showToast(`已切换到「${item.name}」`)
+                  }}
+                >
+                  <span className="theme-choice__preview" data-preview-theme={item.id} aria-hidden="true">
+                    <span className="theme-choice__rail" />
+                    <span className="theme-choice__head" />
+                    <span className="theme-choice__card one" />
+                    <span className="theme-choice__card two" />
+                    <span className="theme-choice__signal" />
+                  </span>
+                  <span className="flex items-start justify-between gap-3">
+                    <span>
+                      <strong className="block text-[12px] font-semibold text-[var(--text-main)]">{item.name}</strong>
+                      <span className="mono mt-0.5 block text-[9px] tracking-[0.12em] text-[var(--text-faint)]">{item.code}</span>
+                    </span>
+                    {item.standard && <span className="theme-choice__standard">默认标准</span>}
+                  </span>
+                  <span className="mt-2 block text-left text-[10.5px] leading-[1.55] text-[var(--text-dim)]">{item.description}</span>
+                </button>
+              )
+            })}
+          </div>
+        </section>
+
         {/* 导入模式 */}
         <div>
           <div className="section-title mb-2">导入方式</div>

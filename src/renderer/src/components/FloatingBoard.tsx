@@ -59,7 +59,10 @@ export default function FloatingBoard({ boardId }: { boardId: number }) {
           </button>
         </div>
       </div>
-      <BoardCanvas onApiReady={(api) => (canvasApiRef.current = api)} />
+      <BoardCanvas
+        onViewportChange={(s) => setZoom(s)}
+        onApiReady={(api) => (canvasApiRef.current = api)}
+      />
     </div>
   )
 }

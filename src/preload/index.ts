@@ -124,7 +124,19 @@ const api = {
   listBoardItems: (boardId: number): Promise<BoardItem[]> => ipcRenderer.invoke('board:items', boardId),
   addBoardItem: (
     boardId: number,
-    item: { assetId?: string | null; type: 'asset' | 'note'; x: number; y: number; width: number; height: number; text?: string }
+    item: {
+      assetId?: string | null
+      type: 'asset' | 'note' | 'shape'
+      x: number
+      y: number
+      width: number
+      height: number
+      text?: string
+      shape?: string
+      opacity?: number
+      noteFont?: string
+      noteColor?: string
+    }
   ): Promise<BoardItem> => ipcRenderer.invoke('board:addItem', boardId, item),
   updateBoardItem: (id: string, patch: Partial<BoardItem>): Promise<void> =>
     ipcRenderer.invoke('board:updateItem', id, patch),
@@ -135,6 +147,10 @@ const api = {
     ipcRenderer.invoke('board:front', id, boardId),
   setBoardGuides: (boardId: number, guidesJson: string): Promise<void> =>
     ipcRenderer.invoke('board:setGuides', boardId, guidesJson),
+  setBoardAppearance: (boardId: number, appearanceJson: string): Promise<void> =>
+    ipcRenderer.invoke('board:setAppearance', boardId, appearanceJson),
+  exportBoardSvg: (boardId: number, svg: string): Promise<{ target: string } | null> =>
+    ipcRenderer.invoke('board:exportSvg', boardId, svg),
 
   /* 白板浮动置顶窗口 */
   openFloatingBoard: (boardId: number): Promise<void> =>

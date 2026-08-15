@@ -58,8 +58,8 @@ async function main() {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
   const hasBoardPanel = `!!document.querySelector('select[aria-label="切换白板"]')`
-  // NavItem 可能带数量徽标（如「全部素材515」),用 startsWith 匹配
-  const navBtn = (label) => `[...document.querySelectorAll('nav[aria-label="素材库导航"] > div.mt-2 button')].find((b) => b.textContent.trim().startsWith('${label}'))`
+  // 按导航语义定位，不依赖主题或布局类名。
+  const navBtn = (label) => `document.querySelector('nav[aria-label="素材库导航"] button[aria-label="${label}"]')`
 
   /* ---------- 0. 重载重置状态（前序操作可能停留在白板模式） ---------- */
   await run(`location.reload()`)
@@ -73,21 +73,23 @@ async function main() {
   await sleep(500)
 
   /* ---------- 1. 默认状态：白板不常驻,素材库全屏 ---------- */
-  const d1 = await run(`return (() => { const nav = document.querySelector('nav[aria-label="素材库导航"]'); const labels = [...nav.querySelectorAll('div.mt-2 button')].map((b) => b.textContent.trim()); return { panel: ${hasBoardPanel}, navLabels: labels } })()`)
+  const d1 = await run(`return (() => { const nav = document.querySelector('nav[aria-label="素材库导航"]'); const labels = [...nav.querySelectorAll('button[aria-label]')].map((b) => b.getAttribute('aria-label')); return { panel: ${hasBoardPanel}, navLabels: labels } })()`)
   check('默认纯素材库(白板面板不出现)', !d1.panel, `panel=${d1.panel}`)
   check('主导航含「白板」入口', d1.navLabels.some((l) => l.startsWith('白板')) && d1.navLabels.some((l) => l.startsWith('全部素材')) && d1.navLabels.some((l) => l.startsWith('回收站')), d1.navLabels.join(' / '))
 
-  /* ---------- 2. 点「白板」→ 白板全屏出现 ---------- */
+  /* ---------- 2. 点「白板」→ 白板全屏出现,素材详情面板隐藏 ---------- */
   await run(`(() => { const btn = ${navBtn('白板')}; btn.click() })()`)
   await sleep(400)
-  const d2 = await run(`return ${hasBoardPanel}`)
-  check('点击主导航「白板」进入白板', d2, `panel=${d2}`)
+  const d2 = await run(`return (() => { const panel = ${hasBoardPanel}; const insp = !!document.querySelector('[data-inspector]'); return { panel, insp } })()`)
+  check('点击主导航「白板」进入白板', d2.panel, `panel=${d2.panel}`)
+  check('白板全屏下素材详情面板隐藏', !d2.insp, `inspector=${d2.insp}`)
 
-  /* ---------- 3. 点「退出白板」→ 回到素材库 ---------- */
+  /* ---------- 3. 点「退出白板」→ 回到素材库,详情面板恢复 ---------- */
   await run(`document.querySelector('button[aria-label="退出白板"]').click()`)
   await sleep(400)
-  const d3 = await run(`return ${hasBoardPanel}`)
-  check('退出白板按钮生效(回到素材库)', !d3, `panel=${d3}`)
+  const d3 = await run(`return (() => { const panel = ${hasBoardPanel}; const insp = !!document.querySelector('[data-inspector]'); return { panel, insp } })()`)
+  check('退出白板按钮生效(回到素材库)', !d3.panel, `panel=${d3.panel}`)
+  check('退出白板后素材详情面板恢复', d3.insp, `inspector=${d3.insp}`)
 
   /* ---------- 4. 白板全屏下点「全部素材」→ 自动退出 ---------- */
   await run(`(() => { const btn = ${navBtn('白板')}; btn.click() })()`)
@@ -97,13 +99,14 @@ async function main() {
   const d4 = await run(`return ${hasBoardPanel}`)
   check('库导航点击自动退出白板全屏', !d4, `panel=${d4}`)
 
-  /* ---------- 5. 分屏切换：board → split(Gallery+白板并存) → 退出 ---------- */
+  /* ---------- 5. 分屏切换：board → split(Gallery+白板并存,详情面板保留) → 退出 ---------- */
   await run(`(() => { const btn = ${navBtn('白板')}; btn.click() })()`)
   await sleep(400)
   await run(`document.querySelector('button[aria-label="取消白板全屏"]').click()`)
   await sleep(400)
-  const d5 = await run(`return (() => { const panel = ${hasBoardPanel}; const search = !!document.querySelector('input[aria-label="搜索素材"]'); return { panel, search } })()`)
+  const d5 = await run(`return (() => { const panel = ${hasBoardPanel}; const search = !!document.querySelector('input[aria-label="搜索素材"]'); const insp = !!document.querySelector('[data-inspector]'); return { panel, search, insp } })()`)
   check('分屏模式:白板面板与素材库并存', d5.panel && d5.search, `panel=${d5.panel} 素材库搜索框=${d5.search}`)
+  check('分屏模式:素材详情面板保留', d5.insp, `inspector=${d5.insp}`)
   await run(`document.querySelector('button[aria-label="退出白板"]').click()`)
   await sleep(400)
   const d5b = await run(`return ${hasBoardPanel}`)
@@ -115,20 +118,21 @@ async function main() {
     if (!sec) return 'no section'
     // 分区默认折叠：先点标题行展开
     const header = sec.querySelector('button')
-    if (header && !sec.querySelector('.modal-scroll button')) header.click()
+    if (header && !sec.querySelector(':scope > .modal-scroll button')) header.click()
     return true
   })()`)
   await sleep(400)
   const d6b = await run(`return (() => {
     const sec = document.querySelector('section[aria-label="白板"]')
-    const item = sec && sec.querySelector('.modal-scroll button')
+    const item = sec && sec.querySelector(':scope > .modal-scroll button')
     if (!item) return 'no board item'
+    const label = item.getAttribute('aria-label') || item.textContent.trim()
     item.click()
-    return true
+    return { clicked: true, label }
   })()`)
   await sleep(400)
   const d6c = await run(`return ${hasBoardPanel}`)
-  check('侧栏白板列表点击进入白板', d6 === true && d6b === true && d6c, `panel=${d6c}`)
+  check('侧栏白板列表点击进入白板', d6 === true && d6b?.clicked === true && d6c, `expand=${d6} item=${JSON.stringify(d6b)} panel=${d6c}`)
 
   /* ---------- 7. 清理状态：退出白板 ---------- */
   await run(`(() => { const btn = document.querySelector('button[aria-label="退出白板"]'); if (btn) btn.click() })()`)
