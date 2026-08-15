@@ -4,6 +4,9 @@ import { useLibraryStore } from '../stores/libraryStore'
 import { SHORTCUT_DEFS, eventToKeys, loadShortcuts, saveShortcut } from '../shortcuts'
 import { applyTheme, THEMES, useTheme } from '../theme'
 import type { AppSettings } from '@shared/types'
+import UserGuide from './UserGuide'
+
+type SettingsPage = 'preferences' | 'guide'
 
 /** 快捷键录制按钮：点击后按新键位保存，Esc 取消 */
 function ShortcutRecorder({ actionId }: { actionId: string }) {
@@ -51,6 +54,7 @@ function ShortcutRecorder({ actionId }: { actionId: string }) {
 
 export default function SettingsModal({ onClose }: { onClose: () => void }) {
   const theme = useTheme()
+  const [activePage, setActivePage] = useState<SettingsPage>('preferences')
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [version, setVersion] = useState('')
   const [checking, setChecking] = useState(false)
@@ -146,14 +150,17 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="设置"
-        className="settings-sheet anim-dialog dialog flex max-h-[85vh] w-[600px] flex-col p-7"
+        aria-label="设置与帮助"
+        className="settings-sheet settings-hub anim-dialog dialog"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-[15px] font-semibold">设置</h2>
+        <div className="settings-hub__header">
+          <div>
+            <span className="settings-hub__kicker mono">LUMEN / CONTROL ROOM</span>
+            <h2>设置与帮助</h2>
+          </div>
           <button
-            aria-label="关闭设置"
+            aria-label="关闭设置与帮助"
             className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]"
             onClick={onClose}
           >
@@ -161,8 +168,41 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        {/* 可滚动内容区（高度超出时内部滚动，标题与底部按钮固定） */}
-        <div className="modal-scroll min-h-0 flex-1 space-y-5 overflow-y-auto">
+        <div className="settings-hub__body">
+          <aside className="settings-hub__nav" aria-label="设置页面">
+            <button
+              className={activePage === 'preferences' ? 'is-active' : ''}
+              aria-current={activePage === 'preferences' ? 'page' : undefined}
+              onClick={() => setActivePage('preferences')}
+            >
+              <Icon name="settings" size={15} />
+              <span>
+                <strong>偏好设置</strong>
+                <small>主题 · 导入 · AI</small>
+              </span>
+            </button>
+            <button
+              className={activePage === 'guide' ? 'is-active' : ''}
+              aria-current={activePage === 'guide' ? 'page' : undefined}
+              onClick={() => setActivePage('guide')}
+            >
+              <Icon name="library" size={15} />
+              <span>
+                <strong>使用说明</strong>
+                <small>9 章完整教程</small>
+              </span>
+            </button>
+
+            <div className="settings-hub__nav-foot">
+              <span className="mono">LOCAL MANUAL</span>
+              <small>教程已内置，可离线阅读</small>
+            </div>
+          </aside>
+
+          <section className="settings-hub__content">
+          {activePage === 'preferences' ? (
+          /* 可滚动内容区（高度超出时内部滚动，标题与底部按钮固定） */
+          <div className="settings-preferences modal-scroll min-h-0 flex-1 space-y-5 overflow-y-auto">
         {/* 主题 */}
         <section className="theme-settings" aria-labelledby="theme-settings-title">
           <div className="mb-2 flex items-end justify-between gap-4">
@@ -397,9 +437,15 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             {checking ? '检查中…' : '检查更新'}
           </button>
         </div>
+          </div>
+          ) : (
+            <UserGuide />
+          )}
+          </section>
         </div>
 
-        <div className="mt-4 flex justify-end border-t border-[var(--border)] pt-4">
+        <div className="settings-hub__footer">
+          <span className="mono">{activePage === 'guide' ? 'USER MANUAL / OFFLINE' : `LUMEN v${version}`}</span>
           <button className="btn-primary" onClick={onClose}>
             完成
           </button>
