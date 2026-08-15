@@ -181,16 +181,15 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   history: [],
 
   setView: (view) => {
-    // 库视图导航：若处于白板全屏则退出到纯素材库（分屏/关闭态保持不变）
-    const mode = get().boardViewMode
+    // 素材来源与工作区模式彼此独立：白板内切换文件夹/标签只刷新参考素材架，
+    // 退出白板必须由显式的 setBoardViewMode('off') 完成。
     set({
       view,
       selection: [],
       previewId: null,
       similarTo: null,
       aiSearch: null,
-      aiSearchPending: null,
-      boardViewMode: mode === 'board' ? 'off' : mode
+      aiSearchPending: null
     })
     void get().refreshAssets()
   },

@@ -192,6 +192,21 @@ export default function Sidebar() {
   /** 新建白板输入框 */
   const [boardInputOpen, setBoardInputOpen] = useState(false)
   const [boardInputVal, setBoardInputVal] = useState('')
+  const [boardSidebarCollapsed, setBoardSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('lumen.board.libraryRailCollapsed') === '1'
+    } catch {
+      return false
+    }
+  })
+  const updateBoardSidebarCollapsed = (collapsed: boolean): void => {
+    setBoardSidebarCollapsed(collapsed)
+    try {
+      localStorage.setItem('lumen.board.libraryRailCollapsed', collapsed ? '1' : '0')
+    } catch {
+      /* 隐私模式等场景忽略 */
+    }
+  }
 
   /* 分区折叠状态（localStorage 持久化）：文件夹/智能文件夹/白板/标签 */
   // 白板默认折叠（列表短小,展开也限高,避免挤压文件夹/标签两大分区）
@@ -536,9 +551,37 @@ export default function Sidebar() {
     )
   }
 
+  if (boardViewMode === 'board' && boardSidebarCollapsed) {
+    return (
+      <nav
+        aria-label="素材库导航"
+        data-workspace-mode="board"
+        data-board-library-collapsed="true"
+        className="archive-sidebar board-library-rail shrink-0 border-r border-[var(--border)] bg-[var(--bg-panel)]"
+      >
+        <button
+          aria-label="展开素材库列表"
+          title="展开素材库列表"
+          className="board-library-rail__button"
+          onClick={() => updateBoardSidebarCollapsed(false)}
+        >
+          <span className="board-rail__opener" aria-hidden="true">
+            <Icon name="chevronRight" size={12} />
+          </span>
+          <span className="board-rail__code mono" aria-hidden="true">{pixel ? 'L-01' : '01'}</span>
+          <span className="board-rail__label mono" aria-hidden="true">{pixel ? 'LIB NODE' : 'ARCHIVE INDEX'}</span>
+          <span className="board-rail__signal" aria-hidden="true" />
+          <small className="board-rail__foot mono" aria-hidden="true">{pixel ? 'SOURCE' : 'LIBRARY'}</small>
+          <span className="sr-only">素材库列表</span>
+        </button>
+      </nav>
+    )
+  }
+
   return (
     <nav
       aria-label="素材库导航"
+      data-workspace-mode={boardViewMode === 'board' ? 'board' : 'library'}
       className="archive-sidebar flex w-[220px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]"
       onClick={() => setMenu(null)}
     >
@@ -549,10 +592,24 @@ export default function Sidebar() {
           <img className="brand-mark" src={ravenMarkUrl} alt="" draggable={false} />
         </div>
         <div className="archive-brand__copy">
-          <span className="archive-brand__edition mono">{pixel ? 'SIGNAL / 02' : 'ARCHIVE / 01'}</span>
-          <h1 className="brand-wordmark">LUMEN</h1>
-          <span className="archive-brand__subtitle mono">{pixel ? 'VISUAL MEMORY TERMINAL' : 'RAVEN PHOTOGRAPHIC INDEX'}</span>
+          <span className="archive-brand__edition mono">
+            {boardViewMode === 'board' ? (pixel ? 'NODE CANVAS / 02' : 'LIGHT TABLE / 01') : pixel ? 'SIGNAL / 02' : 'ARCHIVE / 01'}
+          </span>
+          <h1 className="brand-wordmark">{boardViewMode === 'board' ? 'BOARD' : 'LUMEN'}</h1>
+          <span className="archive-brand__subtitle mono">
+            {boardViewMode === 'board' ? (pixel ? 'REFERENCE NODE WORKSPACE' : 'REFERENCE ASSEMBLY DESK') : pixel ? 'VISUAL MEMORY TERMINAL' : 'RAVEN PHOTOGRAPHIC INDEX'}
+          </span>
         </div>
+        {boardViewMode === 'board' && (
+          <button
+            aria-label="收起素材库列表"
+            title="收起素材库列表，扩大白板"
+            className="board-sidebar-collapse"
+            onClick={() => updateBoardSidebarCollapsed(true)}
+          >
+            <Icon name="chevronLeft" size={11} />
+          </button>
+        )}
       </header>
 
       <div className="archive-sidebar__index modal-scroll">
@@ -561,29 +618,31 @@ export default function Sidebar() {
         <NavItem
           active={view.type === 'all'}
           icon="grid"
-          label="全部素材"
+          label={boardViewMode === 'board' ? '全部参考' : '全部素材'}
           count={stats.total}
           onClick={() => setView({ type: 'all' })}
         />
         <NavItem
           active={view.type === 'starred'}
           icon="star"
-          label="已收藏"
+          label={boardViewMode === 'board' ? '参考收藏' : '已收藏'}
           onClick={() => setView({ type: 'starred' })}
         />
         <NavItem
           active={boardViewMode !== 'off'}
           icon="shapes"
-          label="白板"
+          label={boardViewMode === 'board' ? '白板工作台' : '白板'}
           onClick={() => void enterBoard()}
         />
-        <NavItem
-          active={view.type === 'trash'}
-          icon="trash"
-          label="回收站"
-          count={stats.deleted}
-          onClick={() => setView({ type: 'trash' })}
-        />
+        {boardViewMode !== 'board' && (
+          <NavItem
+            active={view.type === 'trash'}
+            icon="trash"
+            label="回收站"
+            count={stats.deleted}
+            onClick={() => setView({ type: 'trash' })}
+          />
+        )}
       </div>
 
       {/* 文件夹 */}

@@ -101,6 +101,8 @@ export interface BoardItem {
   noteFont: string
   /** note 文字颜色（hex） */
   noteColor: string
+  /** note 字号（画布坐标 px） */
+  noteFontSize: number
   /** 元素透明度 0-100（100=不透明,对标 PureRef 参考图透明度对比） */
   opacity: number
   /** shape 类型的规格 JSON（ShapeSpec） */

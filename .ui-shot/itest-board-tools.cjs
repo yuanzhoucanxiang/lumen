@@ -300,7 +300,7 @@ async function main() {
   })()`)
   await sleep(300)
 
-  /* ---------- 11. note 拖动手柄：文字工具落点 → 手柄拖动 ---------- */
+  /* ---------- 11. 文字对象：单次放置 / 编辑成品分离 / 样式 / 拖动 ---------- */
   await run(`(${toolBtn('文字')}).click()`)
   await sleep(200)
   await run(`(() => {
@@ -316,15 +316,66 @@ async function main() {
     const n = items.filter((i) => i.type === 'note').sort((a, b) => b.createdAt - a.createdAt)[0]
     return n ? { id: n.id, x: n.x, y: n.y } : null
   })()`)
-  check('文字工具落点创建便签', !!note, JSON.stringify(note))
+  check('文字工具落点创建文字对象', !!note, JSON.stringify(note))
+  const enteredEditing = await run(`return (() => {
+    const editor = document.querySelector('[data-board-text-editor]')
+    const select = document.querySelector('button[aria-label="工具 选择"]')
+    return { editor: !!editor, focused: document.activeElement === editor, selectActive: select?.className.includes('accent-soft') }
+  })()`)
+  check('新建文字立即聚焦并自动回到选择工具', enteredEditing.editor && enteredEditing.focused && enteredEditing.selectActive, JSON.stringify(enteredEditing))
+  await run(`(() => {
+    const editor = document.querySelector('[data-board-text-editor]')
+    editor.value = '白板文字测试\\n第二行\\n第三行\\n第四行'
+    editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }))
+    editor.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+  })()`)
+  await sleep(500)
+  const textCommitted = await run(`return (async () => {
+    const item = (await window.api.listBoardItems(${boardId})).find((i) => i.id === '${note.id}')
+    const el = document.querySelector('[data-board-item="${note.id}"]')
+    return { text: item?.text, height: item?.height, display: !!el?.querySelector('[data-board-text-display]'), editor: !!el?.querySelector('textarea'), background: getComputedStyle(el).backgroundColor }
+  })()`)
+  check('完成输入后呈现无底色且长文本自动长高', textCommitted.text.includes('第四行') && textCommitted.height > 64 && textCommitted.display && !textCommitted.editor && textCommitted.background === 'rgba(0, 0, 0, 0)', JSON.stringify(textCommitted))
+  const beforeSecondClick = await run(`return (await window.api.listBoardItems(${boardId})).filter((i) => i.type === 'note').length`)
+  await run(`(() => {
+    const frame = ${FRAME}; const rect = frame.getBoundingClientRect()
+    frame.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: rect.left + 760, clientY: rect.top + 420, button: 0, pointerId: 35 }))
+    frame.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: rect.left + 760, clientY: rect.top + 420, button: 0, pointerId: 35 }))
+  })()`)
+  await sleep(250)
+  const afterSecondClick = await run(`return (await window.api.listBoardItems(${boardId})).filter((i) => i.type === 'note').length`)
+  check('完成后再点白板不会连续生成文字框', afterSecondClick === beforeSecondClick, `${beforeSecondClick}→${afterSecondClick}`)
+  await run(`(() => {
+    const el = document.querySelector('[data-board-item="${note.id}"]'); const b = el.getBoundingClientRect()
+    const mk = (type) => new PointerEvent(type, { bubbles: true, cancelable: true, clientX: b.left + 20, clientY: b.top + 20, button: 0, pointerId: 36, isPrimary: true })
+    el.dispatchEvent(mk('pointerdown')); el.dispatchEvent(mk('pointerup')); el.click()
+  })()`)
+  await sleep(150)
+  const styleBar = await run(`return !!document.querySelector('[data-board-text-stylebar] select[aria-label="文字字号"]')`)
+  check('选中文字显示字体/字号/颜色属性栏', styleBar, '')
+  await run(`(() => {
+    const s = document.querySelector('select[aria-label="文字字号"]')
+    s.value = '28'; s.dispatchEvent(new Event('change', { bubbles: true }))
+    document.querySelector('button[aria-label="文字颜色 #ffd9a0"]').click()
+  })()`)
+  await sleep(500)
+  const styled = await run(`return (async () => {
+    const item = (await window.api.listBoardItems(${boardId})).find((i) => i.id === '${note.id}')
+    return { size: item?.noteFontSize, color: item?.noteColor }
+  })()`)
+  check('字号与颜色持久化', styled.size === 28 && styled.color === '#ffd9a0', JSON.stringify(styled))
+  await run(`document.querySelector('[data-board-text-display]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`)
+  await sleep(150)
+  check('双击成品文字重新进入编辑态', await run(`return !!document.querySelector('[data-board-text-editor]')`), '')
+  await run(`document.querySelector('[data-board-text-editor]').dispatchEvent(new FocusEvent('focusout', { bubbles: true }))`)
+  await sleep(250)
   await run(`(() => {
     const el = document.querySelector('[data-board-item="' + '${note.id}' + '"]')
-    const h = el.querySelector('[data-note-handle]')
     const b = el.getBoundingClientRect()
     const mk = (type, x, y) => new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, pointerId: 32, isPrimary: true })
-    h.dispatchEvent(mk('pointerdown', b.left + 40, b.top + 6))
-    h.dispatchEvent(mk('pointermove', b.left + 90, b.top + 36))
-    h.dispatchEvent(mk('pointerup', b.left + 90, b.top + 36))
+    el.dispatchEvent(mk('pointerdown', b.left + 40, b.top + 20))
+    el.dispatchEvent(mk('pointermove', b.left + 90, b.top + 50))
+    el.dispatchEvent(mk('pointerup', b.left + 90, b.top + 50))
   })()`)
   await sleep(500)
   const noteAfter = await run(`return (async () => {
@@ -332,7 +383,7 @@ async function main() {
     const n = items.find((i) => i.id === '${note.id}')
     return n ? { x: n.x, y: n.y } : null
   })()`)
-  check('note 拖动手柄移动生效(+50,+30)', noteAfter && noteAfter.x === note.x + 50 && noteAfter.y === note.y + 30, `(${note.x},${note.y})→(${noteAfter?.x},${noteAfter?.y})`)
+  check('文字对象拖动生效(+50,+30)', noteAfter && noteAfter.x === note.x + 50 && noteAfter.y === note.y + 30, `(${note.x},${note.y})→(${noteAfter?.x},${noteAfter?.y})`)
 
   /* ---------- 12. .lumenboard 形状元素往返（导出→导入→形状还原） ---------- */
   const os = require('os')
@@ -345,9 +396,11 @@ async function main() {
   const shapeRound = await run(`return (async () => {
     const items = await window.api.listBoardItems(${imp.boardId})
     const kinds = items.filter((i) => i.type === 'shape').map((i) => { try { return JSON.parse(i.shape).kind } catch { return '?' } })
-    return { shapes: kinds.length, kinds }
+    const text = items.find((i) => i.type === 'note')
+    return { shapes: kinds.length, kinds, textSize: text?.noteFontSize, textColor: text?.noteColor }
   })()`)
   check('形状元素往返还原(pen/rect/arrow)', shapeRound.shapes >= 3 && ['pen', 'rect', 'arrow'].every((k) => shapeRound.kinds.includes(k)), JSON.stringify(shapeRound))
+  check('文字字号与颜色随 .lumenboard 往返', shapeRound.textSize === 28 && shapeRound.textColor === '#ffd9a0', JSON.stringify(shapeRound))
   await run(`await window.api.deleteBoard(${imp.boardId})`)
 
   /* ---------- 13. 清理：删除测试白板 ---------- */

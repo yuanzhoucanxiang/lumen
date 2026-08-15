@@ -100,6 +100,7 @@ interface ManifestItem {
   text: string
   noteFont: string
   noteColor: string
+  noteFontSize: number
   opacity: number
   shape: string | null
 }
@@ -202,7 +203,13 @@ export async function importBoardFromFile(filePath: string): Promise<{ boardId: 
           text: it.text ?? ''
         })
         if (row) {
-          await updateBoardItem(row.id, { z: it.z, opacity: it.opacity ?? 100, noteFont: it.noteFont ?? '', noteColor: it.noteColor ?? '' })
+          await updateBoardItem(row.id, {
+            z: it.z,
+            opacity: it.opacity ?? 100,
+            noteFont: it.noteFont ?? '',
+            noteColor: it.noteColor ?? '',
+            noteFontSize: it.noteFontSize ?? 16
+          })
           imported++
         }
       } else if (it.type === 'shape' && it.shape) {

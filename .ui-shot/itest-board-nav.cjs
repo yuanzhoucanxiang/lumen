@@ -1,7 +1,7 @@
 /* 白板独立入口 + 可关闭专项验证
    前置：npm run dev -- --remote-debugging-port=9333
    运行：node .ui-shot/itest-board-nav.cjs
-   验证：默认素材库全屏(白板不常驻) / 主导航「白板」入口 / 退出按钮 / 库导航自动退出全屏 / 分屏切换 */
+   验证：默认素材库全屏 / 白板独立工作区 / 参考来源导航不退出白板 / 显式退出 / 分屏切换 */
 const WebSocket = require('ws')
 const http = require('http')
 
@@ -59,7 +59,7 @@ async function main() {
 
   const hasBoardPanel = `!!document.querySelector('select[aria-label="切换白板"]')`
   // 按导航语义定位，不依赖主题或布局类名。
-  const navBtn = (label) => `document.querySelector('nav[aria-label="素材库导航"] button[aria-label="${label}"]')`
+  const navBtn = (label) => `[...document.querySelectorAll('nav[aria-label="素材库导航"] button[aria-label]')].find((b) => b.getAttribute('aria-label')?.startsWith('${label}'))`
 
   /* ---------- 0. 重载重置状态（前序操作可能停留在白板模式） ---------- */
   await run(`location.reload()`)
@@ -80,9 +80,10 @@ async function main() {
   /* ---------- 2. 点「白板」→ 白板全屏出现,素材详情面板隐藏 ---------- */
   await run(`(() => { const btn = ${navBtn('白板')}; btn.click() })()`)
   await sleep(400)
-  const d2 = await run(`return (() => { const panel = ${hasBoardPanel}; const insp = !!document.querySelector('[data-inspector]'); return { panel, insp } })()`)
+  const d2 = await run(`return (() => { const panel = ${hasBoardPanel}; const insp = !!document.querySelector('[data-inspector]'); const refs = !!document.querySelector('[data-board-reference-panel]'); const mode = document.querySelector('nav[aria-label="素材库导航"]')?.dataset.workspaceMode; return { panel, insp, refs, mode } })()`)
   check('点击主导航「白板」进入白板', d2.panel, `panel=${d2.panel}`)
   check('白板全屏下素材详情面板隐藏', !d2.insp, `inspector=${d2.insp}`)
+  check('白板进入独立工作区并显示参考素材架', d2.refs && d2.mode === 'board', `refs=${d2.refs} mode=${d2.mode}`)
 
   /* ---------- 3. 点「退出白板」→ 回到素材库,详情面板恢复 ---------- */
   await run(`document.querySelector('button[aria-label="退出白板"]').click()`)
@@ -91,13 +92,13 @@ async function main() {
   check('退出白板按钮生效(回到素材库)', !d3.panel, `panel=${d3.panel}`)
   check('退出白板后素材详情面板恢复', d3.insp, `inspector=${d3.insp}`)
 
-  /* ---------- 4. 白板全屏下点「全部素材」→ 自动退出 ---------- */
+  /* ---------- 4. 白板全屏下切换参考来源 → 白板保持 ---------- */
   await run(`(() => { const btn = ${navBtn('白板')}; btn.click() })()`)
   await sleep(400)
-  await run(`(() => { const btn = ${navBtn('全部素材')}; btn.click() })()`)
+  await run(`(() => { const btn = ${navBtn('全部参考')}; btn.click() })()`)
   await sleep(400)
   const d4 = await run(`return ${hasBoardPanel}`)
-  check('库导航点击自动退出白板全屏', !d4, `panel=${d4}`)
+  check('参考来源导航不再退出白板', d4, `panel=${d4}`)
 
   /* ---------- 5. 分屏切换：board → split(Gallery+白板并存,详情面板保留) → 退出 ---------- */
   await run(`(() => { const btn = ${navBtn('白板')}; btn.click() })()`)

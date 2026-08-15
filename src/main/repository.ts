@@ -717,6 +717,7 @@ interface BoardItemRow {
   text: string
   note_font: string
   note_color: string
+  note_font_size: number
   opacity: number
   shape: string | null
   created_at: number
@@ -736,6 +737,7 @@ function rowToBoardItem(r: BoardItemRow): BoardItem {
     text: r.text,
     noteFont: r.note_font ?? '',
     noteColor: r.note_color ?? '',
+    noteFontSize: r.note_font_size ?? 16,
     opacity: r.opacity ?? 100,
     shape: r.shape ?? null,
     createdAt: r.created_at
@@ -745,7 +747,7 @@ function rowToBoardItem(r: BoardItemRow): BoardItem {
 export function listBoardItems(boardId: number): BoardItem[] {
   const rows = getDb()
     .prepare(
-      `SELECT id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, opacity, shape, created_at
+      `SELECT id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, note_font_size, opacity, shape, created_at
        FROM board_items WHERE board_id = ? ORDER BY z ASC`
     )
     .all(boardId) as BoardItemRow[]
@@ -767,6 +769,7 @@ export function addBoardItem(
     opacity?: number
     noteFont?: string
     noteColor?: string
+    noteFontSize?: number
   }
 ): BoardItem {
   const db = getDb()
@@ -774,8 +777,8 @@ export function addBoardItem(
   const z = (db.prepare('SELECT COALESCE(MAX(z), -1) + 1 AS z FROM board_items WHERE board_id = ?').get(boardId) as { z: number }).z
   const createdAt = Date.now()
   db.prepare(
-    `INSERT INTO board_items (id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, opacity, shape, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO board_items (id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, note_font_size, opacity, shape, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     boardId,
@@ -789,6 +792,7 @@ export function addBoardItem(
     item.text ?? '',
     item.noteFont ?? '',
     item.noteColor ?? '',
+    item.noteFontSize ?? 16,
     item.opacity ?? 100,
     item.shape ?? null,
     createdAt
@@ -807,6 +811,7 @@ export function addBoardItem(
     text: item.text ?? '',
     noteFont: item.noteFont ?? '',
     noteColor: item.noteColor ?? '',
+    noteFontSize: item.noteFontSize ?? 16,
     opacity: item.opacity ?? 100,
     shape: item.shape ?? null,
     createdAt
@@ -816,7 +821,7 @@ export function addBoardItem(
 /** 更新白板元素（动态 SET，x/y/width/height/z/text/noteFont/noteColor/opacity/shape 可部分更新） */
 export function updateBoardItem(
   id: string,
-  patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'opacity' | 'shape'>>
+  patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'noteFontSize' | 'opacity' | 'shape'>>
 ): void {
   const db = getDb()
   const sets: string[] = []
@@ -830,6 +835,7 @@ export function updateBoardItem(
     text: 'text',
     noteFont: 'note_font',
     noteColor: 'note_color',
+    noteFontSize: 'note_font_size',
     opacity: 'opacity',
     shape: 'shape'
   }
@@ -849,7 +855,7 @@ export function updateBoardItem(
 
 /** 批量更新白板元素（组移动/组缩放等一次性落库，事务原子） */
 export function updateBoardItems(
-  items: { id: string; patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'opacity' | 'shape'>> }[]
+  items: { id: string; patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'noteFontSize' | 'opacity' | 'shape'>> }[]
 ): void {
   if (items.length === 0) return
   const db = getDb()
@@ -862,6 +868,7 @@ export function updateBoardItems(
     text: 'text',
     noteFont: 'note_font',
     noteColor: 'note_color',
+    noteFontSize: 'note_font_size',
     opacity: 'opacity',
     shape: 'shape'
   }

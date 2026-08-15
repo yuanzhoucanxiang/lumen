@@ -25,7 +25,7 @@ const TOOLS: { id: BoardTool; label: string; icon: Parameters<typeof Icon>[0]['n
   { id: 'line', label: '直线', icon: 'line', title: '直线（L）' },
   { id: 'rect', label: '矩形', icon: 'rect', title: '矩形（R）' },
   { id: 'ellipse', label: '椭圆', icon: 'circle', title: '椭圆（O）' },
-  { id: 'note', label: '文字', icon: 'type', title: '文字便签（T）' }
+  { id: 'note', label: '文字', icon: 'type', title: '文字（T）· 单次放置' }
 ]
 
 /**
@@ -108,7 +108,9 @@ export default function BoardPanel() {
 
   return (
     <div
-      className="archive-light-table flex h-full min-h-0 flex-col border-l border-[var(--border)] bg-[var(--bg-base)]"
+      className={`archive-light-table flex h-full min-h-0 flex-col border-l border-[var(--border)] bg-[var(--bg-base)] ${
+        boardViewMode === 'board' ? 'min-w-0 flex-1' : ''
+      }`}
       style={{ width: boardViewMode === 'board' ? undefined : boardViewWidth, minWidth: boardViewMode === 'board' ? 0 : 280 }}
     >
       {/* 行 1：白板切换 + 文件/窗口操作 */}
@@ -239,68 +241,16 @@ export default function BoardPanel() {
           >
             <Icon name="fit" size={13} />
           </button>
-          <div className="relative">
-            <button
-              aria-label="画布外观"
-              title="画布外观（背景色/网格）"
-              className={toolBtnCls(appearanceOpen)}
-              onClick={() => setAppearanceOpen((v) => !v)}
-            >
-              <Icon name="palette" size={13} />
-            </button>
-            {appearanceOpen && (
-              <>
-                {/* 点击外部关闭 */}
-                <div className="fixed inset-0 z-[290]" onClick={() => setAppearanceOpen(false)} />
-                <div className="menu absolute right-0 top-8 z-[300] w-44 px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                  <div className="mb-1 text-[10px] text-[var(--text-faint)]">背景色</div>
-                  <div className="flex items-center gap-1">
-                    {BG_PRESETS.map((p) => (
-                      <button
-                        key={p.key}
-                        aria-label={`背景色 ${p.label}`}
-                        title={p.label}
-                        className={`h-4 w-4 rounded-full border transition-transform duration-100 hover:scale-110 ${
-                          appearance.bg === p.key ? 'ring-2 ring-white/60' : 'border-white/20'
-                        }`}
-                        style={{ background: p.color }}
-                        onClick={() => void persistAppearance({ ...appearance, bg: p.key })}
-                      />
-                    ))}
-                    <input
-                      type="color"
-                      aria-label="自定义背景色"
-                      className="h-4 w-4 cursor-pointer border-none bg-transparent p-0"
-                      value={/^#[0-9a-f]{6}$/i.test(appearance.bg) ? appearance.bg : '#191c20'}
-                      onChange={(e) => void persistAppearance({ ...appearance, bg: e.target.value })}
-                    />
-                  </div>
-                  <div className="mt-2 flex items-center justify-between text-[10px] text-[var(--text-faint)]">
-                    <label className="flex cursor-pointer items-center gap-1">
-                      <input
-                        type="checkbox"
-                        aria-label="网格开关"
-                        className="accent-[var(--accent)]"
-                        checked={appearance.grid}
-                        onChange={(e) => void persistAppearance({ ...appearance, grid: e.target.checked })}
-                      />
-                      点阵网格
-                    </label>
-                    <select
-                      aria-label="网格密度"
-                      className="field-input px-1 py-0.5 text-[10px]"
-                      value={appearance.gridSize}
-                      onChange={(e) => void persistAppearance({ ...appearance, gridSize: Number(e.target.value) })}
-                    >
-                      <option value={16}>密 16</option>
-                      <option value={24}>中 24</option>
-                      <option value={40}>疏 40</option>
-                    </select>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+          <button
+            aria-label="画布外观"
+            aria-expanded={appearanceOpen}
+            aria-controls="board-appearance-drawer"
+            title="画布外观（背景色/网格）"
+            className={toolBtnCls(appearanceOpen)}
+            onClick={() => setAppearanceOpen((v) => !v)}
+          >
+            <Icon name="palette" size={13} />
+          </button>
           <button
             aria-label="导出画布 SVG"
             title="导出画布为 SVG 矢量图（图片内嵌）"
@@ -313,9 +263,84 @@ export default function BoardPanel() {
         </div>
       </div>
 
+      {/* 画布外观：工具栏下方内联展开，推动画布而非覆盖画布。 */}
+      <div
+        id="board-appearance-drawer"
+        data-board-appearance-drawer
+        aria-hidden={!appearanceOpen}
+        className={`archive-board-appearance shrink-0 overflow-hidden border-b bg-[var(--bg-panel)] transition-[max-height,opacity,border-color] duration-200 ease-out ${
+          appearanceOpen
+            ? 'max-h-24 border-[var(--border)] opacity-100'
+            : 'pointer-events-none max-h-0 border-transparent opacity-0'
+        }`}
+      >
+        <div className="flex min-h-[58px] items-center gap-6 px-4 py-2">
+          <div className="flex items-center gap-3">
+            <span className="mono text-[9px] tracking-[0.14em] text-[var(--text-faint)]">画布底片</span>
+            <div className="flex items-center gap-2">
+              {BG_PRESETS.map((preset) => (
+                <button
+                  key={preset.key}
+                  aria-label={`背景色 ${preset.label}`}
+                  title={preset.label}
+                  className={`h-5 w-5 rounded-full border transition-[transform,box-shadow] duration-100 hover:scale-110 ${
+                    appearance.bg === preset.key
+                      ? 'border-[var(--paper)] ring-2 ring-[var(--accent-soft)]'
+                      : 'border-white/20'
+                  }`}
+                  style={{ background: preset.color }}
+                  onClick={() => void persistAppearance({ ...appearance, bg: preset.key })}
+                />
+              ))}
+              <label className="relative h-5 w-5 cursor-pointer overflow-hidden border border-[var(--border-strong)] bg-[conic-gradient(red,yellow,lime,aqua,blue,magenta,red)]" title="自定义背景色">
+                <input
+                  type="color"
+                  aria-label="自定义背景色"
+                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                  value={/^#[0-9a-f]{6}$/i.test(appearance.bg) ? appearance.bg : '#191c20'}
+                  onChange={(event) => void persistAppearance({ ...appearance, bg: event.target.value })}
+                />
+              </label>
+            </div>
+          </div>
+          <div className="h-7 w-px bg-[var(--border)]" />
+          <label className="flex cursor-pointer items-center gap-2 text-[11px] text-[var(--text-dim)]">
+            <input
+              type="checkbox"
+              aria-label="网格开关"
+              className="accent-[var(--accent)]"
+              checked={appearance.grid}
+              onChange={(event) => void persistAppearance({ ...appearance, grid: event.target.checked })}
+            />
+            点阵网格
+          </label>
+          <label className="flex items-center gap-2 text-[10px] text-[var(--text-faint)]">
+            密度
+            <select
+              aria-label="网格密度"
+              className="field-input px-2 py-1 text-[10px]"
+              value={appearance.gridSize}
+              onChange={(event) => void persistAppearance({ ...appearance, gridSize: Number(event.target.value) })}
+            >
+              <option value={16}>密 16</option>
+              <option value={24}>中 24</option>
+              <option value={40}>疏 40</option>
+            </select>
+          </label>
+          <button
+            aria-label="收起画布外观"
+            className="ml-auto flex items-center gap-1 text-[10px] text-[var(--text-faint)] hover:text-[var(--text-main)]"
+            onClick={() => setAppearanceOpen(false)}
+          >
+            收起 <Icon name="chevronUp" size={10} />
+          </button>
+        </div>
+      </div>
+
       {/* 画布 */}
       <BoardCanvas
         tool={tool}
+        onToolChange={setTool}
         onViewportChange={onViewportChange}
         onApiReady={(api) => (canvasApiRef.current = api)}
       />

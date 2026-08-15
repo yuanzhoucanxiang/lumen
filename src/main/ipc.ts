@@ -380,6 +380,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       opacity?: number
       noteFont?: string
       noteColor?: string
+      noteFontSize?: number
     }) => addBoardItem(boardId, item)
   )
   ipcMain.handle('board:updateItem', (_e, id: string, patch: Partial<BoardItem>) => updateBoardItem(id, patch))

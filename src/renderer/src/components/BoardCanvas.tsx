@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { assetThumbUrl, useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 import { useTheme } from '../theme'
-import type { BoardItem, ShapeSpec } from '@shared/types'
+import type { Asset, BoardItem, ShapeSpec } from '@shared/types'
 
 const ASSET_MIME = 'application/x-eaglelike-assets'
 
@@ -114,6 +114,8 @@ const NOTE_FONTS = [
 ]
 /** note 可选颜色（照抄 MOTZ note-color-row） */
 const NOTE_COLORS = ['#e8eef7', '#ffd9a0', '#a8d8a0', '#a0c8ff', '#f0a3a5']
+const NOTE_SIZES = [12, 16, 20, 28, 36, 48]
+type NoteStylePatch = { noteFont?: string; noteColor?: string; noteFontSize?: number }
 
 export interface BoardCanvasApi {
   zoomTo: (s: number) => void
@@ -151,11 +153,13 @@ interface Rect {
 export default function BoardCanvas({
   onApiReady,
   tool = 'select',
-  onViewportChange
+  onViewportChange,
+  onToolChange
 }: {
   onApiReady?: (api: BoardCanvasApi) => void
   tool?: BoardTool
   onViewportChange?: (s: number) => void
+  onToolChange?: (tool: BoardTool) => void
 }) {
   const theme = useTheme()
   const pixel = theme === 'pixel-glitch'
@@ -165,6 +169,42 @@ export default function BoardCanvas({
   const refreshBoardItems = useLibraryStore((s) => s.refreshBoardItems)
   const refreshBoards = useLibraryStore((s) => s.refreshBoards)
   const activeBoardId = useLibraryStore((s) => s.activeBoardId)
+  /**
+   * 白板素材缓存独立于左侧参考来源。切换文件夹会替换 store.assets，
+   * 但已放上画布的素材必须继续显示与导出。
+   */
+  const [boardAssetCache, setBoardAssetCache] = useState<Record<string, Asset>>({})
+  const boardAssetCacheRef = useRef(boardAssetCache)
+  boardAssetCacheRef.current = boardAssetCache
+  const assetById = useMemo(() => {
+    const merged = new Map<string, Asset>(Object.entries(boardAssetCache))
+    for (const asset of assets) merged.set(asset.id, asset)
+    return merged
+  }, [assets, boardAssetCache])
+
+  useEffect(() => {
+    const visible = new Set(assets.map((asset) => asset.id))
+    const missing = Array.from(
+      new Set(
+        boardItems
+          .flatMap((item) => (item.assetId ? [item.assetId] : []))
+          .filter((id) => !visible.has(id) && !boardAssetCacheRef.current[id])
+      )
+    )
+    if (missing.length === 0) return
+    let cancelled = false
+    void Promise.all(missing.map((id) => window.api.getAsset(id))).then((found) => {
+      if (cancelled) return
+      setBoardAssetCache((current) => {
+        const next = { ...current }
+        for (const asset of found) if (asset) next[asset.id] = asset
+        return next
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [assets, boardItems])
 
   /* ---------- 视口状态 ---------- */
   const [viewport, setViewport] = useState<Viewport>({ s: 1, x: 0, y: 0 })
@@ -175,7 +215,8 @@ export default function BoardCanvas({
   const [panning, setPanning] = useState(false)
   const [spaceDown, setSpaceDown] = useState(false)
   const spaceDownRef = useRef(false)
-  const panRef = useRef<{ startX: number; startY: number; vx: number; vy: number } | null>(null)
+  const panRef = useRef<{ startX: number; startY: number; vx: number; vy: number; moved: boolean } | null>(null)
+  const suppressItemClickUntilRef = useRef(0)
 
   /* ---------- 画布外观（背景色/网格,按白板持久化） ---------- */
   const [appearance, setAppearance] = useState<BoardAppearance>(DEFAULT_APPEARANCE)
@@ -208,6 +249,9 @@ export default function BoardCanvas({
   // 工具 prop 的 ref 镜像（事件回调里读最新值）
   const toolRef = useRef(tool)
   toolRef.current = tool
+  /** 文字对象把编辑态与成品态分开；样式同时作为下一次新建文字的默认值。 */
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [noteDefaults, setNoteDefaults] = useState<Required<NoteStylePatch>>({ noteFont: '', noteColor: '#e8eef7', noteFontSize: 16 })
 
   /* ---------- 撤销/重做（按当前白板,切换白板即清空） ---------- */
   const histRef = useRef<{ undo: BoardItem[][]; redo: BoardItem[][] }>({ undo: [], redo: [] })
@@ -233,7 +277,7 @@ export default function BoardCanvas({
       const c = curMap.get(t.id)
       if (!c) continue
       const patch: Record<string, string | number | null> = {}
-      for (const k of ['x', 'y', 'width', 'height', 'z', 'text', 'noteFont', 'noteColor', 'opacity', 'shape'] as const) {
+      for (const k of ['x', 'y', 'width', 'height', 'z', 'text', 'noteFont', 'noteColor', 'noteFontSize', 'opacity', 'shape'] as const) {
         if (c[k] !== t[k]) patch[k] = t[k] as string | number | null
       }
       if (Object.keys(patch).length > 0) toUpdate.push({ id: t.id, patch })
@@ -251,7 +295,8 @@ export default function BoardCanvas({
         shape: t.shape ?? undefined,
         opacity: t.opacity ?? 100,
         noteFont: t.noteFont ?? '',
-        noteColor: t.noteColor ?? ''
+        noteColor: t.noteColor ?? '',
+        noteFontSize: t.noteFontSize ?? 16
       })
       // 还原层级（addBoardItem 自增 z,快照里的 z 需显式恢复）
       if (row.z !== t.z) await window.api.updateBoardItem(row.id, { z: t.z })
@@ -298,7 +343,8 @@ export default function BoardCanvas({
         shape: it.shape ?? undefined,
         opacity: it.opacity ?? 100,
         noteFont: it.noteFont ?? '',
-        noteColor: it.noteColor ?? ''
+        noteColor: it.noteColor ?? '',
+        noteFontSize: it.noteFontSize ?? 16
       })
     }
     await refreshBoardItems(boardIdRef.current)
@@ -633,13 +679,12 @@ export default function BoardCanvas({
       if (g.horizontal) parts.push(`<line x1="0" y1="${(g.y ?? 0) - oy}" x2="${w}" y2="${(g.y ?? 0) - oy}" stroke="rgba(90,160,255,0.55)" stroke-dasharray="6 4"/>`)
       else parts.push(`<line x1="${(g.x ?? 0) - ox}" y1="0" x2="${(g.x ?? 0) - ox}" y2="${h}" stroke="rgba(90,160,255,0.55)" stroke-dasharray="6 4"/>`)
     }
-    const assetMap = new Map(useLibraryStore.getState().assets.map((a) => [a.id, a]))
     for (const it of boardItemsRef.current) {
       const ex = it.x - ox
       const ey = it.y - oy
       const op = ((it.opacity ?? 100) / 100).toFixed(2)
       if (it.type === 'asset' && it.assetId) {
-        const asset = assetMap.get(it.assetId)
+        const asset = assetById.get(it.assetId) ?? (await window.api.getAsset(it.assetId))
         if (!asset) continue
         const dataUrl = await fetchToDataUrl(`${assetThumbUrl(asset)}&e=${asset.edited ?? 0}`)
         const ih = it.height > 0 ? it.height : it.width * (aspectCacheRef.current[it.assetId] ?? 0.75)
@@ -653,7 +698,7 @@ export default function BoardCanvas({
         const font = it.noteFont || 'sans-serif'
         const text = xmlEscape(it.text).replace(/\n/g, '<br/>')
         parts.push(
-          `<foreignObject x="${ex}" y="${ey}" width="${it.width}" height="${it.height}" opacity="${op}"><div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;background:rgba(30,32,36,0.9);color:${color};font-family:${font};font-size:13px;padding:6px;box-sizing:border-box;overflow:hidden;border-radius:2px">${text}</div></foreignObject>`
+          `<foreignObject x="${ex}" y="${ey}" width="${it.width}" height="${it.height}" opacity="${op}"><div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;color:${color};font-family:${font};font-size:${it.noteFontSize || 16}px;line-height:1.35;padding:4px;box-sizing:border-box;overflow:hidden;white-space:pre-wrap">${text}</div></foreignObject>`
         )
       } else if (it.type === 'shape' && it.shape) {
         let shape: ShapeSpec
@@ -755,7 +800,7 @@ export default function BoardCanvas({
           cursorY += rowHeight
           rowHeight = 0
         }
-        const asset = assets.find((a) => a.id === ids[i])
+        const asset = assetById.get(ids[i])
         // 照抄 MOTZ fitImageNodeSize：最大 280 宽,保持比例
         let w = 240
         if (asset && asset.width > 0 && asset.height > 0) {
@@ -788,7 +833,7 @@ export default function BoardCanvas({
       }
       await refreshBoardItems(boardId)
     },
-    [boardId, refreshBoardItems, assets]
+    [assetById, boardId, refreshBoardItems]
   )
 
   /* ---------- 画布事件 ---------- */
@@ -869,11 +914,22 @@ export default function BoardCanvas({
   // 空白处双击（<350ms、位移<8px）→ 适配全部内容
   const lastEmptyClickRef = useRef<{ x: number; y: number; t: number } | null>(null)
 
-  /** 在画布坐标放置一个文字便签 */
+  /** 在画布坐标放置一个文字对象；单次放置后回到选择工具并立即编辑。 */
   const addNoteAt = async (x: number, y: number) => {
     if (boardIdRef.current == null) return
     pushHistory()
-    await window.api.addBoardItem(boardIdRef.current, { type: 'note', x: Math.round(x), y: Math.round(y), width: 200, height: 60, text: '' })
+    const row = await window.api.addBoardItem(boardIdRef.current, {
+      type: 'note',
+      x: Math.round(x),
+      y: Math.round(y),
+      width: 240,
+      height: 64,
+      text: '',
+      ...noteDefaults
+    })
+    setSel([row.id])
+    setEditingNoteId(row.id)
+    onToolChange?.('select')
     await refreshBoardItems(boardIdRef.current)
   }
 
@@ -976,14 +1032,20 @@ export default function BoardCanvas({
       } catch {
         /* 合成事件忽略 */
       }
-      panRef.current = { startX: e.clientX, startY: e.clientY, vx: viewportRef.current.x, vy: viewportRef.current.y }
+      panRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        vx: viewportRef.current.x,
+        vy: viewportRef.current.y,
+        moved: false
+      }
       setPanning(true)
       return
     }
     if (e.button !== 0) return
     const t = toolRef.current
     if (t !== 'select') {
-      // 绘图工具模式：空白处按下即开始绘制（note 工具落点即建便签）
+      // 绘图工具模式：空白处按下即开始绘制（文字为单次放置）
       e.preventDefault()
       try {
         ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
@@ -1009,6 +1071,7 @@ export default function BoardCanvas({
   const onPointerMove = (e: React.PointerEvent) => {
     const p = panRef.current
     if (p) {
+      if (Math.abs(e.clientX - p.startX) > 2 || Math.abs(e.clientY - p.startY) > 2) p.moved = true
       const next = { ...viewportRef.current, x: p.vx + (e.clientX - p.startX), y: p.vy + (e.clientY - p.startY) }
       viewportRef.current = next
       if (surfaceRef.current) {
@@ -1041,8 +1104,16 @@ export default function BoardCanvas({
     }
   }
   const onPointerUp = (e: React.PointerEvent) => {
-    panRef.current = null
-    setPanning(false)
+    const pan = panRef.current
+    if (pan) {
+      panRef.current = null
+      setPanning(false)
+      // 平移逐帧直接写 DOM；结束时必须同步回 React state，否则下一次渲染会把画布
+      // 恢复到平移前的位置，看起来像素材突然跳向鼠标。
+      applyViewport({ ...viewportRef.current })
+      if (pan.moved) suppressItemClickUntilRef.current = Date.now() + 240
+      return
+    }
     // 绘图工具：提交形状
     if (drawingRef.current) {
       void commitDrawing()
@@ -1211,6 +1282,9 @@ export default function BoardCanvas({
   /* ---------- 元素拖动 / 组移动 / 8 向缩放 / 组缩放 ---------- */
   const onItemPointerDown = (e: React.PointerEvent, item: BoardItem, mode: 'move' | 'resize', dir?: ResizeDir) => {
     if (e.button !== 0) return
+    // 空格+左键始终属于画布平移。这里不阻止冒泡，让 frame 接管 pointer，
+    // 即使起点落在素材上也不能启动元素拖动。
+    if (spaceDownRef.current) return
     e.stopPropagation()
     try {
       ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
@@ -1330,6 +1404,32 @@ export default function BoardCanvas({
   }
 
   const onItemPointerMove = (e: React.PointerEvent) => {
+    // 用户可能在已经按下素材后才按住空格：取消尚未落库的元素拖动，
+    // 从当前位置无缝转成画布平移，避免素材跟到鼠标位置。
+    if (spaceDownRef.current && dragRef.current) {
+      const drag = dragRef.current
+      for (const id of drag.ids) {
+        const original = drag.origs.get(id)
+        const element = itemEls.current.get(id)
+        if (original && element) {
+          element.style.left = `${original.x}px`
+          element.style.top = `${original.y}px`
+          element.style.width = `${original.w}px`
+          element.style.height = `${original.h}px`
+        }
+      }
+      dragRef.current = null
+      if (groupBoxRef.current) groupBoxRef.current.style.display = 'flex'
+      panRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        vx: viewportRef.current.x,
+        vy: viewportRef.current.y,
+        moved: false
+      }
+      setPanning(true)
+      return
+    }
     applyDragToDom(e)
   }
 
@@ -1383,6 +1483,7 @@ export default function BoardCanvas({
 
   /** 点击元素置顶 + 选中（多选状态下点击选中元素保持组选中） */
   const onItemClick = async (item: BoardItem) => {
+    if (Date.now() < suppressItemClickUntilRef.current) return
     if (boardId != null) {
       pushHistory()
       await window.api.bringBoardItemToFront(item.id, boardId)
@@ -1461,7 +1562,7 @@ export default function BoardCanvas({
     await refreshBoardItems(boardId)
     setCtxMenu(null)
   }
-  const setNoteStyle = async (patch: { noteFont?: string; noteColor?: string }) => {
+  const setNoteStyle = async (patch: NoteStylePatch) => {
     const target = ctxTarget()
     if (target.length === 0) return
     pushHistory()
@@ -1469,6 +1570,15 @@ export default function BoardCanvas({
     await window.api.updateBoardItems(updates)
     if (boardId != null) await refreshBoardItems(boardId)
     setCtxMenu(null)
+  }
+  const setActiveNoteStyle = async (patch: NoteStylePatch) => {
+    setNoteDefaults((current) => ({ ...current, ...patch }))
+    const id = selectedIdsRef.current.length === 1 ? selectedIdsRef.current[0] : null
+    const selected = id ? boardItemsRef.current.find((item) => item.id === id && item.type === 'note') : null
+    if (!selected) return
+    pushHistory()
+    await window.api.updateBoardItem(selected.id, patch)
+    if (boardId != null) await refreshBoardItems(boardId)
   }
   /** 批量设置透明度（对标 PureRef 参考图透明度对比） */
   const setOpacityCtx = async (opacity: number) => {
@@ -1523,15 +1633,21 @@ export default function BoardCanvas({
     }
   }
 
-  // 素材详情 map
-  const assetById = useMemo(() => new Map(assets.map((a) => [a.id, a])), [assets])
-
   // 右键菜单里的 note 元素
   const ctxItem = ctxMenu?.itemId ? boardItems.find((i) => i.id === ctxMenu.itemId) : null
   const ctxIsNote = ctxItem?.type === 'note'
   const ctxIsShape = ctxItem?.type === 'shape'
   const ctxShapeSpec: ShapeSpec | null = ctxIsShape && ctxItem?.shape ? (() => { try { return JSON.parse(ctxItem.shape) as ShapeSpec } catch { return null } })() : null
   const multiSelected = selectedIds.length > 1
+  const selectedNote = selectedIds.length === 1 ? boardItems.find((item) => item.id === selectedIds[0] && item.type === 'note') ?? null : null
+  const activeNoteStyle = selectedNote
+    ? {
+        noteFont: selectedNote.noteFont || '',
+        noteColor: selectedNote.noteColor || '#e8eef7',
+        noteFontSize: selectedNote.noteFontSize || 16
+      }
+    : noteDefaults
+  const showTextStyleBar = tool === 'note' || selectedNote != null
 
   return (
     <div
@@ -1550,6 +1666,54 @@ export default function BoardCanvas({
       onDrop={onDrop}
       onContextMenu={(e) => openCtxMenu(e, null)}
     >
+      {showTextStyleBar && (
+        <div
+          data-board-text-stylebar
+          className="absolute left-1/2 top-3 z-[220] flex -translate-x-1/2 items-center gap-2 rounded-sm border border-[var(--border-strong)] bg-[var(--bg-panel)]/95 px-2 py-1.5 shadow-lg backdrop-blur"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <span className="mono mr-1 text-[9px] tracking-[0.12em] text-[var(--text-faint)]">文字</span>
+          <select
+            aria-label="文字字体"
+            className="field-input h-7 w-28 px-1.5 text-[11px]"
+            value={activeNoteStyle.noteFont}
+            onChange={(event) => void setActiveNoteStyle({ noteFont: event.target.value })}
+          >
+            {NOTE_FONTS.map((font) => (
+              <option key={font.label} value={font.value} style={{ fontFamily: font.value || undefined }}>
+                {font.label}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="文字字号"
+            className="field-input h-7 w-16 px-1.5 text-[11px]"
+            value={activeNoteStyle.noteFontSize}
+            onChange={(event) => void setActiveNoteStyle({ noteFontSize: Number(event.target.value) })}
+          >
+            {NOTE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
+          </select>
+          <div className="flex items-center gap-1" aria-label="文字颜色">
+            {NOTE_COLORS.map((color) => (
+              <button
+                key={color}
+                aria-label={`文字颜色 ${color}`}
+                className={`h-4 w-4 rounded-full border ${activeNoteStyle.noteColor === color ? 'ring-2 ring-[var(--accent)]' : 'border-white/20'}`}
+                style={{ background: color }}
+                onClick={() => void setActiveNoteStyle({ noteColor: color })}
+              />
+            ))}
+            <input
+              type="color"
+              aria-label="自定义文字颜色"
+              className="h-5 w-5 cursor-pointer border-0 bg-transparent p-0"
+              value={activeNoteStyle.noteColor}
+              onChange={(event) => void setActiveNoteStyle({ noteColor: event.target.value })}
+            />
+          </div>
+        </div>
+      )}
       {/* 点阵背景（画布外观：开关 + 密度 + 颜色随背景亮度自适应） */}
       {appearance.grid && (
         <div
@@ -1574,6 +1738,7 @@ export default function BoardCanvas({
           const asset = item.assetId ? assetById.get(item.assetId) : undefined
           const autoH = item.height > 0 ? item.height : item.width * (aspectCache[item.assetId ?? ''] ?? 0.75)
           const sel = isSelected(item.id)
+          const editing = item.type === 'note' && editingNoteId === item.id
           return (
             <div
               key={item.id}
@@ -1589,10 +1754,16 @@ export default function BoardCanvas({
                 width: item.width,
                 height: item.type === 'asset' ? autoH : item.height,
                 zIndex: item.z,
-                outline: sel ? '2px solid var(--accent)' : '1px solid rgba(128,128,128,0.35)',
+                outline: editing
+                  ? '1px dashed var(--accent)'
+                  : sel
+                    ? '2px solid var(--accent)'
+                    : item.type === 'note'
+                      ? 'none'
+                      : '1px solid rgba(128,128,128,0.35)',
                 outlineOffset: sel ? 1 : 0,
                 cursor: 'move',
-                background: item.type === 'note' ? 'rgba(30,32,36,0.9)' : 'transparent'
+                background: 'transparent'
               }}
               onPointerDown={(e) => onItemPointerDown(e, item, 'move')}
               onPointerMove={onItemPointerMove}
@@ -1600,6 +1771,16 @@ export default function BoardCanvas({
               onClick={(e) => {
                 e.stopPropagation()
                 void onItemClick(item)
+                if (item.type === 'note' && toolRef.current === 'note') {
+                  setEditingNoteId(item.id)
+                  onToolChange?.('select')
+                }
+              }}
+              onDoubleClick={(e) => {
+                if (item.type !== 'note') return
+                e.stopPropagation()
+                setSel([item.id])
+                setEditingNoteId(item.id)
               }}
               onContextMenu={(e) => openCtxMenu(e, item)}
             >
@@ -1643,34 +1824,77 @@ export default function BoardCanvas({
                     </svg>
                   )
                 })()
+              ) : editing ? (
+                <textarea
+                  data-board-text-editor
+                  aria-label="白板文字编辑"
+                  className="h-full w-full resize-none bg-transparent p-1 outline-none"
+                  style={{
+                    fontFamily: item.noteFont || undefined,
+                    color: item.noteColor || 'var(--text-main)',
+                    fontSize: item.noteFontSize || 16,
+                    lineHeight: 1.35,
+                    opacity: (item.opacity ?? 100) / 100
+                  }}
+                  placeholder="输入文字…"
+                  defaultValue={item.text}
+                  autoFocus
+                  onFocus={(event) => {
+                    const value = event.currentTarget.value
+                    event.currentTarget.setSelectionRange(value.length, value.length)
+                    const editor = event.currentTarget
+                    requestAnimationFrame(() => {
+                      const height = Math.max(item.height, editor.scrollHeight + 4)
+                      if (editor.parentElement) editor.parentElement.style.height = `${height}px`
+                    })
+                  }}
+                  onInput={(event) => {
+                    const editor = event.currentTarget
+                    const height = Math.max(item.height, editor.scrollHeight + 4)
+                    if (editor.parentElement) editor.parentElement.style.height = `${height}px`
+                  }}
+                  onBlur={(event) => {
+                    const value = event.currentTarget.value
+                    const height = Math.max(item.height, event.currentTarget.scrollHeight + 4)
+                    setEditingNoteId(null)
+                    if (!value.trim()) {
+                      pushHistory()
+                      setSel([])
+                      void window.api.deleteBoardItem(item.id).then(() => {
+                        if (boardIdRef.current != null) return refreshBoardItems(boardIdRef.current)
+                      })
+                    } else if (value !== item.text || height !== item.height) {
+                      pushHistory()
+                      void window.api.updateBoardItem(item.id, { text: value, height }).then(() => {
+                        if (boardIdRef.current != null) return refreshBoardItems(boardIdRef.current)
+                      })
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape' || ((event.ctrlKey || event.metaKey) && event.key === 'Enter')) {
+                      event.preventDefault()
+                      event.currentTarget.blur()
+                    }
+                  }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                />
               ) : (
-                <>
-                  {/* note 拖动手柄：文字便签可被拖拽（textarea 区域保留给编辑） */}
-                  <div
-                    data-note-handle
-                    className="absolute inset-x-0 top-0 h-4 cursor-move touch-none"
-                    onPointerDown={(e) => onItemPointerDown(e, item, 'move')}
-                    onPointerMove={onItemPointerMove}
-                    onPointerUp={(e) => void onItemPointerUp(e)}
-                  />
-                  <textarea
-                    aria-label="白板文字"
-                    className="h-full w-full resize-none bg-transparent p-1.5 pt-5 text-[13px] outline-none"
-                    style={{ fontFamily: item.noteFont || undefined, color: item.noteColor || 'var(--text-main)', opacity: (item.opacity ?? 100) / 100 }}
-                    placeholder="输入文字…"
-                    defaultValue={item.text}
-                    onBlur={(e) => {
-                      if (e.target.value !== item.text) {
-                        pushHistory()
-                        void window.api.updateBoardItem(item.id, { text: e.target.value })
-                      }
-                    }}
-                    onPointerDown={(e) => e.stopPropagation()}
-                  />
-                </>
+                <div
+                  data-board-text-display
+                  className="h-full w-full whitespace-pre-wrap break-words p-1"
+                  style={{
+                    fontFamily: item.noteFont || undefined,
+                    color: item.noteColor || 'var(--text-main)',
+                    fontSize: item.noteFontSize || 16,
+                    lineHeight: 1.35,
+                    opacity: (item.opacity ?? 100) / 100
+                  }}
+                >
+                  {item.text}
+                </div>
               )}
               {/* 单选时的 8 向缩放手柄（照抄 MOTZ selection-handles） */}
-              {sel && !multiSelected && (
+              {sel && !multiSelected && !editing && (
                 <div className="pointer-events-none absolute -inset-1">
                   {RESIZE_HANDLES.map((handle) => (
                     <span
@@ -1683,6 +1907,7 @@ export default function BoardCanvas({
                         cursor: `${handle === 'nw' || handle === 'se' ? 'nwse' : handle === 'ne' || handle === 'sw' ? 'nesw' : handle === 'n' || handle === 's' ? 'ns' : 'ew'}-resize`
                       }}
                       onPointerDown={(e) => {
+                        if (spaceDownRef.current) return
                         e.stopPropagation()
                         e.preventDefault()
                         onItemPointerDown(e, item, 'resize', handle)
@@ -1723,6 +1948,7 @@ export default function BoardCanvas({
                   cursor: `${handle === 'nw' || handle === 'se' ? 'nwse' : handle === 'ne' || handle === 'sw' ? 'nesw' : handle === 'n' || handle === 's' ? 'ns' : 'ew'}-resize`
                 }}
                 onPointerDown={(e) => {
+                  if (spaceDownRef.current) return
                   e.stopPropagation()
                   e.preventDefault()
                   // 组缩放：以包围盒为基准,把首元素作为 mode 载体
@@ -1883,6 +2109,15 @@ export default function BoardCanvas({
                       onChange={(e) => void setNoteStyle({ noteColor: e.target.value })}
                     />
                   </div>
+                  <div className="mb-1 mt-2 text-[10px] text-[var(--text-faint)]">字号</div>
+                  <select
+                    aria-label="note 字号"
+                    className="field-input w-full px-1.5 py-1 text-[11px]"
+                    value={ctxItem.noteFontSize || 16}
+                    onChange={(e) => void setNoteStyle({ noteFontSize: Number(e.target.value) })}
+                  >
+                    {NOTE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
+                  </select>
                 </div>
               )}
               {/* 形状样式（颜色/线宽,多选时批量应用;新绘制沿用所选样式） */}

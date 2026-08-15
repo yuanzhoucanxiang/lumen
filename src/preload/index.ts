@@ -136,6 +136,7 @@ const api = {
       opacity?: number
       noteFont?: string
       noteColor?: string
+      noteFontSize?: number
     }
   ): Promise<BoardItem> => ipcRenderer.invoke('board:addItem', boardId, item),
   updateBoardItem: (id: string, patch: Partial<BoardItem>): Promise<void> =>

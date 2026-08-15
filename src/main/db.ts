@@ -133,6 +133,7 @@ function migrate(d: Database.Database): void {
   ensureColumns(d, 'board_items', {
     note_font: "TEXT NOT NULL DEFAULT ''",
     note_color: "TEXT NOT NULL DEFAULT ''",
+    note_font_size: 'INTEGER NOT NULL DEFAULT 16',
     opacity: 'INTEGER NOT NULL DEFAULT 100',
     shape: 'TEXT'
   })

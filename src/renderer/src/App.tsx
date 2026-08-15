@@ -11,6 +11,7 @@ import ConfirmDialog from './components/ConfirmDialog'
 import UpdateNotes from './components/UpdateNotes'
 import AiDialog from './components/AiDialog'
 import BoardPanel from './components/BoardPanel'
+import BoardReferencePanel from './components/BoardReferencePanel'
 import ArchiveHeader from './components/ArchiveHeader'
 import { loadShortcuts, matchesShortcut } from './shortcuts'
 import type { UpdateStatus } from '@shared/types'
@@ -205,7 +206,10 @@ export default function App() {
         <Sidebar />
         <main className="archive-workspace flex min-h-0 min-w-0 flex-1 flex-col" style={{ background: 'var(--bg-base)' }}>
           {boardViewMode === 'board' ? (
-            <BoardPanel />
+            <div className="board-workspace flex min-h-0 min-w-0 flex-1">
+              <BoardReferencePanel />
+              <BoardPanel />
+            </div>
           ) : boardViewMode === 'split' ? (
             <div className="flex min-h-0 flex-1">
               <div className="flex min-w-0 flex-1 flex-col">
