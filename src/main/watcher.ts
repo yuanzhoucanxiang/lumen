@@ -77,7 +77,7 @@ export function stopWatchers(): void {
 export async function syncOnStartup(onImported: (count: number) => void): Promise<void> {
   const dirs = loadConfig().watchDirs
   if (dirs.length === 0) return
-  const files = collectFiles(dirs)
+  const files = await collectFiles(dirs)
   if (files.length === 0) return
   logger.info('[watcher]', `启动增量同步：扫描 ${dirs.length} 个监控目录，${files.length} 个文件`)
   // importMode 由 loadConfig 决定，syncOnStartup 用 copy（不删源文件，监控目录的文件要保留）

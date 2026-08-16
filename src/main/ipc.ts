@@ -133,12 +133,17 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
         filters: [{ name: 'ZIP 压缩包', extensions: ['zip'] }]
       })
       if (r.canceled || !r.filePath) return null
-      const count = backupLibraryToZip(r.filePath)
+      const count = await backupLibraryToZip(r.filePath)
       return { count, target: r.filePath }
     }
   )
 
   /* ---------------- 导入 ---------------- */
+  // 导入进度推送（阶段 A 逐文件 + 阶段 B 提交后一次），渲染层 onImportProgress 消费
+  const sendImportProgress = (phase: 'prepare' | 'commit', done: number, total: number): void => {
+    getWindow()?.webContents.send('import:progress', { phase, done, total })
+  }
+
   ipcMain.handle('import:dialog', async (): Promise<{ imported: number; skipped: number; failed: number }> => {
     const win = getWindow()
     const result = await dialog.showOpenDialog(win!, {
@@ -146,11 +151,11 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       properties: ['openFile', 'multiSelections']
     })
     if (result.canceled || result.filePaths.length === 0) return { imported: 0, skipped: 0, failed: 0 }
-    return importFiles(result.filePaths, { move: loadConfig().importMode === 'move' })
+    return importFiles(result.filePaths, { move: loadConfig().importMode === 'move', onProgress: sendImportProgress })
   })
 
   ipcMain.handle('import:paths', async (_e, paths: string[]) => {
-    return importFiles(paths ?? [])
+    return importFiles(paths ?? [], { onProgress: sendImportProgress })
   })
 
   /* ---------------- 素材查询与编辑 ---------------- */

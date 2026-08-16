@@ -23,6 +23,12 @@ const api = {
   importViaDialog: (): Promise<ImportResult> => ipcRenderer.invoke('import:dialog'),
   importFileObjects: (files: File[]): Promise<ImportResult> =>
     ipcRenderer.invoke('import:fileObjects', files),
+  /** 按本地路径导入（主进程 import:paths 通道的包装，供测试/脚本用） */
+  importFromPaths: (paths: string[]): Promise<ImportResult> =>
+    ipcRenderer.invoke('import:paths', paths),
+  onImportProgress: (cb: (p: { phase: 'prepare' | 'commit'; done: number; total: number }) => void): void => {
+    ipcRenderer.on('import:progress', (_e, p) => cb(p))
+  },
 
   /* 素材 */
   queryAssets: (q: AssetQuery): Promise<Asset[]> => ipcRenderer.invoke('assets:query', q),

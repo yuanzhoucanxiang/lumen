@@ -63,6 +63,8 @@ export default function App() {
   /** 下载完成弹窗被暂时关闭后置 true,显示「已就绪」持久角标可随时重新打开 */
   const [updReadyHidden, setUpdReadyHidden] = useState(false)
   const [aiProgress, setAiProgress] = useState<{ done: number; total: number; failed: number } | null>(null)
+  /** 导入进度（阶段 A 逐文件 + 阶段 B 提交后一次），照抄 aiProgress 卡片模式 */
+  const [importProgress, setImportProgress] = useState<{ phase: string; done: number; total: number } | null>(null)
 
   // 立即下载更新（带反馈：失败 toast，下载中按钮禁用）
   const startDownload = async () => {
@@ -105,6 +107,14 @@ export default function App() {
       if (p.done >= p.total) {
         // 处理完成,2 秒后自动隐藏进度卡片
         setTimeout(() => setAiProgress(null), 2000)
+      }
+    })
+    // 导入进度推送
+    window.api.onImportProgress((p) => {
+      setImportProgress(p)
+      if (p.done >= p.total && p.phase === 'commit') {
+        // 导入完成,2 秒后自动隐藏进度卡片
+        setTimeout(() => setImportProgress(null), 2000)
       }
     })
   }, [refreshAll])
@@ -290,6 +300,28 @@ export default function App() {
             <div
               className="h-full bg-[var(--accent)] transition-all duration-200"
               style={{ width: `${aiProgress.total > 0 ? (aiProgress.done / aiProgress.total) * 100 : 0}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 导入进度卡片（照抄 AI 处理进度卡片模式） */}
+      {importProgress && (
+        <div className="anim-dialog menu fixed bottom-6 right-6 z-[190] w-72 p-3.5">
+          <p className="text-[13px] font-medium">
+            {importProgress.phase === 'commit' ? '导入完成' : '导入素材中…'}
+          </p>
+          <p className="mt-1 flex justify-between text-[12px] text-[var(--text-dim)]">
+            <span>
+              {Math.min(importProgress.done, importProgress.total)} / {importProgress.total}
+            </span>
+          </p>
+          <div className="mt-2 h-1 w-full bg-[var(--bg-active)]">
+            <div
+              className="h-full bg-[var(--accent)] transition-all duration-200"
+              style={{
+                width: `${importProgress.total > 0 ? (importProgress.done / importProgress.total) * 100 : 0}%`
+              }}
             />
           </div>
         </div>

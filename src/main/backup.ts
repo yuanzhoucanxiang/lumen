@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
+import { writeFile } from 'fs/promises'
 import { join, relative } from 'path'
 import { getDb } from './db'
 import { getLibraryPath } from './library'
@@ -109,8 +110,9 @@ function collectFiles(dir: string, base: string, acc: { rel: string; abs: string
 /**
  * 把整个当前库目录打包成 ZIP（含 assets 原图 + 缩略图 + library.db）。
  * 用于完整灾难恢复。返回写入的文件数。
+ * （读取与 ZIP 攒批的同步实现属阶段 3 流式化范围，此处仅把最终写盘改异步）
  */
-export function backupLibraryToZip(zipPath: string): number {
+export async function backupLibraryToZip(zipPath: string): Promise<number> {
   const libPath = getLibraryPath()
   const files: { rel: string; abs: string }[] = []
   collectFiles(libPath, libPath, files)
@@ -125,7 +127,7 @@ export function backupLibraryToZip(zipPath: string): number {
       logger.warn('[backup]', `跳过无法读取的文件 ${f.rel}: ${(e as Error).message}`)
     }
   }
-  writeFileSync(zipPath, zipStore(entries))
+  await writeFile(zipPath, zipStore(entries))
   logger.info('[backup]', `完整库已备份到 ${zipPath}（${count} 个文件）`)
   return count
 }

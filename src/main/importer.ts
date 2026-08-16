@@ -1,4 +1,5 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
+import { existsSync } from 'fs'
+import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'fs/promises'
 import { basename, extname, join } from 'path'
 import { randomUUID } from 'crypto'
 import { spawn } from 'child_process'
@@ -38,6 +39,8 @@ export interface ImportOptions {
   /** true = 查重时检查 deleted_files tombstone(已删除文件不再自动重导入)。
    *  监控/启动同步设 true;用户主动导入(对话框/拖拽/剪藏)不设,允许重新导入已删文件 */
   checkTombstone?: boolean
+  /** 导入进度回调:阶段 A 每完成一个文件触发一次('prepare'),阶段 B 事务提交后触发一次('commit') */
+  onProgress?: (phase: 'prepare' | 'commit', done: number, total: number) => void
 }
 
 export function assetKindOf(ext: string): 'image' | 'video' | 'audio' | 'other' {
@@ -48,13 +51,19 @@ export function assetKindOf(ext: string): 'image' | 'video' | 'audio' | 'other' 
   return 'other'
 }
 
-/** 递归展开路径列表，返回所有可导入的文件路径 */
-export function collectFiles(paths: string[], acc: string[] = []): string[] {
+/** 递归展开路径列表，返回所有可导入的文件路径（异步遍历，不阻塞主进程） */
+export async function collectFiles(paths: string[], acc: string[] = []): Promise<string[]> {
   for (const p of paths) {
-    if (!existsSync(p)) continue
-    const st = statSync(p)
+    let st
+    try {
+      st = await stat(p)
+    } catch {
+      continue // 路径不存在/不可访问(与原 existsSync 预检语义一致)
+    }
     if (st.isDirectory()) {
-      for (const name of readdirSync(p)) collectFiles([join(p, name)], acc)
+      for (const e of await readdir(p, { withFileTypes: true })) {
+        await collectFiles([join(p, e.name)], acc)
+      }
     } else {
       acc.push(p)
     }
@@ -117,20 +126,20 @@ function isDuplicate(
 
 /**
  * 安全删除临时文件：Windows 上 ffmpeg 刚写完的文件可能被 Defender 实时扫描短暂锁定，
- * rmSync 会抛 EPERM。这里重试几次（每次 150ms），仍失败只记 debug 日志，绝不阻断主流程。
+ * rm 会抛 EPERM。这里重试几次（每次 150ms），仍失败只记 debug 日志，绝不阻断主流程。
  */
-function rmSafe(p: string): void {
+async function rmSafe(p: string): Promise<void> {
   for (let i = 0; i < 5; i++) {
     try {
-      rmSync(p, { force: true })
+      await rm(p, { force: true })
       return
     } catch (e) {
       if (i === 4) {
         logger.debug('[importer]', `临时文件删除失败(重试5次) ${p}: ${(e as Error).message}`)
         return
       }
-      // 同步等待 150ms 再重试
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150)
+      // 异步等待 150ms 再重试(不阻塞主进程事件循环)
+      await new Promise((r) => setTimeout(r, 150))
     }
   }
 }
@@ -225,7 +234,7 @@ async function psdToRaw(
   filePath: string
 ): Promise<{ data: Buffer; width: number; height: number } | null> {
   try {
-    const psd = readPsd(readFileSync(filePath), { useImageData: true, skipThumbnail: true })
+    const psd = readPsd(await readFile(filePath), { useImageData: true, skipThumbnail: true })
     const img = psd.imageData
     if (!img || img.width <= 0 || img.height <= 0) return null
     return {
@@ -364,7 +373,7 @@ async function generateStoryboard(videoPath: string, absDir: string, duration: n
         const buf = await sharp(tmpPath).resize(256, 144, { fit: 'cover' }).jpeg({ quality: 80 }).toBuffer()
         frames.push(buf)
       } catch { /* ignore */ }
-      rmSafe(tmpPath)
+      await rmSafe(tmpPath)
     }
   }
   if (frames.length < 2) return // 至少 2 帧才拼故事板
@@ -390,7 +399,7 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
   try {
     const name = basename(filePath)
     const ext = extname(filePath).slice(1).toLowerCase()
-    const st = statSync(filePath)
+    const st = await stat(filePath)
     const kind = assetKindOf(ext)
     const checkTombstone = !!opts.checkTombstone
 
@@ -424,12 +433,12 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
     const id = randomUUID().replace(/-/g, '').slice(0, 16)
     const relDir = join('assets', id.slice(0, 2), id)
     const absDir = join(getLibraryPath(), relDir)
-    mkdirSync(absDir, { recursive: true })
+    await mkdir(absDir, { recursive: true })
 
     const originalName = `${id}.${ext || 'file'}`
     const targetPath = join(absDir, originalName)
-    copyFileSync(filePath, targetPath)
-    if (opts.move) rmSync(filePath, { force: true })
+    await copyFile(filePath, targetPath)
+    if (opts.move) await rm(filePath, { force: true })
 
     let width = 0
     let height = 0
@@ -458,7 +467,7 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
         }
         // 复用预算的 thumbBuf(非 PSD),否则现算
         const thumbBuf = preThumbBuf ?? (await base.resize(512, 512, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer())
-        writeFileSync(join(absDir, 'thumbnail.jpg'), thumbBuf)
+        await writeFile(join(absDir, 'thumbnail.jpg'), thumbBuf)
         colors = await extractColors(thumbBuf)
         if (!hash) hash = await computeDHash(thumbBuf) // PSD 或预算失败时补算
       } catch (e) {
@@ -491,7 +500,7 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
         } catch (e) {
           logger.warn('[importer]', `视频封面处理失败 ${name}: ${(e as Error).message}`)
         } finally {
-          rmSafe(framePath)
+          await rmSafe(framePath)
         }
       }
     } else if (FONT_EXTS.has(ext)) {
@@ -501,7 +510,7 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
         if (thumb) {
           width = thumb.width
           height = thumb.height
-          writeFileSync(join(absDir, 'thumbnail.jpg'), thumb.data)
+          await writeFile(join(absDir, 'thumbnail.jpg'), thumb.data)
           colors = await extractColors(thumb.data)
           hash = await computeDHash(thumb.data)
         }
@@ -536,45 +545,54 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
 
 /**
  * 阶段 B：把一批已准备好的记录原子写入数据库 + metadata.json。
- * 用 better-sqlite3 事务包裹，任一失败整批回滚（已复制的文件保留，下次启动 isDuplicate 会判重）。
+ * 用 better-sqlite3 事务包裹 DB 写入，任一失败整批回滚（已复制的文件保留，下次启动 isDuplicate 会判重）。
+ * metadata.json 写盘与 DB 原子性无关，移出事务后异步写（单文件失败仅告警不回滚，行为不变）。
  */
-function commitBatch(records: PreparedAsset[]): void {
+async function commitBatch(records: PreparedAsset[]): Promise<void> {
   const db = getDb()
   const insert = db.prepare(
     `INSERT INTO assets (id, name, ext, rel_dir, size, width, height, colors, hash, star, comment, url, created_at, imported_at, exif)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?)`
   )
+  const now = Date.now()
   const run = db.transaction((recs: PreparedAsset[]) => {
-    const now = Date.now()
     for (const r of recs) {
       insert.run(
         r.id, r.name, r.ext, r.relDir, r.size, r.width, r.height,
         JSON.stringify(r.colors), r.hash, r.sourceUrl ?? '', r.mtimeMs, now, r.exif ?? ''
       )
-      // 附带 metadata.json（与 Eagle 格式兼容的基础元数据）
-      const metaJson = {
-        id: r.id, name: r.name, ext: r.ext, size: r.size, width: r.width, height: r.height,
-        colors: r.colors, star: 0, annotation: '', url: r.sourceUrl ?? '',
-        palettes: r.colors, modificationTime: now, creationTime: r.mtimeMs
-      }
-      try {
-        writeFileSync(join(r.absDir!, 'metadata.json'), JSON.stringify(metaJson, null, 2), 'utf-8')
-      } catch (e) {
-        logger.warn('[importer]', `metadata.json 写入失败 ${r.name}: ${(e as Error).message}`)
-      }
     }
   })
   run(records)
+  // 附带 metadata.json（与 Eagle 格式兼容的基础元数据）
+  for (const r of records) {
+    const metaJson = {
+      id: r.id, name: r.name, ext: r.ext, size: r.size, width: r.width, height: r.height,
+      colors: r.colors, star: 0, annotation: '', url: r.sourceUrl ?? '',
+      palettes: r.colors, modificationTime: now, creationTime: r.mtimeMs
+    }
+    try {
+      await writeFile(join(r.absDir!, 'metadata.json'), JSON.stringify(metaJson, null, 2), 'utf-8')
+    } catch (e) {
+      logger.warn('[importer]', `metadata.json 写入失败 ${r.name}: ${(e as Error).message}`)
+    }
+  }
 }
 
 export async function importFiles(paths: string[], opts: ImportOptions = {}): Promise<ImportResult> {
-  const files = collectFiles(paths)
+  const files = await collectFiles(paths)
   const result: ImportResult = { imported: 0, skipped: 0, failed: 0, failedFiles: [] }
   if (files.length === 0) return result
 
-  // 阶段 A：并发复制 + 计算（IO/CPU 密集，按 CPU 核心数并发）
+  // 阶段 A：并发复制 + 计算（IO/CPU 密集，按 CPU 核心数并发）；每完成一个文件推一次进度
   const concurrency = Math.max(1, cpus().length)
-  const prepared = await mapWithConcurrency(files, concurrency, (f) => prepareOne(f, opts))
+  let done = 0
+  const prepared = await mapWithConcurrency(files, concurrency, async (f) => {
+    const r = await prepareOne(f, opts)
+    done++
+    opts.onProgress?.('prepare', done, files.length)
+    return r
+  })
 
   // 分离 ok 记录 vs skip/fail
   const okRecords: PreparedAsset[] = []
@@ -590,7 +608,7 @@ export async function importFiles(paths: string[], opts: ImportOptions = {}): Pr
   // 阶段 B：事务原子写入数据库 + metadata.json（串行，任一失败整批回滚）
   if (okRecords.length > 0) {
     try {
-      commitBatch(okRecords)
+      await commitBatch(okRecords)
       result.imported = okRecords.length
     } catch (e) {
       // 事务失败（DB 磁盘满/损坏等极端情况）：整批算失败，已复制文件保留待重试
@@ -599,6 +617,8 @@ export async function importFiles(paths: string[], opts: ImportOptions = {}): Pr
       for (const r of okRecords) result.failedFiles!.push(r.name)
     }
   }
+  // 阶段 B 完成：推一次 commit 进度（渲染层据此收尾进度卡片）
+  opts.onProgress?.('commit', files.length, files.length)
 
   return result
 }

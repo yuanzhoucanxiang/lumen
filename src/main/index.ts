@@ -151,7 +151,10 @@ app.whenReady().then(() => {
         logger.warn('[import]', `拖拽文件路径解析失败: ${(e as Error).message}`)
       }
     }
-    return importFiles(paths)
+    // 导入进度推送（与 import:dialog/import:paths 两个入口一致）
+    return importFiles(paths, {
+      onProgress: (phase, done, total) => mainWindow?.webContents.send('import:progress', { phase, done, total })
+    })
   })
 
   createWindow()

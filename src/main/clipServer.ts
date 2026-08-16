@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import { createServer, IncomingMessage, ServerResponse } from 'http'
-import { rmSync, writeFileSync } from 'fs'
+import { rmSync } from 'fs'
+import { writeFile } from 'fs/promises'
 import { join } from 'path'
 import { importFiles } from './importer'
 
@@ -83,7 +84,7 @@ async function saveClip(payload: ClipPayload): Promise<number> {
     payload.filename?.replace(/[\\/:*?"<>|]/g, '_').slice(0, 120) ||
     `clip_${new Date().toISOString().replace(/[:.]/g, '-')}`
   const tmpFile = join(app.getPath('temp'), `${name.replace(/\.[^.]+$/, '')}_${Date.now()}.${ext}`)
-  writeFileSync(tmpFile, buffer)
+  await writeFile(tmpFile, buffer)
   const result = await importFiles([tmpFile], { sourceUrl: payload.pageUrl ?? payload.imageUrl })
   rmSync(tmpFile, { force: true }) // 剪藏临时文件入库后清理
   return result.imported
