@@ -11,6 +11,7 @@ import { readPsd, initializeCanvas } from 'ag-psd'
 import * as fontkit from 'fontkit'
 import { getDb } from './db'
 import { getLibraryPath } from './library'
+import { stmt } from './stmtCache'
 import { logger } from './logger'
 import { parseExif } from './exif'
 import type { ImportResult } from '../shared/types'
@@ -87,36 +88,30 @@ function isDuplicate(
   const db = getDb()
   // ① 快速路径:name+size 活跃记录(零额外开销)
   if (
-    db
-      .prepare('SELECT 1 FROM assets WHERE name = ? AND size = ? AND deleted_at IS NULL LIMIT 1')
-      .get(name, size)
+    stmt(
+      db,
+      'SELECT 1 FROM assets WHERE name = ? AND size = ? AND deleted_at IS NULL LIMIT 1'
+    ).get(name, size)
   )
     return true
-  // ② 哈希路径:hash+size 活跃记录(AI 改名后防重复)
+  // ② 哈希路径:hash+size 活跃记录(AI 改名后防重复);走 idx_assets_hash_size 索引
   if (hash) {
     if (
-      db
-        .prepare('SELECT 1 FROM assets WHERE hash = ? AND size = ? AND deleted_at IS NULL LIMIT 1')
-        .get(hash, size)
+      stmt(
+        db,
+        'SELECT 1 FROM assets WHERE hash = ? AND size = ? AND deleted_at IS NULL LIMIT 1'
+      ).get(hash, size)
     )
       return true
     // tombstone:已删除的图片(仅监控/启动同步检查)
     if (checkTombstone) {
-      if (
-        db
-          .prepare('SELECT 1 FROM deleted_files WHERE hash = ? AND size = ? LIMIT 1')
-          .get(hash, size)
-      )
+      if (stmt(db, 'SELECT 1 FROM deleted_files WHERE hash = ? AND size = ? LIMIT 1').get(hash, size))
         return true
     }
   }
   // ③ 无 hash 的 tombstone 回退(视频/PSD/字体):按 name+size
   if (checkTombstone) {
-    if (
-      db
-        .prepare('SELECT 1 FROM deleted_files WHERE name = ? AND size = ? LIMIT 1')
-        .get(name, size)
-    )
+    if (stmt(db, 'SELECT 1 FROM deleted_files WHERE name = ? AND size = ? LIMIT 1').get(name, size))
       return true
   }
   return false
@@ -550,7 +545,8 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
  */
 async function commitBatch(records: PreparedAsset[]): Promise<void> {
   const db = getDb()
-  const insert = db.prepare(
+  const insert = stmt(
+    db,
     `INSERT INTO assets (id, name, ext, rel_dir, size, width, height, colors, hash, star, comment, url, created_at, imported_at, exif)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?)`
   )

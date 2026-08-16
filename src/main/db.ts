@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3'
 import { join } from 'path'
+import { clearStmtCache } from './stmtCache'
 
 let db: Database.Database | null = null
 
@@ -17,6 +18,9 @@ export function getDb(): Database.Database {
 }
 
 export function closeDb(): void {
+  // statement 绑定在具体 Database 实例上:先清语句缓存再关连接,
+  // 否则切换素材库后会拿到指向已关闭旧实例的 statement(调用即抛错)
+  clearStmtCache()
   db?.close()
   db = null
 }
@@ -45,6 +49,12 @@ function migrate(d: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_assets_ext ON assets(ext);
     CREATE INDEX IF NOT EXISTS idx_assets_star ON assets(star);
     CREATE INDEX IF NOT EXISTS idx_assets_width_height ON assets(width, height);
+    -- 查重/回收站热路径索引(后端优化阶段 2):
+    -- hash+size:导入查重哈希路径(此前每次全表扫);name+size:查重快速路径(name 单列索引需回表比对 size);
+    -- deleted_at:所有列表查询都过滤它,回收站视图专用。hash='' 的非图片记录也入索引,体积可控。
+    CREATE INDEX IF NOT EXISTS idx_assets_hash_size ON assets(hash, size);
+    CREATE INDEX IF NOT EXISTS idx_assets_name_size ON assets(name, size);
+    CREATE INDEX IF NOT EXISTS idx_assets_deleted ON assets(deleted_at);
 
     CREATE TABLE IF NOT EXISTS tags (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

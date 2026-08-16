@@ -3,6 +3,7 @@ import { existsSync, rmSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { getDb } from './db'
 import { getLibraryPath } from './library'
+import { stmt } from './stmtCache'
 import { assetKindOf, computeDHash } from './importer'
 import type { Asset, AssetQuery, Board, BoardItem, DupeGroup, Folder, SmartConditions, Tag, TagGroup } from '../shared/types'
 
@@ -178,9 +179,10 @@ export function queryAssets(q: AssetQuery): Asset[] {
   const dir = q.sortDesc === false ? 'ASC' : 'DESC'
 
   const limit = q.color ? 20000 : q.limit ?? 1000
-  const rows = db
-    .prepare(`SELECT * FROM assets WHERE ${where.join(' AND ')} ORDER BY ${sortCol} ${dir} LIMIT ?`)
-    .all(...params, limit) as AssetRow[]
+  const rows = stmt(
+    db,
+    `SELECT * FROM assets WHERE ${where.join(' AND ')} ORDER BY ${sortCol} ${dir} LIMIT ?`
+  ).all(...params, limit) as AssetRow[]
 
   let assets = rows.map(rowToAsset)
 
@@ -237,7 +239,8 @@ export function isUnnamedName(name: string): boolean {
 
 /** 查单个素材（含标签），供 AI 处理等需要完整元数据的场景使用 */
 export function getAssetById(id: string): Asset | null {
-  const row = getDb().prepare('SELECT * FROM assets WHERE id = ?').get(id) as AssetRow | undefined
+  const db = getDb()
+  const row = stmt(db, 'SELECT * FROM assets WHERE id = ?').get(id) as AssetRow | undefined
   if (!row) return null
   const asset = rowToAsset(row)
   attachTags([asset])
@@ -245,9 +248,12 @@ export function getAssetById(id: string): Asset | null {
 }
 
 export function assetPaths(id: string): { dir: string; original: string; thumbnail: string } | null {
-  const row = getDb()
-    .prepare('SELECT rel_dir, ext, edited, edited_ext FROM assets WHERE id = ?')
-    .get(id) as { rel_dir: string; ext: string; edited: number; edited_ext: string } | undefined
+  // asset: 协议每张缩略图/原图请求都会走到这里(最热语句),必须走缓存
+  const db = getDb()
+  const row = stmt(
+    db,
+    'SELECT rel_dir, ext, edited, edited_ext FROM assets WHERE id = ?'
+  ).get(id) as { rel_dir: string; ext: string; edited: number; edited_ext: string } | undefined
   if (!row) return null
   const dir = join(getLibraryPath(), row.rel_dir)
   const ext = row.ext || 'file'
@@ -283,17 +289,19 @@ export function updateAsset(
     params.push(fields.url)
   }
   if (sets.length === 0) return
-  db.prepare(`UPDATE assets SET ${sets.join(', ')} WHERE id = ?`).run(...params, id)
+  stmt(db, `UPDATE assets SET ${sets.join(', ')} WHERE id = ?`).run(...params, id)
 }
 
 export function deleteAssets(ids: string[], permanent: boolean): void {
   const db = getDb()
   // 先写入 tombstone(已删除文件记忆),阻止重启/监控时重新导入。
   // 软删与永久删都记录;用户主动导入(checkTombstone=false)不受限,仍可重新导入。
-  const insTomb = db.prepare(
+  // 全部语句走缓存:批量删除不再逐 id 重编译(prepare 移出循环)。
+  const insTomb = stmt(
+    db,
     'INSERT OR IGNORE INTO deleted_files (hash, size, name, deleted_at) VALUES (?, ?, ?, ?)'
   )
-  const sel = db.prepare('SELECT hash, size, name FROM assets WHERE id = ?')
+  const sel = stmt(db, 'SELECT hash, size, name FROM assets WHERE id = ?')
   const now = Date.now()
   for (const id of ids) {
     const row = sel.get(id) as { hash: string; size: number; name: string } | undefined
@@ -301,38 +309,44 @@ export function deleteAssets(ids: string[], permanent: boolean): void {
   }
 
   if (permanent) {
+    const delAsset = stmt(db, 'DELETE FROM assets WHERE id = ?')
+    const delTags = stmt(db, 'DELETE FROM asset_tags WHERE asset_id = ?')
+    const delFolders = stmt(db, 'DELETE FROM asset_folders WHERE asset_id = ?')
+    // 级联清理白板引用：否则画布渲染空白幽灵框、.lumenboard/SVG 导出静默丢元素
+    const delBoardItems = stmt(db, 'DELETE FROM board_items WHERE asset_id = ?')
     for (const id of ids) {
       const paths = assetPaths(id)
       if (paths) rmSync(paths.dir, { recursive: true, force: true })
-      db.prepare('DELETE FROM assets WHERE id = ?').run(id)
-      db.prepare('DELETE FROM asset_tags WHERE asset_id = ?').run(id)
-      db.prepare('DELETE FROM asset_folders WHERE asset_id = ?').run(id)
-      // 级联清理白板引用：否则画布渲染空白幽灵框、.lumenboard/SVG 导出静默丢元素
-      db.prepare('DELETE FROM board_items WHERE asset_id = ?').run(id)
+      delAsset.run(id)
+      delTags.run(id)
+      delFolders.run(id)
+      delBoardItems.run(id)
     }
   } else {
-    const stmt = db.prepare('UPDATE assets SET deleted_at = ? WHERE id = ?')
-    for (const id of ids) stmt.run(now, id)
+    const softDel = stmt(db, 'UPDATE assets SET deleted_at = ? WHERE id = ?')
+    for (const id of ids) softDel.run(now, id)
   }
 }
 
 export function restoreAssets(ids: string[]): void {
   const db = getDb()
   // 从回收站恢复:清除对应 tombstone,让该文件可被正常重导入
-  const sel = db.prepare('SELECT hash, size, name FROM assets WHERE id = ?')
-  const delTomb = db.prepare(
+  const sel = stmt(db, 'SELECT hash, size, name FROM assets WHERE id = ?')
+  const delTomb = stmt(
+    db,
     'DELETE FROM deleted_files WHERE hash = ? AND size = ? AND name = ?'
   )
   for (const id of ids) {
     const row = sel.get(id) as { hash: string; size: number; name: string } | undefined
     if (row) delTomb.run(row.hash ?? '', row.size ?? 0, row.name ?? '')
   }
-  const stmt = db.prepare('UPDATE assets SET deleted_at = NULL WHERE id = ?')
-  for (const id of ids) stmt.run(id)
+  const restore = stmt(db, 'UPDATE assets SET deleted_at = NULL WHERE id = ?')
+  for (const id of ids) restore.run(id)
 }
 
 export function emptyTrash(): void {
-  const rows = getDb().prepare('SELECT id FROM assets WHERE deleted_at IS NOT NULL').all() as {
+  const db = getDb()
+  const rows = stmt(db, 'SELECT id FROM assets WHERE deleted_at IS NOT NULL').all() as {
     id: string
   }[]
   deleteAssets(
@@ -344,14 +358,13 @@ export function emptyTrash(): void {
 /* ---------------- 标签 ---------------- */
 
 export function listTags(): Tag[] {
-  return getDb()
-    .prepare(
-      `SELECT t.id, t.name, t.color, t.group_id AS groupId, t.priority, t.excluded,
+  return stmt(
+    getDb(),
+    `SELECT t.id, t.name, t.color, t.group_id AS groupId, t.priority, t.excluded,
               (SELECT COUNT(*) FROM asset_tags at WHERE at.tag_id = t.id AND at.asset_id IN
                 (SELECT id FROM assets WHERE deleted_at IS NULL)) AS count
        FROM tags t ORDER BY t.name COLLATE NOCASE`
-    )
-    .all() as Tag[]
+  ).all() as Tag[]
 }
 
 export function createTag(name: string, color = ''): Tag {
@@ -442,8 +455,8 @@ export function mergeTags(sourceId: number, targetId: number): void {
 /** 设置素材的标签（按名称，不存在则创建） */
 export function setAssetTags(assetId: string, tagNames: string[]): void {
   const db = getDb()
-  db.prepare('DELETE FROM asset_tags WHERE asset_id = ?').run(assetId)
-  const ins = db.prepare('INSERT OR IGNORE INTO asset_tags (asset_id, tag_id) VALUES (?, ?)')
+  stmt(db, 'DELETE FROM asset_tags WHERE asset_id = ?').run(assetId)
+  const ins = stmt(db, 'INSERT OR IGNORE INTO asset_tags (asset_id, tag_id) VALUES (?, ?)')
   for (const name of tagNames) {
     if (!name.trim()) continue
     const tag = createTag(name.trim())
@@ -456,7 +469,7 @@ export function addTagToAssets(assetIds: string[], name: string): void {
   const trimmed = name.trim()
   if (!trimmed || assetIds.length === 0) return
   const tag = createTag(trimmed)
-  const ins = getDb().prepare('INSERT OR IGNORE INTO asset_tags (asset_id, tag_id) VALUES (?, ?)')
+  const ins = stmt(getDb(), 'INSERT OR IGNORE INTO asset_tags (asset_id, tag_id) VALUES (?, ?)')
   for (const id of assetIds) ins.run(id, tag.id)
 }
 
@@ -517,22 +530,22 @@ export function deleteFolder(id: number): void {
 }
 
 export function addToFolder(assetIds: string[], folderId: number): void {
-  const stmt = getDb().prepare('INSERT OR IGNORE INTO asset_folders (asset_id, folder_id) VALUES (?, ?)')
-  for (const id of assetIds) stmt.run(id, folderId)
+  const ins = stmt(getDb(), 'INSERT OR IGNORE INTO asset_folders (asset_id, folder_id) VALUES (?, ?)')
+  for (const id of assetIds) ins.run(id, folderId)
 }
 
 export function removeFromFolder(assetIds: string[], folderId: number): void {
-  const stmt = getDb().prepare('DELETE FROM asset_folders WHERE asset_id = ? AND folder_id = ?')
-  for (const id of assetIds) stmt.run(id, folderId)
+  const del = stmt(getDb(), 'DELETE FROM asset_folders WHERE asset_id = ? AND folder_id = ?')
+  for (const id of assetIds) del.run(id, folderId)
 }
 
 export function libraryStats(): { total: number; deleted: number; tombstones: number } {
   const db = getDb()
-  const total = (db.prepare('SELECT COUNT(*) AS n FROM assets WHERE deleted_at IS NULL').get() as { n: number }).n
-  const deleted = (db.prepare('SELECT COUNT(*) AS n FROM assets WHERE deleted_at IS NOT NULL').get() as { n: number }).n
+  const total = (stmt(db, 'SELECT COUNT(*) AS n FROM assets WHERE deleted_at IS NULL').get() as { n: number }).n
+  const deleted = (stmt(db, 'SELECT COUNT(*) AS n FROM assets WHERE deleted_at IS NOT NULL').get() as { n: number }).n
   let tombstones = 0
   try {
-    tombstones = (db.prepare('SELECT COUNT(*) AS n FROM deleted_files').get() as { n: number }).n
+    tombstones = (stmt(db, 'SELECT COUNT(*) AS n FROM deleted_files').get() as { n: number }).n
   } catch {
     // deleted_files 表尚不存在(旧库未迁移)时返回 0
   }
@@ -680,12 +693,11 @@ export function cleanTrashOlderThan(days: number): number {
 /* ---------------- 白板 ---------------- */
 
 export function listBoards(): Board[] {
-  return getDb()
-    .prepare(
-      `SELECT id, name, created_at AS createdAt, updated_at AS updatedAt, guides, appearance
+  return stmt(
+    getDb(),
+    `SELECT id, name, created_at AS createdAt, updated_at AS updatedAt, guides, appearance
        FROM boards ORDER BY updated_at DESC`
-    )
-    .all() as Board[]
+  ).all() as Board[]
 }
 
 export function createBoard(name: string): Board {
@@ -747,12 +759,11 @@ function rowToBoardItem(r: BoardItemRow): BoardItem {
 }
 
 export function listBoardItems(boardId: number): BoardItem[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, note_font_size, opacity, shape, created_at
+  const rows = stmt(
+    getDb(),
+    `SELECT id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, note_font_size, opacity, shape, created_at
        FROM board_items WHERE board_id = ? ORDER BY z ASC`
-    )
-    .all(boardId) as BoardItemRow[]
+  ).all(boardId) as BoardItemRow[]
   return rows.map(rowToBoardItem)
 }
 
@@ -776,9 +787,10 @@ export function addBoardItem(
 ): BoardItem {
   const db = getDb()
   const id = randomUUID().replace(/-/g, '').slice(0, 16)
-  const z = (db.prepare('SELECT COALESCE(MAX(z), -1) + 1 AS z FROM board_items WHERE board_id = ?').get(boardId) as { z: number }).z
+  const z = (stmt(db, 'SELECT COALESCE(MAX(z), -1) + 1 AS z FROM board_items WHERE board_id = ?').get(boardId) as { z: number }).z
   const createdAt = Date.now()
-  db.prepare(
+  stmt(
+    db,
     `INSERT INTO board_items (id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, note_font_size, opacity, shape, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
@@ -799,7 +811,7 @@ export function addBoardItem(
     item.shape ?? null,
     createdAt
   )
-  db.prepare('UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), boardId)
+  stmt(db, 'UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), boardId)
   return {
     id,
     boardId,
@@ -849,10 +861,10 @@ export function updateBoardItem(
     }
   }
   if (sets.length === 0) return
-  const row = db.prepare('SELECT board_id FROM board_items WHERE id = ?').get(id) as { board_id: number } | undefined
+  const row = stmt(db, 'SELECT board_id FROM board_items WHERE id = ?').get(id) as { board_id: number } | undefined
   if (!row) return
-  db.prepare(`UPDATE board_items SET ${sets.join(', ')} WHERE id = ?`).run(...params, id)
-  db.prepare('UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), row.board_id)
+  stmt(db, `UPDATE board_items SET ${sets.join(', ')} WHERE id = ?`).run(...params, id)
+  stmt(db, 'UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), row.board_id)
 }
 
 /** 批量更新白板元素（组移动/组缩放等一次性落库，事务原子） */
@@ -876,6 +888,9 @@ export function updateBoardItems(
   }
   const run = db.transaction(() => {
     const touched = new Set<number>()
+    // 语句缓存:组拖拽每帧批量落库,SELECT/UPDATE 走缓存不再逐条重编译
+    const selBoard = stmt(db, 'SELECT board_id FROM board_items WHERE id = ?')
+    const touchBoard = stmt(db, 'UPDATE boards SET updated_at = ? WHERE id = ?')
     for (const { id, patch } of items) {
       const sets: string[] = []
       const params: unknown[] = []
@@ -887,14 +902,14 @@ export function updateBoardItems(
         }
       }
       if (sets.length === 0) continue
-      const row = db.prepare('SELECT board_id FROM board_items WHERE id = ?').get(id) as { board_id: number } | undefined
+      const row = selBoard.get(id) as { board_id: number } | undefined
       if (!row) continue
-      db.prepare(`UPDATE board_items SET ${sets.join(', ')} WHERE id = ?`).run(...params, id)
+      stmt(db, `UPDATE board_items SET ${sets.join(', ')} WHERE id = ?`).run(...params, id)
       touched.add(row.board_id)
     }
     // updated_at 刷新并入事务：与元素更新原子提交
     for (const boardId of touched) {
-      db.prepare('UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), boardId)
+      touchBoard.run(Date.now(), boardId)
     }
   })
   run()
@@ -902,17 +917,17 @@ export function updateBoardItems(
 
 export function deleteBoardItem(id: string): void {
   const db = getDb()
-  const row = db.prepare('SELECT board_id FROM board_items WHERE id = ?').get(id) as { board_id: number } | undefined
-  db.prepare('DELETE FROM board_items WHERE id = ?').run(id)
-  if (row) db.prepare('UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), row.board_id)
+  const row = stmt(db, 'SELECT board_id FROM board_items WHERE id = ?').get(id) as { board_id: number } | undefined
+  stmt(db, 'DELETE FROM board_items WHERE id = ?').run(id)
+  if (row) stmt(db, 'UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), row.board_id)
 }
 
 /** 置顶：z = 当前最大值 + 1（起点 -1 与 addBoardItem 一致,空画板首元素 z=0） */
 export function bringBoardItemToFront(id: string, boardId: number): void {
   const db = getDb()
-  const z = (db.prepare('SELECT COALESCE(MAX(z), -1) + 1 AS z FROM board_items WHERE board_id = ?').get(boardId) as { z: number }).z
-  db.prepare('UPDATE board_items SET z = ? WHERE id = ?').run(z, id)
-  db.prepare('UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), boardId)
+  const z = (stmt(db, 'SELECT COALESCE(MAX(z), -1) + 1 AS z FROM board_items WHERE board_id = ?').get(boardId) as { z: number }).z
+  stmt(db, 'UPDATE board_items SET z = ? WHERE id = ?').run(z, id)
+  stmt(db, 'UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), boardId)
 }
 
 /** 保存白板参考线（JSON 数组，整体覆盖） */
