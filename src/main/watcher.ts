@@ -5,30 +5,41 @@ import { collectFiles, importFiles } from './importer'
 import { logger } from './logger'
 
 const watchers = new Map<string, FSWatcher>()
-const pending = new Map<string, ReturnType<typeof setTimeout>>()
+/** 防抖窗口内累积的待导入文件(Set 天然去重同一文件的多事件) */
+const pendingPaths = new Set<string>()
+let flushTimer: ReturnType<typeof setTimeout> | null = null
 
 let notify: (count: number) => void = () => {}
 
+/** 500ms 防抖窗口攒批,窗口结束时一次导入全部(此前每文件一个定时器+一次导入) */
+function scheduleFlush(): void {
+  if (flushTimer) return
+  flushTimer = setTimeout(() => void flush(), 500)
+}
+
+async function flush(): Promise<void> {
+  flushTimer = null
+  if (pendingPaths.size === 0) return
+  const paths = [...pendingPaths]
+  pendingPaths.clear()
+  try {
+    const cfg = loadConfig()
+    // 过滤:已消失的/非文件的/落在素材库自身目录内的(防循环)
+    const valid = paths.filter(
+      (p) => existsSync(p) && statSync(p).isFile() && !p.startsWith(cfg.current)
+    )
+    if (valid.length === 0) return
+    const result = await importFiles(valid, { move: cfg.importMode === 'move', checkTombstone: true })
+    if (result.imported > 0) notify(result.imported)
+    if (result.failed > 0) logger.warn('[watcher]', `批量导入失败 ${result.failed}/${valid.length} 个文件`)
+  } catch (e) {
+    logger.warn('[watcher]', `监控导入失败(${paths.length} 文件): ${(e as Error).message}`)
+  }
+}
+
 function handleFile(filePath: string): void {
-  // 防抖：文件写入过程中会触发多次事件
-  const timer = pending.get(filePath)
-  if (timer) clearTimeout(timer)
-  pending.set(
-    filePath,
-    setTimeout(async () => {
-      pending.delete(filePath)
-      try {
-        if (!existsSync(filePath) || !statSync(filePath).isFile()) return
-        const cfg = loadConfig()
-        // 避免监控库自身目录造成循环
-        if (filePath.startsWith(cfg.current)) return
-        const result = await importFiles([filePath], { move: cfg.importMode === 'move', checkTombstone: true })
-        if (result.imported > 0) notify(result.imported)
-      } catch (e) {
-        logger.warn('[watcher]', `监控导入失败 ${filePath}: ${(e as Error).message}`)
-      }
-    }, 500)
-  )
+  pendingPaths.add(filePath)
+  scheduleFlush()
 }
 
 function watchDir(dir: string): void {
@@ -67,6 +78,11 @@ export function syncWatchers(onImported: (count: number) => void): void {
 
 export function stopWatchers(): void {
   for (const dir of [...watchers.keys()]) unwatchDir(dir)
+  if (flushTimer) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
+  pendingPaths.clear()
 }
 
 /**

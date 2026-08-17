@@ -61,7 +61,7 @@ async function main() {
     let ready = false
     for (let i = 0; i < 40; i++) {
       await sleep(150)
-      ready = await run(`return document.documentElement.dataset.theme === '${theme}' && !!document.querySelector('.archive-shell')`)
+      ready = await run(`return !!document.documentElement && document.documentElement.dataset.theme === '${theme}' && !!document.querySelector('.archive-shell')`)
       if (ready) break
     }
     check(`${theme} 主界面加载`, ready)

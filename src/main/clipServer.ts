@@ -36,15 +36,21 @@ function json(res: ServerResponse, code: number, data: unknown): void {
   res.end(JSON.stringify(data))
 }
 
-function readBody(req: IncomingMessage): Promise<string> {
+function readBody(req: IncomingMessage, res: ServerResponse): Promise<string> {
   return new Promise((resolve, reject) => {
     let size = 0
     const chunks: Buffer[] = []
     req.on('data', (c: Buffer) => {
       size += c.length
       if (size > MAX_BODY) {
-        reject(new Error('body too large'))
+        // 先回 413 再断开:客户端收到明确状态码,而非连接被重置
+        try {
+          json(res, 413, { ok: false, error: 'body too large' })
+        } catch {
+          /* socket 已关闭则忽略 */
+        }
         req.destroy()
+        reject(new Error('body too large'))
         return
       }
       chunks.push(c)
@@ -111,14 +117,17 @@ export function startClipServer(onImported?: (count: number) => void): void {
     }
 
     if (req.method === 'POST' && url.pathname === '/clip') {
-      readBody(req)
+      readBody(req, res)
         .then(async (body) => {
           const payload = JSON.parse(body) as ClipPayload
           const n = await saveClip(payload)
           if (n > 0) onImported?.(n)
           json(res, 200, { ok: true, imported: n })
         })
-        .catch((err: Error) => json(res, 400, { ok: false, error: err.message }))
+        .catch((err: Error) => {
+          // headersSent = readBody 已回 413 并断开,此处静默收尾,避免二次写头
+          if (!res.headersSent) json(res, 400, { ok: false, error: err.message })
+        })
       return
     }
 

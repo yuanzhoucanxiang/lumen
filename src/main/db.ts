@@ -1,15 +1,72 @@
 import Database from 'better-sqlite3'
+import { copyFileSync, existsSync, renameSync, rmSync } from 'fs'
 import { join } from 'path'
+import { dialog } from 'electron'
 import { clearStmtCache } from './stmtCache'
+import { logger } from './logger'
 
 let db: Database.Database | null = null
 
+/** 打开并校验库;损坏时自动自愈(改名保留现场 -> 从 .bak 恢复 -> 无备份则建空库并明确告知) */
 export function openDb(libraryPath: string): Database.Database {
   if (db) return db
-  db = new Database(join(libraryPath, 'library.db'))
-  db.pragma('journal_mode = WAL')
-  migrate(db)
-  return db
+  const dbPath = join(libraryPath, 'library.db')
+  try {
+    db = new Database(dbPath)
+    db.pragma('journal_mode = WAL')
+    const check = db.pragma('quick_check', { simple: true }) as string
+    if (check !== 'ok') throw new Error(`quick_check 未通过: ${check}`)
+  } catch (e) {
+    recoverCorruptDb(dbPath, e)
+  }
+  try {
+    migrate(db!)
+  } catch (e) {
+    // 迁移失败是代码/模式问题而非损坏:关闭并清空单例,避免后续拿到坏实例
+    db?.close()
+    db = null
+    clearStmtCache()
+    throw new Error(`数据库迁移失败: ${(e as Error).message}`)
+  }
+  return db!
+}
+
+/** 损坏恢复:保留现场改名 -> 备份恢复 -> 无备份建空库(数据丢失必须告知) */
+function recoverCorruptDb(dbPath: string, cause: unknown): void {
+  db?.close()
+  db = null
+  const corrupt = `${dbPath}.corrupt-${Date.now()}`
+  try {
+    renameSync(dbPath, corrupt)
+    // 旧的 -wal/-shm 与主库是配套的,恢复新库前必须清掉,否则会重放损坏日志
+    rmSync(`${dbPath}-wal`, { force: true })
+    rmSync(`${dbPath}-shm`, { force: true })
+    logger.error('[db]', `库文件损坏(${(cause as Error).message}),已改名保留: ${corrupt}`)
+
+    const bak = `${dbPath}.bak`
+    if (existsSync(bak)) {
+      copyFileSync(bak, dbPath)
+      db = new Database(dbPath)
+      db.pragma('journal_mode = WAL')
+      const check = db.pragma('quick_check', { simple: true }) as string
+      if (check !== 'ok') throw new Error(`备份库也损坏: ${check}`)
+      logger.warn('[db]', `已从 ${bak} 恢复数据库(可能丢失最近改动)`)
+      return
+    }
+    // 无备份:建空库是最后手段,必须让用户知道发生了什么
+    db = new Database(dbPath)
+    db.pragma('journal_mode = WAL')
+    logger.error('[db]', `无备份可用,已重建空库(数据丢失);损坏文件保留在 ${corrupt}`)
+    try {
+      dialog.showErrorBox('素材库损坏', `library.db 损坏且无备份,已重建空库。\n损坏文件保留在:\n${corrupt}`)
+    } catch {
+      /* 无窗口环境忽略 */
+    }
+  } catch (e2) {
+    db?.close()
+    db = null
+    throw new Error(`数据库打开失败且无法自愈: ${(e2 as Error).message}`)
+  }
 }
 
 export function getDb(): Database.Database {
