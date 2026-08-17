@@ -209,10 +209,11 @@ export default function BoardPanel() {
           <button
             aria-label="退出白板"
             title="退出白板（回到素材库）"
-            className="flex h-6 w-6 items-center justify-center rounded-sm text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--danger)]"
+            className="board-exit-btn shrink-0"
             onClick={() => setBoardViewMode('off')}
           >
             <Icon name="arrowLeft" size={13} />
+            退出白板
           </button>
         </div>
       </div>

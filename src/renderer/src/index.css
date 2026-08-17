@@ -2072,6 +2072,50 @@ body::before {
   animation: film-advance 360ms ease-out both;
 }
 
+/* 退出白板按钮：工具栏右侧唯一的文字动作按钮,描边+图标确保一眼可见 */
+.board-exit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--text-main);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.board-exit-btn:hover:not(:disabled) {
+  background: rgba(185, 76, 66, 0.12);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.board-exit-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* 像素故障：切角方块 + 洋红状态位,hover 告警色 */
+[data-theme='pixel-glitch'] .board-exit-btn {
+  border-radius: 0;
+  clip-path: polygon(0 0, calc(100% - 5px) 0, 100% 5px, 100% 100%, 5px 100%, 0 calc(100% - 5px));
+  font-family: var(--font-data);
+  letter-spacing: 0.08em;
+  box-shadow: 2px 2px 0 #174553;
+}
+
+[data-theme='pixel-glitch'] .board-exit-btn:hover:not(:disabled) {
+  background: rgba(232, 90, 168, 0.14);
+  box-shadow: 2px 2px 0 #4a1330;
+}
+
 /* ---------- 白板独立工作区 / 参考素材架 ---------- */
 
 .board-workspace {
