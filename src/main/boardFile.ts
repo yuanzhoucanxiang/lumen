@@ -26,8 +26,8 @@ import {
 import { getDb } from './db'
 import { importFiles } from './importer'
 import { logger } from './logger'
-import { zipRead, zipStore } from './exporter'
-import type { ZipEntry } from './exporter'
+import { zipRead, zipStore } from './zipLib'
+import type { ZipEntry } from './zipLib'
 import { VIDEO_EXTS } from '../shared/types'
 import type { BoardItem } from '../shared/types'
 

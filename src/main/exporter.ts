@@ -1,8 +1,8 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { copyFileSync, existsSync, mkdirSync } from 'fs'
 import { extname, join } from 'path'
-import { inflateRawSync } from 'zlib'
 import { assetPaths } from './repository'
 import { getDb } from './db'
+import { zipStoreStreamToFile, type ZipStreamEntry } from './zipLib'
 import type { ExportOptions } from '../shared/types'
 
 /** 文件名去重：a.jpg → a (1).jpg（同时避开目标目录已存在的文件） */
@@ -26,149 +26,6 @@ function uniqueName(name: string, taken: Set<string>, dir?: string): string {
 /** 清洗文件名/文件夹名中的非法字符（Windows 保留字符） */
 function safePathSegment(s: string): string {
   return s.replace(/[\\/:*?"<>|]/g, '').trim() || '_'
-}
-
-/* ---------------- 纯 JS ZIP（store 无压缩，图片类素材压不动） ---------------- */
-
-let CRC_TABLE: Int32Array | null = null
-function crc32(buf: Buffer): number {  if (!CRC_TABLE) {
-    CRC_TABLE = new Int32Array(256)
-    for (let n = 0; n < 256; n++) {
-      let c = n
-      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
-      CRC_TABLE[n] = c
-    }
-  }
-  let c = 0xffffffff
-  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8)
-  return (c ^ 0xffffffff) >>> 0
-}
-
-interface ZipEntry {
-  name: string
-  data: Buffer
-}
-
-export type { ZipEntry }
-
-/** 纯 JS ZIP 写入（store 无压缩，图片类素材压不动） */
-export function zipStore(entries: ZipEntry[]): Buffer {
-  if (entries.length > 65535) throw new Error('ZIP 条目数超出 65535(不支持 ZIP64),请分批导出')
-  const locals: Buffer[] = []
-  const centrals: Buffer[] = []
-  let offset = 0
-  for (const e of entries) {
-    if (e.data.length > 0xffffffff) throw new Error(`ZIP 条目超过 4GB(不支持 ZIP64): ${e.name}`)
-    const nameBuf = Buffer.from(e.name, 'utf-8')
-    if (nameBuf.length > 65535) throw new Error(`ZIP 文件名过长: ${e.name}`)
-    const crc = crc32(e.data)
-
-    // Local file header（bit 11 = UTF-8 文件名）
-    const lh = Buffer.alloc(30)
-    lh.writeUInt32LE(0x04034b50, 0)
-    lh.writeUInt16LE(20, 4) // version needed
-    lh.writeUInt16LE(0x0800, 6) // flags: UTF-8
-    lh.writeUInt16LE(0, 8) // method: store
-    lh.writeUInt16LE(0, 10) // mod time
-    lh.writeUInt16LE(0x21, 12) // mod date (1980-01-01)
-    lh.writeUInt32LE(crc, 14)
-    lh.writeUInt32LE(e.data.length, 18)
-    lh.writeUInt32LE(e.data.length, 22)
-    lh.writeUInt16LE(nameBuf.length, 26)
-    lh.writeUInt16LE(0, 28)
-    locals.push(lh, nameBuf, e.data)
-
-    // Central directory
-    const cd = Buffer.alloc(46)
-    cd.writeUInt32LE(0x02014b50, 0)
-    cd.writeUInt16LE(20, 4)
-    cd.writeUInt16LE(20, 6)
-    cd.writeUInt16LE(0x0800, 8)
-    cd.writeUInt16LE(0, 10)
-    cd.writeUInt16LE(0, 12)
-    cd.writeUInt16LE(0x21, 14)
-    cd.writeUInt32LE(crc, 16)
-    cd.writeUInt32LE(e.data.length, 20)
-    cd.writeUInt32LE(e.data.length, 24)
-    cd.writeUInt16LE(nameBuf.length, 28)
-    cd.writeUInt16LE(0, 30)
-    cd.writeUInt16LE(0, 32)
-    cd.writeUInt16LE(0, 34)
-    cd.writeUInt16LE(0, 36)
-    cd.writeUInt32LE(0, 38)
-    cd.writeUInt32LE(offset, 42)
-    centrals.push(cd, nameBuf)
-
-    offset += lh.length + nameBuf.length + e.data.length
-  }
-
-  const centralBuf = Buffer.concat(centrals)
-  const end = Buffer.alloc(22)
-  end.writeUInt32LE(0x06054b50, 0)
-  end.writeUInt16LE(entries.length, 8)
-  end.writeUInt16LE(entries.length, 10)
-  end.writeUInt32LE(centralBuf.length, 12)
-  end.writeUInt32LE(offset, 16)
-  end.writeUInt16LE(0, 20)
-  return Buffer.concat([...locals, centralBuf, end])
-}
-
-/**
- * 纯 JS ZIP 读取（.lumenboard 用）：解析 EOCD + 中央目录 + 本地头。
- * 支持 store(0) 与 deflate(8) 两种压缩方式（zlib.inflateRawSync），
- * 兼容其他工具重压缩过的文件。目录条目忽略。
- */
-export function zipRead(buf: Buffer): Map<string, Buffer> {
-  // 从尾部倒查 EOCD 签名（注释最长 65535 字节）。
-  // 注意：ZIP 注释区在真 EOCD 之后,倒查可能先命中注释内容里的假签名,
-  // 命中后用 EOCD 里的 cdSize/cdOffset 做自洽校验,不通过则继续向前找
-  let eocd = -1
-  const searchStart = Math.max(0, buf.length - 22 - 65535)
-  for (let i = buf.length - 22; i >= searchStart; i--) {
-    if (buf.readUInt32LE(i) === 0x06054b50) {
-      const cdSize = buf.readUInt32LE(i + 12)
-      const cdOffset = buf.readUInt32LE(i + 16)
-      // 中央目录需完整落在文件内
-      if (cdOffset + cdSize <= buf.length) {
-        eocd = i
-        break
-      }
-    }
-  }
-  if (eocd < 0) throw new Error('不是有效的 ZIP 文件')
-  const entryCount = buf.readUInt16LE(eocd + 10)
-  let cdOffset = buf.readUInt32LE(eocd + 16)
-  const out = new Map<string, Buffer>()
-  for (let i = 0; i < entryCount; i++) {
-    if (buf.readUInt32LE(cdOffset) !== 0x02014b50) throw new Error('ZIP 中央目录损坏')
-    const method = buf.readUInt16LE(cdOffset + 10)
-    const crc = buf.readUInt32LE(cdOffset + 16)
-    const compSize = buf.readUInt32LE(cdOffset + 20)
-    const nameLen = buf.readUInt16LE(cdOffset + 28)
-    const extraLen = buf.readUInt16LE(cdOffset + 30)
-    const commentLen = buf.readUInt16LE(cdOffset + 32)
-    const localOffset = buf.readUInt32LE(cdOffset + 42)
-    const name = buf.subarray(cdOffset + 46, cdOffset + 46 + nameLen).toString('utf-8')
-    // 跳过目录条目
-    if (!name.endsWith('/')) {
-      if (buf.readUInt32LE(localOffset) !== 0x04034b50) throw new Error('ZIP 本地头损坏')
-      const lNameLen = buf.readUInt16LE(localOffset + 26)
-      const lExtraLen = buf.readUInt16LE(localOffset + 28)
-      const dataStart = localOffset + 30 + lNameLen + lExtraLen
-      // 越界即报错（伪造/截断的文件不得静默返回截断数据）
-      if (dataStart < 0 || dataStart + compSize > buf.length) throw new Error(`ZIP 数据越界: ${name}`)
-      const data = buf.subarray(dataStart, dataStart + compSize)
-      let content: Buffer
-      if (method === 0) content = Buffer.from(data)
-      else if (method === 8) content = inflateRawSync(data)
-      else throw new Error(`不支持的 ZIP 压缩方式: ${method}`)
-      // CRC32 校验：损坏/伪造数据在此拦截，避免把坏图当新素材走导入管线入库
-      if (crc32(content) !== crc) throw new Error(`ZIP 数据校验失败(CRC32): ${name}`)
-      out.set(name, content)
-    }
-    cdOffset += 46 + nameLen + extraLen + commentLen
-  }
-  return out
 }
 
 /* ---------------- 导出 ---------------- */
@@ -244,11 +101,15 @@ export function exportToFolder(ids: string[], dir: string, opts: ExportOptions):
   return n
 }
 
-/** 打包为 ZIP（原文件 + metadata.json 清单，支持命名模板 + 按标签分文件夹） */
-export function exportToZip(ids: string[], zipPath: string, opts: ExportOptions): number {
+/**
+ * 打包为 ZIP（原文件 + metadata.json 清单，支持命名模板 + 按标签分文件夹）。
+ * 流式写入(阶段 3):原图走 filePath 逐文件过流,内存只有 metadata 清单,
+ * 不再把所有选中素材整读进内存。
+ */
+export async function exportToZip(ids: string[], zipPath: string, opts: ExportOptions): Promise<number> {
   const assets = loadAssets(ids)
   const takenByDir = new Map<string, Set<string>>()
-  const entries: ZipEntry[] = []
+  const entries: ZipStreamEntry[] = []
   const meta: unknown[] = []
   for (const a of assets) {
     const paths = assetPaths(a.id)
@@ -263,7 +124,7 @@ export function exportToZip(ids: string[], zipPath: string, opts: ExportOptions)
     }
     const finalName = uniqueName(name, taken)
     const zipName = sub ? `${sub}/${finalName}` : finalName
-    entries.push({ name: zipName, data: readFileSync(paths.original) })
+    entries.push({ name: zipName, filePath: paths.original })
     meta.push({
       file: zipName,
       id: a.id,
@@ -277,6 +138,6 @@ export function exportToZip(ids: string[], zipPath: string, opts: ExportOptions)
     })
   }
   entries.push({ name: 'metadata.json', data: Buffer.from(JSON.stringify(meta, null, 2), 'utf-8') })
-  writeFileSync(zipPath, zipStore(entries))
+  await zipStoreStreamToFile(entries, zipPath)
   return entries.length - 1
 }

@@ -453,7 +453,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       filters: [{ name: 'ZIP 压缩包', extensions: ['zip'] }]
     })
     if (r.canceled || !r.filePath) return null
-    return { exported: exportToZip(ids, r.filePath, options), target: r.filePath }
+    return { exported: await exportToZip(ids, r.filePath, options), target: r.filePath }
   })
 
   ipcMain.handle('shell:showItem', (_e, id: string) => {
