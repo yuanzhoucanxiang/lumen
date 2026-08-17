@@ -129,7 +129,9 @@ function migrate(d: Database.Database): void {
     hash: "TEXT NOT NULL DEFAULT ''",
     edited: 'INTEGER NOT NULL DEFAULT 0',
     edited_ext: "TEXT NOT NULL DEFAULT ''",
-    exif: 'TEXT NOT NULL DEFAULT \'\''
+    exif: 'TEXT NOT NULL DEFAULT \'\'',
+    // colors 数量物化列(后端优化阶段 2b):筛选走列比较,避免逐行 json_array_length
+    color_count: 'INTEGER NOT NULL DEFAULT 0'
   })
   ensureColumns(d, 'folders', {
     is_smart: 'INTEGER NOT NULL DEFAULT 0',
@@ -165,6 +167,10 @@ function migrate(d: Database.Database): void {
         WHERE t.hash = a.hash AND t.size = a.size AND t.name = a.name
       )
   `)
+
+  // color_count 物化列回填:每次启动全量重算(自愈,幂等)。
+  // 导入/编辑两条写入路径会维护该列,这里兜底任何遗漏;行数与库同量级,耗时毫秒级。
+  d.exec('UPDATE assets SET color_count = json_array_length(colors)')
 }
 
 function ensureColumns(d: Database.Database, table: string, defs: Record<string, string>): void {

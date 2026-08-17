@@ -85,6 +85,20 @@ function main(Database) {
       else failed++
     }
   }
+  /* ---- color_count 物化列一致性(阶段 2b)---- */
+  const mismatch = db.prepare('SELECT COUNT(*) AS n FROM assets WHERE color_count != json_array_length(colors)').get().n
+  const byCol = db.prepare('SELECT COUNT(*) AS n FROM assets WHERE color_count <= 3').get().n
+  const byJson = db.prepare('SELECT COUNT(*) AS n FROM assets WHERE json_array_length(colors) <= 3').get().n
+  console.log('')
+  console.log(`[color_count 物化列一致性]`)
+  console.log(`  与 json_array_length 不一致的行数: ${mismatch}; color_count<=3 与 JSON 口径计数: ${byCol} / ${byJson}`)
+  if (assert) {
+    const ok = mismatch === 0 && byCol === byJson
+    console.log(`  ${ok ? 'PASS' : 'FAIL'} 物化列与 JSON 等价`)
+    if (ok) pass++
+    else failed++
+  }
+
   db.close()
 
   if (assert) {

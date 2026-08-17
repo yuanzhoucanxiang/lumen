@@ -163,9 +163,10 @@ export function queryAssets(q: AssetQuery): Asset[] {
     else where.push('width > 0 AND height > 0 AND ABS(width - height) <= MAX(width, height) * 0.05')
   }
 
-  // 颜色数量下推 SQL（SQLite json_array_length，避免内存解析 JSON）
+  // 颜色数量下推 SQL(color_count 物化列,导入/编辑时维护,启动迁移全量回填自愈;
+  // 此前逐行 json_array_length 函数计算,现走列比较)
   if (q.colorCountMax && q.colorCountMax > 0) {
-    where.push('json_array_length(colors) <= ?')
+    where.push('color_count <= ?')
     params.push(q.colorCountMax)
   }
 

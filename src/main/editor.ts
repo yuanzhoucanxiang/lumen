@@ -77,12 +77,12 @@ export async function applyEdit(id: string, dataUrl: string): Promise<void> {
   writeFileSync(join(dir, 'thumbnail.jpg'), thumbBuf)
   const colors = await extractColors(thumbBuf)
 
-  // ext 保持原图格式不变，编辑版格式记入 edited_ext
+  // ext 保持原图格式不变，编辑版格式记入 edited_ext;color_count 物化列同步维护
   getDb()
     .prepare(
-      'UPDATE assets SET edited = 1, edited_ext = ?, size = ?, width = ?, height = ?, colors = ? WHERE id = ?'
+      'UPDATE assets SET edited = 1, edited_ext = ?, size = ?, width = ?, height = ?, colors = ?, color_count = ? WHERE id = ?'
     )
-    .run(newExt, buffer.length, meta.width ?? 0, meta.height ?? 0, JSON.stringify(colors), id)
+    .run(newExt, buffer.length, meta.width ?? 0, meta.height ?? 0, JSON.stringify(colors), colors.length, id)
 }
 
 /**
@@ -120,9 +120,9 @@ export async function revertEdit(id: string): Promise<void> {
   const size = statSync(originalPath).size
   getDb()
     .prepare(
-      'UPDATE assets SET edited = 0, edited_ext = \'\', size = ?, width = ?, height = ?, colors = ? WHERE id = ?'
+      'UPDATE assets SET edited = 0, edited_ext = \'\', size = ?, width = ?, height = ?, colors = ?, color_count = ? WHERE id = ?'
     )
-    .run(size, meta.width ?? 0, meta.height ?? 0, JSON.stringify(colors), id)
+    .run(size, meta.width ?? 0, meta.height ?? 0, JSON.stringify(colors), colors.length, id)
 
   logger.info('[editor]', `已恢复原图 ${id}`)
 }

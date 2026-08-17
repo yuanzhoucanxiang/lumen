@@ -547,15 +547,15 @@ async function commitBatch(records: PreparedAsset[]): Promise<void> {
   const db = getDb()
   const insert = stmt(
     db,
-    `INSERT INTO assets (id, name, ext, rel_dir, size, width, height, colors, hash, star, comment, url, created_at, imported_at, exif)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?)`
+    `INSERT INTO assets (id, name, ext, rel_dir, size, width, height, colors, color_count, hash, star, comment, url, created_at, imported_at, exif)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?)`
   )
   const now = Date.now()
   const run = db.transaction((recs: PreparedAsset[]) => {
     for (const r of recs) {
       insert.run(
         r.id, r.name, r.ext, r.relDir, r.size, r.width, r.height,
-        JSON.stringify(r.colors), r.hash, r.sourceUrl ?? '', r.mtimeMs, now, r.exif ?? ''
+        JSON.stringify(r.colors), r.colors ? r.colors.length : 0, r.hash, r.sourceUrl ?? '', r.mtimeMs, now, r.exif ?? ''
       )
     }
   })
