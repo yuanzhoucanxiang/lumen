@@ -141,6 +141,32 @@ async function main() {
     check('参考素材使用专用 MIME 拖入', dragResult.ok && dragResult.types.includes('application/x-eaglelike-assets'), JSON.stringify(dragResult))
     check('拖放后素材真实进入当前白板', afterItems > beforeItems, `${beforeItems} → ${afterItems}`)
 
+    // 外部文件拖入白板(对标 PureRef):真实导入返回 importedIds,可放到画布
+    const os = require('os')
+    const path = require('path')
+    const extDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumen-extdrop-'))
+    const extPng = path.join(extDir, '外部拖入.png')
+    fs.writeFileSync(extPng, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4]))
+    const importRes = await run(`return await window.api.importFromPaths([${JSON.stringify(extPng)}])`)
+    check('外部文件导入返回 importedIds', Array.isArray(importRes.importedIds) && importRes.importedIds.length === 1, JSON.stringify(importRes))
+    const cntBeforeExt = await run(`return (await window.api.listBoardItems(${boardId})).length`)
+    // 合成 File 拖放:webUtils 无法解析出真实路径 -> 优雅空操作不崩溃(真实 OS 拖放 CDP 无法模拟,主链路已由上面 importedIds 验证)
+    const synthDrop = await run(`return (() => {
+      const canvas = document.querySelector('[data-board-frame]')
+      const dt = new DataTransfer()
+      dt.items.add(new File(['x'], 'synthetic.png', { type: 'image/png' }))
+      const init = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: 400, clientY: 300 }
+      canvas.dispatchEvent(new DragEvent('dragover', init))
+      canvas.dispatchEvent(new DragEvent('drop', init))
+      return true
+    })()`)
+    await sleep(800)
+    const cntAfterExt = await run(`return (await window.api.listBoardItems(${boardId})).length`)
+    check('合成文件拖放优雅空操作(不崩溃不重复入板)', synthDrop && cntAfterExt === cntBeforeExt, `before=${cntBeforeExt} after=${cntAfterExt}`)
+    // 清理:软删导入素材 + 删临时文件
+    await run(`(async () => { const a = await window.api.queryAssets({ limit: 1000 }); const ids = a.filter((x) => x.name === '外部拖入.png').map((x) => x.id); if (ids.length) await window.api.deleteAssets(ids, false) })()`)
+    fs.rmSync(extDir, { recursive: true, force: true })
+
     // 参考架「+」按钮发送(store 外部添加)也可撤销：Ctrl+Z 应移除该元素
     // (已放置的卡片按钮禁用,选一个未放置的)
     const beforeAddClick = await run(`return (await window.api.listBoardItems(${boardId})).length`)

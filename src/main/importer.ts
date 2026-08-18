@@ -606,6 +606,7 @@ export async function importFiles(paths: string[], opts: ImportOptions = {}): Pr
     try {
       await commitBatch(okRecords)
       result.imported = okRecords.length
+      result.importedIds = okRecords.map((r) => r.id!)
     } catch (e) {
       // 事务失败（DB 磁盘满/损坏等极端情况）：整批算失败，已复制文件保留待重试
       logger.error('[importer]', `事务提交失败，${okRecords.length} 条记录回滚: ${(e as Error).message}`)

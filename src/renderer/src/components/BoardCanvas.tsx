@@ -1496,15 +1496,37 @@ export default function BoardCanvas({
 
   /* ---------- 拖放接收（从图库拖素材） ---------- */
   const onDragOver = (e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes(ASSET_MIME)) {
+    // 内部素材 MIME 或系统文件拖入都接受(后者对标 PureRef:外部图直接拖上白板)
+    if (e.dataTransfer.types.includes(ASSET_MIME) || e.dataTransfer.types.includes('Files')) {
       e.preventDefault()
+      e.stopPropagation()
       e.dataTransfer.dropEffect = 'copy'
     }
   }
   const onDrop = (e: React.DragEvent) => {
+    // 外部系统文件:导入素材库并把新素材放到落点(对标 PureRef 拖图上板)
+    if (e.dataTransfer.files.length > 0) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (boardId == null) return
+      const pt = canvasPointFromClient(e.clientX, e.clientY)
+      void (async () => {
+        const result = await window.api.importFileObjects(Array.from(e.dataTransfer.files))
+        const ids = result?.importedIds ?? []
+        if (ids.length > 0) {
+          await useLibraryStore.getState().refreshAssets()
+          await addAssetsToBoard(ids, Math.round(pt.x), Math.round(pt.y))
+          useLibraryStore.getState().showToast(`已导入 ${ids.length} 张并加入白板`)
+        } else if (result && result.skipped > 0) {
+          useLibraryStore.getState().showToast('这些图片已在素材库中(可从左侧参考架拖入)')
+        }
+      })()
+      return
+    }
     const raw = e.dataTransfer.getData(ASSET_MIME)
     if (!raw) return
     e.preventDefault()
+    e.stopPropagation()
     let ids: string[] = []
     try {
       ids = JSON.parse(raw)

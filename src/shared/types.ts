@@ -137,6 +137,8 @@ export interface ImportResult {
   failed: number
   /** 失败文件的文件名列表（用于 UI 提示与日志） */
   failedFiles?: string[]
+  /** 本次成功导入的素材 id(白板外部拖入需把新素材放到画布上) */
+  importedIds?: string[]
 }
 
 export interface AssetQuery {
