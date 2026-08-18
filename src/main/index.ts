@@ -1,11 +1,10 @@
-import { app, BrowserWindow, protocol, shell, webUtils } from 'electron'
+import { app, BrowserWindow, protocol, shell } from 'electron'
 import { createReadStream, statSync } from 'fs'
 import { extname, join } from 'path'
 import { Readable } from 'stream'
 import { ensureLibrary, loadConfig } from './library'
 import { registerIpc, resolveAssetFile } from './ipc'
 import { closeDb } from './db'
-import { importFiles } from './importer'
 import { startClipServer } from './clipServer'
 import { syncWatchers, syncOnStartup } from './watcher'
 import { cleanTrashOlderThan } from './repository'
@@ -139,23 +138,6 @@ app.whenReady().then(() => {
   }
 
   registerIpc(() => mainWindow)
-
-  // 拖拽文件导入：渲染进程传来 File 对象，转成本地路径
-  ipcMain.handle('import:fileObjects', async (_e, files: File[]) => {
-    const paths: string[] = []
-    for (const f of files ?? []) {
-      try {
-        const p = webUtils.getPathForFile(f)
-        if (p) paths.push(p)
-      } catch (e) {
-        logger.warn('[import]', `拖拽文件路径解析失败: ${(e as Error).message}`)
-      }
-    }
-    // 导入进度推送（与 import:dialog/import:paths 两个入口一致）
-    return importFiles(paths, {
-      onProgress: (phase, done, total) => mainWindow?.webContents.send('import:progress', { phase, done, total })
-    })
-  })
 
   createWindow()
 

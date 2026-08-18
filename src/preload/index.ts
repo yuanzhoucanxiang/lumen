@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { Asset, AssetQuery, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSearchProgress, AiSuggestionItem, AppSettings, Board, BoardItem, BoardItemPatch, DupeGroup, ExportOptions, Folder, ImportResult, LibraryInfo, Tag, TagGroup, UpdateStatus } from '../shared/types'
 
 const api = {
@@ -21,8 +21,14 @@ const api = {
 
   /* 导入 */
   importViaDialog: (): Promise<ImportResult> => ipcRenderer.invoke('import:dialog'),
+  /**
+   * 拖拽导入:webUtils.getPathForFile 只在 preload/渲染进程可用(主进程为 undefined),
+   * 故在 preload 把 File 转成本地路径后走 import:paths。返回含 importedIds 的 ImportResult。
+   */
   importFileObjects: (files: File[]): Promise<ImportResult> =>
-    ipcRenderer.invoke('import:fileObjects', files),
+    ipcRenderer.invoke('import:paths', getFilePaths(files)),
+  /** File[] -> 本地路径[](供渲染层自定义导入逻辑复用) */
+  getFilePaths: (files: File[]): string[] => getFilePaths(files),
   /** 按本地路径导入（主进程 import:paths 通道的包装，供测试/脚本用） */
   importFromPaths: (paths: string[]): Promise<ImportResult> =>
     ipcRenderer.invoke('import:paths', paths),
@@ -207,5 +213,18 @@ const api = {
 }
 
 export type ElectronApi = typeof api
+
+/** File -> 本地路径(webUtils 仅 preload/渲染进程可用;合成 File 无真实路径返回 '') */
+function getFilePaths(files: File[]): string[] {
+  return (files ?? [])
+    .map((f) => {
+      try {
+        return webUtils.getPathForFile(f) ?? ''
+      } catch {
+        return ''
+      }
+    })
+    .filter(Boolean)
+}
 
 contextBridge.exposeInMainWorld('api', api)
