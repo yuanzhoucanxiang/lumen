@@ -18,6 +18,12 @@ interface Viewport {
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 4
 const MIN_SIZE = 40
+/** 原图切换(方案 B,对标 PureRef 像素级真实):放大超过阈值换原图,缩回阈值以下回缩略图。
+ *  带滞回避免在阈值附近反复抖动;切回缩略图以控制大图显存占用。 */
+const ORIG_ZOOM_UP = 1.25
+const ORIG_ZOOM_DOWN = 0.85
+/** 白板可直接用浏览器解码的扩展名(heic/psd/ai 等无浏览器原图,仍用缩略图) */
+const BOARD_ORIG_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'tiff', 'tif', 'svg'])
 /** 框选拖拽超过该距离(画布坐标 px)才视为框选而非点击 */
 const MARQUEE_THRESHOLD = 3
 /** 形状描边默认样式（新绘制时使用,右键改样式后记忆） */
@@ -227,6 +233,31 @@ export default function BoardCanvas({
   const spaceDownRef = useRef(false)
   const panRef = useRef<{ startX: number; startY: number; vx: number; vy: number; moved: boolean } | null>(null)
   const suppressItemClickUntilRef = useRef(0)
+
+  /* ---------- 原图/缩略图切换(方案 B)----------
+     放大超阈值时,视口内的静态图片叠加加载原图(淡入覆盖缩略图),像素级清晰;
+     缩回阈值以下切回缩略图,控制大图显存。滞回防抖动。 */
+  const [origOn, setOrigOn] = useState(false)
+  useEffect(() => {
+    setOrigOn((on) => {
+      if (viewport.s >= ORIG_ZOOM_UP && !on) return true
+      if (viewport.s <= ORIG_ZOOM_DOWN && on) return false
+      return on
+    })
+  }, [viewport.s])
+  /** 已成功加载原图的 assetId(驱动淡入,避免原图未就绪时的空白闪动) */
+  const [origLoaded, setOrigLoaded] = useState<Set<string>>(new Set())
+  const markOrigLoaded = (id: string): void => {
+    setOrigLoaded((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
+  }
+  /** 当前视口对应的画布可见矩形(供"仅视口内元素加载原图"判定) */
+  const viewportRect = (() => {
+    const frame = frameRef.current
+    if (!frame) return { x: -Infinity, y: -Infinity, w: Infinity, h: Infinity }
+    const r = frame.getBoundingClientRect()
+    const s = viewport.s
+    return { x: -viewport.x / s, y: -viewport.y / s, w: r.width / s, h: r.height / s }
+  })()
 
   /* ---------- 画布外观（背景色/网格,按白板持久化） ---------- */
   const [appearance, setAppearance] = useState<BoardAppearance>(DEFAULT_APPEARANCE)
@@ -2017,14 +2048,47 @@ export default function BoardCanvas({
               {item.type === 'asset' && asset ? (
                 /* 视频也用 <img> 显示故事板四宫格（assetThumbUrl 对视频返回故事板 URL）：
                    <video> 无法解码静态图片,此前 mp4/webm/mov 在画布上显示为空白 */
-                <img
-                  src={assetThumbUrl(asset)}
-                  className="pointer-events-none h-full w-full object-cover"
-                  style={{ opacity: (item.opacity ?? 100) / 100 }}
-                  alt={asset.name}
-                  draggable={false}
-                  onLoad={(e) => onImgLoad(item, e)}
-                />
+                (() => {
+                  // 方案 B:放大且浏览器可解码的静态图,叠加原图淡入(视口内才加载,控显存)
+                  const elig =
+                    origOn &&
+                    BOARD_ORIG_EXTS.has(asset.ext) &&
+                    asset.width > 0 &&
+                    item.x + item.width > viewportRect.x &&
+                    item.x < viewportRect.x + viewportRect.w &&
+                    item.y + autoH > viewportRect.y &&
+                    item.y < viewportRect.y + viewportRect.h
+                  const origSrc = elig
+                    ? `${window.api.originalUrl(item.assetId!)}&e=${asset.edited ?? 0}`
+                    : ''
+                  return (
+                    <>
+                      <img
+                        src={assetThumbUrl(asset)}
+                        className="pointer-events-none h-full w-full object-cover"
+                        style={{ opacity: (item.opacity ?? 100) / 100 }}
+                        alt={asset.name}
+                        draggable={false}
+                        onLoad={(e) => onImgLoad(item, e)}
+                      />
+                      {elig && (
+                        <img
+                          data-board-orig
+                          src={origSrc}
+                          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+                          style={{
+                            opacity: origLoaded.has(item.assetId!) ? (item.opacity ?? 100) / 100 : 0,
+                            transition: 'opacity 150ms ease'
+                          }}
+                          alt=""
+                          draggable={false}
+                          onLoad={() => markOrigLoaded(item.assetId!)}
+                          onError={() => markOrigLoaded(item.assetId!)}
+                        />
+                      )}
+                    </>
+                  )
+                })()
               ) : item.type === 'shape' && item.shape ? (
                 (() => {
                   let shape: ShapeSpec | null = null

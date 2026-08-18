@@ -194,6 +194,35 @@ async function main() {
       boardImages: document.querySelectorAll('[data-board-item] img, [data-board-item] video').length
     }`)
     check('画布素材不受参考来源筛选影响', independentCanvas.trayAssets === 0 && independentCanvas.boardImages > 0, JSON.stringify(independentCanvas))
+
+    // 原图切换(方案 B):放大超阈值 -> 视口内图片叠加原图 data-board-orig;缩回 -> 切回缩略图
+    const surfaceScale = `(() => { const m = /scale\\(([\\d.]+)\\)/.exec(document.querySelector('[data-board-frame] div.absolute.left-0.top-0')?.style.transform ?? ''); return m ? Number(m[1]) : 1 })()`
+    // 显式归位 scale=1(前序交互可能留下缩放,污染阈值断言)
+    await run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '0', bubbles: true }))`)
+    await sleep(300)
+    const origBefore = await run(`return {
+      scale: ${surfaceScale},
+      orig: document.querySelectorAll('[data-board-orig]').length
+    }`)
+    await run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '+', bubbles: true }))`)
+    await sleep(600)
+    const origZoomed = await run(`return {
+      scale: ${surfaceScale},
+      orig: document.querySelectorAll('[data-board-orig]').length,
+      loaded: document.querySelectorAll('[data-board-orig][style*="opacity: 1"]').length
+    }`)
+    await run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '0', bubbles: true }))`)
+    await sleep(300)
+    await run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '-', bubbles: true }))`)
+    await sleep(300)
+    await run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '-', bubbles: true }))`)
+    await sleep(600)
+    const origShrunk = await run(`return document.querySelectorAll('[data-board-orig]').length`)
+    check('放大加载原图(叠加 data-board-orig 且淡入完成)', origZoomed.scale >= 1.25 && origZoomed.orig > 0 && origZoomed.loaded > 0, JSON.stringify(origZoomed))
+    check('缩小后切回缩略图(原图层移除)', origShrunk === 0, `orig=${origShrunk}`)
+    await run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '0', bubbles: true }))`)
+    await sleep(300)
+
     await run(`
       const clear = document.querySelector('button[aria-label="清空参考素材搜索"]')
       if (clear) clear.click()
