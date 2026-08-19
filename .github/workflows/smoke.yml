@@ -1,0 +1,44 @@
+name: Smoke
+
+# 每次 push/PR 自动跑:类型检查 + CDP 冒烟回归(替代"想起来才跑测试")。
+# 种子库(scripts/ci-seed-library.cjs)在全新 HOME 下生成接近真实形态的最小素材库,
+# 应用通过 HOME 指向它,跑全量 CDP 测试(排除依赖 AI key / 网络更新的两个)。
+# 说明:完整工作流无法在本地直接执行(需 Linux + xvfb),本地已用 APPDATA 指向种子库
+# 验证过同一套测试在种子库上全绿。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  cdp-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 生成种子测试库
+        run: |
+          export HOME="$RUNNER_TEMP/ci-home"
+          node scripts/ci-seed-library.cjs --lib "$RUNNER_TEMP/ci-lib" --ud "$HOME/.config/LUMEN"
+
+      - name: CDP 冒烟回归(无头 xvfb)
+        run: |
+          export HOME="$RUNNER_TEMP/ci-home"
+          xvfb-run -a npm run test:itest
+        env:
+          # 依赖外部服务的测试在 CI 跳过:AI 需要 API key;更新弹窗需要网络/Release
+          ITEST_EXCLUDE: itest-ai,itest-update-dialog
+          # GitHub Actions 容器缺用户命名空间,禁用 Chromium 沙箱
+          ELECTRON_DISABLE_SANDBOX: "1"

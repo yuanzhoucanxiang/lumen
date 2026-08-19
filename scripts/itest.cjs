@@ -18,6 +18,8 @@ const http = require('http')
 const ROOT = join(__dirname, '..')
 const CDP_PORT = 9333
 const onlyArg = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null
+/** CI 用:ITEST_EXCLUDE=itest-ai,itest-update-dialog 跳过依赖外部服务的测试 */
+const excludeArg = process.env.ITEST_EXCLUDE || ''
 
 const ok = (m) => console.log('  ✓', m)
 const fail = (m) => {
@@ -61,12 +63,18 @@ function killTree(pid) {
 }
 
 async function main() {
+  const excluded = excludeArg
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
   const files = readdirSync(join(ROOT, '.ui-shot'))
     .filter((f) => /^itest(-[\w-]+)?\.cjs$/.test(f))
     .filter((f) => (onlyArg ? f.includes(onlyArg) : true))
+    .filter((f) => !excluded.some((x) => f.includes(x)))
     .sort()
   if (files.length === 0) fail(`未找到匹配的测试文件（--only ${onlyArg}）`)
   console.log(`将运行 ${files.length} 个测试文件: ${files.join(', ')}`)
+  if (excluded.length > 0) console.log(`(已排除: ${excluded.join(', ')})`)
 
   console.log('启动 dev (CDP 9333)…')
   const dev = spawn('npm', ['run', 'dev', '--', `--remote-debugging-port=${CDP_PORT}`], {
