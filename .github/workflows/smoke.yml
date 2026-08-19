@@ -31,13 +31,16 @@ jobs:
       - name: 生成种子测试库
         run: |
           export HOME="$RUNNER_TEMP/ci-home"
-          # 与本地验证一致:用 electron 的 node 模式跑(Electron-ABI 的 better-sqlite3)
+          export XDG_CONFIG_HOME="$RUNNER_TEMP/ci-xdg"
+          # 与本地验证一致:用 electron 的 node 模式跑(Electron-ABI 的 better-sqlite3)。
+          # userData 在 Linux 由 XDG_CONFIG_HOME 决定(非 HOME env),必须显式指定
           ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron scripts/ci-seed-library.cjs \
-            --lib "$RUNNER_TEMP/ci-lib" --ud "$HOME/.config/LUMEN"
+            --lib "$RUNNER_TEMP/ci-lib" --ud "$XDG_CONFIG_HOME/LUMEN"
 
       - name: CDP 冒烟回归(无头 xvfb)
         run: |
           export HOME="$RUNNER_TEMP/ci-home"
+          export XDG_CONFIG_HOME="$RUNNER_TEMP/ci-xdg"
           xvfb-run -a npm run test:itest
         env:
           # 依赖外部服务的测试在 CI 跳过:AI 需要 API key;更新弹窗需要网络/Release
