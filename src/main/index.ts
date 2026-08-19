@@ -8,6 +8,7 @@ import { closeDb } from './db'
 import { startClipServer } from './clipServer'
 import { syncWatchers, syncOnStartup } from './watcher'
 import { cleanTrashOlderThan } from './repository'
+import { autoBackupStartup } from './backup'
 import { initUpdater } from './updater'
 import { initLogger, logger } from './logger'
 import { backupDatabase } from './backup'
@@ -144,6 +145,12 @@ app.whenReady().then(() => {
   // 自动更新（electron-updater，打包版生效）
   initUpdater(() => mainWindow)
   ipcMain.handle('app:version', () => app.getVersion())
+
+  // 自动备份:延迟执行不拖慢启动(打包版默认;开发模式用 LUMEN_AUTO_BACKUP=1 强制,供测试)
+  const autoBackupDelay = Number(process.env.LUMEN_AUTO_BACKUP_DELAY ?? 20000)
+  setTimeout(() => {
+    void autoBackupStartup().catch((e) => logger.warn('[backup]', `自动备份异常: ${(e as Error).message}`))
+  }, autoBackupDelay)
 
   // 白板浮动置顶窗口
   ipcMain.handle('window:floatingOpen', (_e, boardId: number) => openFloatingBoard(boardId))
