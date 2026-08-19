@@ -16,6 +16,12 @@ import { backupDatabase } from './backup'
 import { closeFloatingBoard, openFloatingBoard } from './floatingBoard'
 import { ipcMain } from 'electron'
 
+// 无头 CI(xvfb):禁用 GPU 硬件加速,让重载/导入等场景在 headless Chromium 下更稳
+if (process.env.LUMEN_HEADLESS === '1') {
+  app.commandLine.appendSwitch('disable-gpu')
+  app.commandLine.appendSwitch('disable-software-rasterizer')
+}
+
 /** asset: 协议响应的 MIME 映射（视频/音频播放依赖正确的 Content-Type） */
 const MIME_BY_EXT: Record<string, string> = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',

@@ -45,10 +45,10 @@ jobs:
           export XDG_CONFIG_HOME="$RUNNER_TEMP/ci-xdg"
           xvfb-run -a npm run test:itest
         env:
-          # CI 冒烟跑"稳定自包含"子集:依赖外部服务的(ai/update-dialog)与无头 Linux 上
-          # 易崩的重导入/重交互类(board-file 的 .lumenboard 导入、import-async、workspace、
-          # toolbar/theme/context-menu、new、stage5、floating)留在本地跑。本子集覆盖
-          # 编译/IPC 接线/建库/白板核心交互/导入链路/设置中心,足以拦截主要回归。
-          ITEST_EXCLUDE: itest-ai,itest-update-dialog,itest-board-file,itest-board-floating,itest-board-workspace,itest-import-async,itest-new,itest-stage5,itest-toolbar,itest-theme,itest-context-menu
+          # 无头 Linux 上"重载/导入(sharp)/重交互"类测试会让 Electron 崩溃(实测多次),
+          # 故冒烟收敛为"不重载不导入"的最稳子集:DB/IPC 开关(db-stmt)、设置中心 UI
+          # (settings-guide)、基础健康与 asset://(itest.cjs)。完整 19 套在本地发布前跑。
+          ITEST_EXCLUDE: itest-ai,itest-update-dialog,itest-board-file,itest-board-floating,itest-board-multi,itest-board-nav,itest-board-opacity-guides,itest-board-tools,itest-board-workspace,itest-context-menu,itest-drop-path,itest-import-async,itest-new,itest-stage5,itest-theme,itest-toolbar
           # GitHub Actions 容器缺用户命名空间,禁用 Chromium 沙箱
           ELECTRON_DISABLE_SANDBOX: "1"
+          LUMEN_HEADLESS: "1"
