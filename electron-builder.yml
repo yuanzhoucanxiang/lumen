@@ -35,6 +35,16 @@ nsis:
   shortcutName: LUMEN
   uninstallDisplayName: LUMEN
   createDesktopShortcut: always
+  # 安装目录选择(2026-08-19,里程碑 95):从一键安装改为向导式,允许用户改安装目录
+  # (对标 Eagle;素材库是重度空间应用,用户常想装 D 盘)。为保住自动更新链路:
+  #  - perMachine: false 保持每用户安装(默认目录仍是 %LOCALAPPDATA%\Programs\拾光素材库,
+  #    用户可改到 D:\xxx 等每用户可写目录)
+  #  - 不建议选 C:\Program Files(需管理员 + 更新需提权,会自动更新断链)
+  #  - electron-updater 对 assisted + per-user 自定义目录的标准支持,老用户更新链不受影响
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
 npmRebuild: true
 # 自动更新源：GitHub Releases（yuanzhoucanxiang/shiguang-materials，仅发布安装包）
 publish:

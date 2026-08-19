@@ -48,6 +48,11 @@ async function main() {
 
   const sample = fs.readFileSync(path.join(__dirname, '..', 'test-fixtures', 'sample.png'))
   const now = Date.now()
+  // 幂等:已有库文件先清掉(固定 id 重跑会主键冲突)
+  for (const f of ['library.db', 'library.db-wal', 'library.db-shm']) {
+    const p = path.join(lib, f)
+    if (fs.existsSync(p)) fs.rmSync(p, { force: true })
+  }
   const db = openDb(lib)
 
   // 素材:12 张(11 张独立 + 1 张内容与第 1 张相同 → 查重 1 组)

@@ -37,11 +37,17 @@ function recoverCorruptDb(dbPath: string, cause: unknown): void {
   db = null
   const corrupt = `${dbPath}.corrupt-${Date.now()}`
   try {
-    renameSync(dbPath, corrupt)
-    // 旧的 -wal/-shm 与主库是配套的,恢复新库前必须清掉,否则会重放损坏日志
-    rmSync(`${dbPath}-wal`, { force: true })
-    rmSync(`${dbPath}-shm`, { force: true })
-    logger.error('[db]', `库文件损坏(${(cause as Error).message}),已改名保留: ${corrupt}`)
+    // 文件可能压根没生成(如父目录在打开瞬间缺失/首次创建失败):没有可保留的现场,
+    // 直接进入重建分支,不要对不存在的文件做 rename(否则 ENOENT 把"自愈"变成"崩")
+    if (existsSync(dbPath)) {
+      renameSync(dbPath, corrupt)
+      // 旧的 -wal/-shm 与主库是配套的,恢复新库前必须清掉,否则会重放损坏日志
+      rmSync(`${dbPath}-wal`, { force: true })
+      rmSync(`${dbPath}-shm`, { force: true })
+      logger.error('[db]', `库文件损坏(${(cause as Error).message}),已改名保留: ${corrupt}`)
+    } else {
+      logger.warn('[db]', `库文件打开失败(${(cause as Error).message}),文件不存在,直接重建`)
+    }
 
     const bak = `${dbPath}.bak`
     if (existsSync(bak)) {
