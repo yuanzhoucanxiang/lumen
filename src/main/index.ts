@@ -9,6 +9,7 @@ import { startClipServer } from './clipServer'
 import { syncWatchers, syncOnStartup } from './watcher'
 import { cleanTrashOlderThan } from './repository'
 import { autoBackupStartup } from './backup'
+import { runStartupMaintenance } from './maintenance'
 import { initUpdater } from './updater'
 import { initLogger, logger } from './logger'
 import { backupDatabase } from './backup'
@@ -151,6 +152,11 @@ app.whenReady().then(() => {
   setTimeout(() => {
     void autoBackupStartup().catch((e) => logger.warn('[backup]', `自动备份异常: ${(e as Error).message}`))
   }, autoBackupDelay)
+
+  // 启动维护(孤儿清理 + dHash 回填):延迟执行不阻塞启动
+  setTimeout(() => {
+    void runStartupMaintenance().catch((e) => logger.warn('[maintenance]', `启动维护异常: ${(e as Error).message}`))
+  }, autoBackupDelay + 3000)
 
   // 白板浮动置顶窗口
   ipcMain.handle('window:floatingOpen', (_e, boardId: number) => openFloatingBoard(boardId))
