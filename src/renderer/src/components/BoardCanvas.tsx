@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react'
 import { assetThumbUrl, useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 import { useTheme } from '../theme'
@@ -47,6 +47,11 @@ interface BoardAppearance {
   gridSize: number
 }
 const DEFAULT_APPEARANCE: BoardAppearance = { bg: 'dark', grid: true, gridSize: 24 }
+
+/** 素材元素屏幕渲染尺寸小于该值(px)时降级为色块占位:
+ *  超大规模白板缩小视图时,数千张缩略图的解码/绘制是主要瓶颈,
+ *  色块只占一个 div 无解码开销(对标"视口降级",见项目策划案进行中项)。 */
+const DEGRADE_PX = 22
 
 /** hex 颜色亮度（0-1），用于点阵颜色深浅自适应 */
 function hexLuminance(hex: string): number {
@@ -258,6 +263,31 @@ export default function BoardCanvas({
     const s = viewport.s
     return { x: -viewport.x / s, y: -viewport.y / s, w: r.width / s, h: r.height / s }
   })()
+
+  /* ---------- 视口裁剪(千元素白板只渲染可见区) ----------
+     首帧 frame 未布局,cullRect=null 时先渲染空 surface;
+     useLayoutEffect 量帧后二次渲染(paint 前完成,无闪烁),之后裁剪生效。
+     余量 = 一个视口尺寸:短平移不露空白;平移过程 rAF 同步裁剪(见 onPointerMove)。 */
+  const [frameReady, setFrameReady] = useState(false)
+  useLayoutEffect(() => {
+    setFrameReady(true)
+  }, [])
+  const cullRect = useMemo(() => {
+    const frame = frameRef.current
+    if (!frameReady || !frame) return null
+    const r = frame.getBoundingClientRect()
+    const v = viewport
+    const margin = Math.max(r.width, r.height) / v.s
+    return { x: -v.x / v.s - margin, y: -v.y / v.s - margin, w: r.width / v.s + margin * 2, h: r.height / v.s + margin * 2 }
+  }, [viewport, frameReady])
+  // 平移期间 rAF 节流同步裁剪(每帧最多一次 setState;窗口失焦时 rAF 不调度,pointerup 兜底)
+  const cullSyncPendingRef = useRef(false)
+  // 窗口尺寸变化时强制一次渲染,重算裁剪矩形
+  useEffect(() => {
+    const onResize = () => setViewport((v) => ({ ...v }))
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   /* ---------- 画布外观（背景色/网格,按白板持久化） ---------- */
   const [appearance, setAppearance] = useState<BoardAppearance>(DEFAULT_APPEARANCE)
@@ -550,11 +580,14 @@ export default function BoardCanvas({
   /* ---------- 选中（多选） ---------- */
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const selectedIdsRef = useRef<string[]>([])
+  // 成员判定用 Set:isSelected 每个元素每帧渲染都调用,数组 includes 是 O(n),全选大板时整体 O(n²)
+  const selectedSetRef = useRef<Set<string>>(new Set())
   const setSel = (ids: string[]) => {
     selectedIdsRef.current = ids
+    selectedSetRef.current = new Set(ids)
     setSelectedIds(ids)
   }
-  const isSelected = (id: string) => selectedIdsRef.current.includes(id)
+  const isSelected = (id: string) => selectedSetRef.current.has(id)
 
   // 元素 DOM 引用（组移动/组缩放时直接改 style,避免逐帧 React 渲染）
   const itemEls = useRef(new Map<string, HTMLElement>())
@@ -938,7 +971,7 @@ export default function BoardCanvas({
     let maxX = -Infinity
     let maxY = -Infinity
     for (const it of boardItems) {
-      if (!ids.includes(it.id)) continue
+      if (!selectedSetRef.current.has(it.id)) continue
       const h = effHeight(it)
       minX = Math.min(minX, it.x)
       minY = Math.min(minY, it.y)
@@ -1292,6 +1325,16 @@ export default function BoardCanvas({
         surfaceRef.current.style.transform = `translate3d(${next.x}px, ${next.y}px, 0) scale(${next.s})`
       }
       applyGridTransform(next)
+      // 平移全程 DOM 直改(不逐帧 React 渲染);裁剪矩形靠 rAF 节流同步——
+      // 长距离平移时新划入视口的元素即时挂载,视口 state 跟手(下次渲染不跳回),
+      // 且原图叠加层随视口及时更新;rAF 不调度(CDP/后台窗)时 pointerup 的 applyViewport 兜底
+      if (!cullSyncPendingRef.current) {
+        cullSyncPendingRef.current = true
+        requestAnimationFrame(() => {
+          cullSyncPendingRef.current = false
+          setViewport({ ...viewportRef.current })
+        })
+      }
       return
     }
     const d = drawingRef.current
@@ -1928,6 +1971,33 @@ export default function BoardCanvas({
     : noteDefaults
   const showTextStyleBar = tool === 'note' || selectedNote != null
 
+  /** memo 化子元素的事件句柄走 ref(每次渲染刷新为最新闭包,ref 本身身份稳定):
+   * 视口/选中等父级变化时子元素 shallow 比较 props 直接跳过,不重渲染不重建事件函数 */
+  const itemApiRef = useRef<BoardItemApi>(null as unknown as BoardItemApi)
+  itemApiRef.current = {
+    itemEls,
+    onPointerDown: onItemPointerDown,
+    onPointerMove: onItemPointerMove,
+    onPointerUp: onItemPointerUp,
+    onClick: onItemClick,
+    onDoubleClick: (item: BoardItem) => {
+      setSel([item.id])
+      setEditingNoteId(item.id)
+    },
+    onContextMenu: openCtxMenu,
+    onImgLoad,
+    focusFrame,
+    spaceDownRef,
+    setEditingNoteId,
+    onToolChange,
+    toolRef,
+    pushHistory,
+    setSel,
+    refreshBoardItems,
+    boardIdRef,
+    markOrigLoaded
+  }
+
   return (
     <div
       ref={frameRef}
@@ -2017,218 +2087,66 @@ export default function BoardCanvas({
         }}
       >
         {boardItems.map((item) => {
-          const asset = item.assetId ? assetById.get(item.assetId) : undefined
           const autoH = item.height > 0 ? item.height : item.width * (aspectCache[item.assetId ?? ''] ?? 0.75)
+          // 视口裁剪:只渲染与可见区(含一圈余量)相交的元素;正在编辑的文字豁免(卸载即丢编辑内容)
+          if (
+            cullRect &&
+            item.id !== editingNoteId &&
+            !(
+              item.x + item.width > cullRect.x &&
+              item.x < cullRect.x + cullRect.w &&
+              item.y + autoH > cullRect.y &&
+              item.y < cullRect.y + cullRect.h
+            )
+          ) {
+            return null
+          }
+          const asset = item.assetId ? assetById.get(item.assetId) : undefined
           const sel = isSelected(item.id)
           const editing = item.type === 'note' && editingNoteId === item.id
+          // 视口降级:素材渲染尺寸过小时用主色色块占位,免除缩略图解码/绘制(仅 asset,文字/形状保持可读)
+          const degraded = item.type === 'asset' && (item.width * viewport.s < DEGRADE_PX || autoH * viewport.s < DEGRADE_PX)
+          // 方案 B:放大且浏览器可解码的静态图,叠加原图淡入(视口内才加载,控显存)
+          const elig =
+            !degraded &&
+            origOn &&
+            !!asset &&
+            BOARD_ORIG_EXTS.has(asset.ext) &&
+            asset.width > 0 &&
+            item.x + item.width > viewportRect.x &&
+            item.x < viewportRect.x + viewportRect.w &&
+            item.y + autoH > viewportRect.y &&
+            item.y < viewportRect.y + viewportRect.h
+          const origSrc = elig ? `${window.api.originalUrl(item.assetId!)}&e=${asset!.edited ?? 0}` : ''
+          let placeholderColor = 'rgba(148,163,184,0.4)'
+          if (degraded && asset) {
+            try {
+              const colors = JSON.parse(asset.colors ?? '[]') as unknown
+              if (Array.isArray(colors) && colors.length > 0) {
+                const first = colors[0] as number[] | undefined
+                if (Array.isArray(first) && first.length >= 3) placeholderColor = `rgb(${first[0]},${first[1]},${first[2]})`
+              }
+            } catch {
+              /* 主色解析失败用中性占位色 */
+            }
+          }
+          const thumbSrc = asset ? assetThumbUrl(asset) : ''
           return (
-            <div
+            <BoardItemView
               key={item.id}
-              ref={(el) => {
-                if (el) itemEls.current.set(item.id, el)
-                else itemEls.current.delete(item.id)
-              }}
-              data-board-item={item.id}
-              className="absolute select-none"
-              style={{
-                left: item.x,
-                top: item.y,
-                width: item.width,
-                height: item.type === 'asset' ? autoH : item.height,
-                zIndex: item.z,
-                outline: editing
-                  ? '1px dashed var(--accent)'
-                  : sel
-                    ? '2px solid var(--accent)'
-                    : item.type === 'note'
-                      ? 'none'
-                      : '1px solid rgba(128,128,128,0.35)',
-                outlineOffset: sel ? 1 : 0,
-                cursor: 'move',
-                background: 'transparent'
-              }}
-              onPointerDown={(e) => onItemPointerDown(e, item, 'move')}
-              onPointerMove={onItemPointerMove}
-              onPointerUp={(e) => void onItemPointerUp(e)}
-              onPointerCancel={(e) => void onItemPointerUp(e)}
-              onClick={(e) => {
-                e.stopPropagation()
-                void onItemClick(item)
-                if (item.type === 'note' && toolRef.current === 'note') {
-                  setEditingNoteId(item.id)
-                  onToolChange?.('select')
-                }
-              }}
-              onDoubleClick={(e) => {
-                if (item.type !== 'note') return
-                e.stopPropagation()
-                setSel([item.id])
-                setEditingNoteId(item.id)
-              }}
-              onContextMenu={(e) => openCtxMenu(e, item)}
-            >
-              {item.type === 'asset' && asset ? (
-                /* 视频也用 <img> 显示故事板四宫格（assetThumbUrl 对视频返回故事板 URL）：
-                   <video> 无法解码静态图片,此前 mp4/webm/mov 在画布上显示为空白 */
-                (() => {
-                  // 方案 B:放大且浏览器可解码的静态图,叠加原图淡入(视口内才加载,控显存)
-                  const elig =
-                    origOn &&
-                    BOARD_ORIG_EXTS.has(asset.ext) &&
-                    asset.width > 0 &&
-                    item.x + item.width > viewportRect.x &&
-                    item.x < viewportRect.x + viewportRect.w &&
-                    item.y + autoH > viewportRect.y &&
-                    item.y < viewportRect.y + viewportRect.h
-                  const origSrc = elig
-                    ? `${window.api.originalUrl(item.assetId!)}&e=${asset.edited ?? 0}`
-                    : ''
-                  return (
-                    <>
-                      <img
-                        src={assetThumbUrl(asset)}
-                        className="pointer-events-none h-full w-full object-cover"
-                        style={{ opacity: (item.opacity ?? 100) / 100 }}
-                        alt={asset.name}
-                        draggable={false}
-                        onLoad={(e) => onImgLoad(item, e)}
-                      />
-                      {elig && (
-                        <img
-                          data-board-orig
-                          src={origSrc}
-                          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-                          style={{
-                            opacity: origLoaded.has(item.assetId!) ? (item.opacity ?? 100) / 100 : 0,
-                            transition: 'opacity 150ms ease'
-                          }}
-                          alt=""
-                          draggable={false}
-                          onLoad={() => markOrigLoaded(item.assetId!)}
-                          onError={() => markOrigLoaded(item.assetId!)}
-                        />
-                      )}
-                    </>
-                  )
-                })()
-              ) : item.type === 'shape' && item.shape ? (
-                (() => {
-                  let shape: ShapeSpec | null = null
-                  try {
-                    shape = JSON.parse(item.shape) as ShapeSpec
-                  } catch {
-                    shape = null
-                  }
-                  if (!shape) return null
-                  return (
-                    <svg
-                      data-shape
-                      className="pointer-events-none h-full w-full"
-                      viewBox={`0 0 ${Math.max(1, item.width)} ${Math.max(1, item.height)}`}
-                      preserveAspectRatio="none"
-                      style={{ opacity: (item.opacity ?? 100) / 100 }}
-                    >
-                      {shapeSvgNodes(shape, Math.max(1, item.width), Math.max(1, item.height))}
-                    </svg>
-                  )
-                })()
-              ) : editing ? (
-                <textarea
-                  data-board-text-editor
-                  aria-label="白板文字编辑"
-                  className="h-full w-full resize-none bg-transparent p-1 outline-none"
-                  style={{
-                    fontFamily: item.noteFont || undefined,
-                    color: item.noteColor || 'var(--text-main)',
-                    fontSize: item.noteFontSize || 16,
-                    lineHeight: 1.35,
-                    opacity: (item.opacity ?? 100) / 100
-                  }}
-                  placeholder="输入文字…"
-                  defaultValue={item.text}
-                  autoFocus
-                  onFocus={(event) => {
-                    const value = event.currentTarget.value
-                    event.currentTarget.setSelectionRange(value.length, value.length)
-                    const editor = event.currentTarget
-                    requestAnimationFrame(() => {
-                      const height = Math.max(item.height, editor.scrollHeight + 4)
-                      if (editor.parentElement) editor.parentElement.style.height = `${height}px`
-                    })
-                  }}
-                  onInput={(event) => {
-                    const editor = event.currentTarget
-                    const height = Math.max(item.height, editor.scrollHeight + 4)
-                    if (editor.parentElement) editor.parentElement.style.height = `${height}px`
-                  }}
-                  onBlur={(event) => {
-                    const value = event.currentTarget.value
-                    const height = Math.max(item.height, event.currentTarget.scrollHeight + 4)
-                    setEditingNoteId(null)
-                    if (!value.trim()) {
-                      pushHistory()
-                      setSel([])
-                      void window.api.deleteBoardItem(item.id).then(() => {
-                        if (boardIdRef.current != null) return refreshBoardItems(boardIdRef.current)
-                      })
-                    } else if (value !== item.text || height !== item.height) {
-                      pushHistory()
-                      void window.api.updateBoardItem(item.id, { text: value, height }).then(() => {
-                        if (boardIdRef.current != null) return refreshBoardItems(boardIdRef.current)
-                      })
-                    }
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Escape' || ((event.ctrlKey || event.metaKey) && event.key === 'Enter')) {
-                      event.preventDefault()
-                      event.currentTarget.blur()
-                    }
-                  }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                />
-              ) : (
-                <div
-                  data-board-text-display
-                  className="h-full w-full whitespace-pre-wrap break-words p-1"
-                  style={{
-                    fontFamily: item.noteFont || undefined,
-                    color: item.noteColor || 'var(--text-main)',
-                    fontSize: item.noteFontSize || 16,
-                    lineHeight: 1.35,
-                    opacity: (item.opacity ?? 100) / 100
-                  }}
-                >
-                  {item.text}
-                </div>
-              )}
-              {/* 单选时的 8 向缩放手柄（照抄 MOTZ selection-handles） */}
-              {sel && !multiSelected && !editing && (
-                <div className="pointer-events-none absolute -inset-1">
-                  {RESIZE_HANDLES.map((handle) => (
-                    <span
-                      key={handle}
-                      data-resize-handle={handle}
-                      className="pointer-events-auto absolute h-2.5 w-2.5 border border-[var(--accent)] bg-[var(--bg-base)]"
-                      style={{
-                        ...(handle.includes('n') ? { top: -4 } : handle.includes('s') ? { bottom: -4 } : { top: '50%', marginTop: -5 }),
-                        ...(handle.includes('w') ? { left: -4 } : handle.includes('e') ? { right: -4 } : { left: '50%', marginLeft: -5 }),
-                        cursor: `${handle === 'nw' || handle === 'se' ? 'nwse' : handle === 'ne' || handle === 'sw' ? 'nesw' : handle === 'n' || handle === 's' ? 'ns' : 'ew'}-resize`
-                      }}
-                      onPointerDown={(e) => {
-                        if (spaceDownRef.current) return
-                        e.stopPropagation()
-                        e.preventDefault()
-                        focusFrame(e.target)
-                        onItemPointerDown(e, item, 'resize', handle)
-                      }}
-                      onPointerMove={onItemPointerMove}
-                      onPointerUp={(e) => void onItemPointerUp(e)}
-                      onPointerCancel={(e) => void onItemPointerUp(e)}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
+              item={item}
+              api={itemApiRef}
+              autoH={autoH}
+              sel={sel}
+              multiSelected={multiSelected}
+              editing={editing}
+              degraded={degraded}
+              placeholderColor={placeholderColor}
+              thumbSrc={thumbSrc}
+              origSrc={origSrc}
+              origLoaded={item.assetId != null && origLoaded.has(item.assetId)}
+              alt={asset?.name ?? ''}
+            />
           )
         })}
 
@@ -2588,3 +2506,264 @@ export default function BoardCanvas({
     </div>
   )
 }
+
+/* ==========================================================================
+ * 元素子组件(memo + 稳定句柄)
+ * 视口/选中/主题等父级变化时,未变更的元素直接跳过渲染。
+ * 事件回调全部经 api ref 读取最新闭包,props 全为原始值(shallow 比较即可)。
+ * ========================================================================== */
+
+/** 画布元素子组件可用的事件句柄(每次渲染由父组件刷新为最新闭包,ref 身份稳定) */
+interface BoardItemApi {
+  itemEls: MutableRefObject<Map<string, HTMLElement>>
+  onPointerDown: (e: React.PointerEvent, item: BoardItem, mode: 'move' | 'resize', dir?: ResizeDir) => void
+  onPointerMove: (e: React.PointerEvent) => void
+  onPointerUp: (e: React.PointerEvent) => Promise<void>
+  onClick: (item: BoardItem) => void
+  onDoubleClick: (item: BoardItem) => void
+  onContextMenu: (e: React.MouseEvent, item: BoardItem) => void
+  onImgLoad: (item: BoardItem, e: React.SyntheticEvent<HTMLImageElement>) => void
+  focusFrame: (target: EventTarget | null) => void
+  spaceDownRef: MutableRefObject<boolean>
+  setEditingNoteId: (id: string | null) => void
+  onToolChange?: (tool: BoardTool) => void
+  toolRef: MutableRefObject<BoardTool>
+  pushHistory: () => void
+  setSel: (ids: string[]) => void
+  refreshBoardItems: (boardId: number) => Promise<void>
+  boardIdRef: MutableRefObject<number | null>
+  markOrigLoaded: (id: string) => void
+}
+
+interface BoardItemViewProps {
+  item: BoardItem
+  api: MutableRefObject<BoardItemApi>
+  /** 有效高度(height=0 时按宽高比推算) */
+  autoH: number
+  sel: boolean
+  multiSelected: boolean
+  editing: boolean
+  /** 视口降级:渲染尺寸过小时用色块占位,免除缩略图解码 */
+  degraded: boolean
+  placeholderColor: string
+  /** 缩略图/故事板 URL(asset 类型) */
+  thumbSrc: string
+  /** 原图叠加层 URL('' = 不叠加;方案 B 放大高清) */
+  origSrc: string
+  /** 原图是否已加载完成(驱动淡入) */
+  origLoaded: boolean
+  alt: string
+}
+
+const BoardItemView = memo(function BoardItemView({
+  item,
+  api,
+  autoH,
+  sel,
+  multiSelected,
+  editing,
+  degraded,
+  placeholderColor,
+  thumbSrc,
+  origSrc,
+  origLoaded,
+  alt
+}: BoardItemViewProps) {
+  const a = api.current
+  return (
+    <div
+      ref={(el) => {
+        if (el) a.itemEls.current.set(item.id, el)
+        else a.itemEls.current.delete(item.id)
+      }}
+      data-board-item={item.id}
+      className="absolute select-none"
+      style={{
+        left: item.x,
+        top: item.y,
+        width: item.width,
+        height: item.type === 'asset' ? autoH : item.height,
+        zIndex: item.z,
+        outline: editing
+          ? '1px dashed var(--accent)'
+          : sel
+            ? '2px solid var(--accent)'
+            : item.type === 'note'
+              ? 'none'
+              : '1px solid rgba(128,128,128,0.35)',
+        outlineOffset: sel ? 1 : 0,
+        cursor: 'move',
+        background: 'transparent'
+      }}
+      onPointerDown={(e) => a.onPointerDown(e, item, 'move')}
+      onPointerMove={a.onPointerMove}
+      onPointerUp={(e) => void a.onPointerUp(e)}
+      onPointerCancel={(e) => void a.onPointerUp(e)}
+      onClick={(e) => {
+        e.stopPropagation()
+        a.onClick(item)
+        if (item.type === 'note' && a.toolRef.current === 'note') {
+          a.setEditingNoteId(item.id)
+          a.onToolChange?.('select')
+        }
+      }}
+      onDoubleClick={(e) => {
+        if (item.type !== 'note') return
+        e.stopPropagation()
+        a.onDoubleClick(item)
+      }}
+      onContextMenu={(e) => a.onContextMenu(e, item)}
+    >
+      {item.type === 'asset' && thumbSrc !== '' ? (
+        degraded ? (
+          /* 降级:主色色块占位(无解码/绘制开销;透明度与元素一致) */
+          <div data-degraded className="h-full w-full" style={{ background: placeholderColor, opacity: (item.opacity ?? 100) / 100 }} />
+        ) : (
+          <>
+            {/* 视频也用 <img> 显示故事板四宫格(assetThumbUrl 对视频返回故事板 URL):
+                <video> 无法解码静态图片,此前 mp4/webm/mov 在画布上显示为空白 */}
+            <img
+              src={thumbSrc}
+              className="pointer-events-none h-full w-full object-cover"
+              style={{ opacity: (item.opacity ?? 100) / 100 }}
+              alt={alt}
+              draggable={false}
+              onLoad={(e) => a.onImgLoad(item, e)}
+            />
+            {origSrc !== '' && (
+              <img
+                data-board-orig
+                src={origSrc}
+                className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+                style={{
+                  opacity: origLoaded ? (item.opacity ?? 100) / 100 : 0,
+                  transition: 'opacity 150ms ease'
+                }}
+                alt=""
+                draggable={false}
+                onLoad={() => a.markOrigLoaded(item.assetId!)}
+                onError={() => a.markOrigLoaded(item.assetId!)}
+              />
+            )}
+          </>
+        )
+      ) : item.type === 'shape' && item.shape ? (
+        (() => {
+          let shape: ShapeSpec | null = null
+          try {
+            shape = JSON.parse(item.shape) as ShapeSpec
+          } catch {
+            shape = null
+          }
+          if (!shape) return null
+          return (
+            <svg
+              data-shape
+              className="pointer-events-none h-full w-full"
+              viewBox={`0 0 ${Math.max(1, item.width)} ${Math.max(1, item.height)}`}
+              preserveAspectRatio="none"
+              style={{ opacity: (item.opacity ?? 100) / 100 }}
+            >
+              {shapeSvgNodes(shape, Math.max(1, item.width), Math.max(1, item.height))}
+            </svg>
+          )
+        })()
+      ) : editing ? (
+        <textarea
+          data-board-text-editor
+          aria-label="白板文字编辑"
+          className="h-full w-full resize-none bg-transparent p-1 outline-none"
+          style={{
+            fontFamily: item.noteFont || undefined,
+            color: item.noteColor || 'var(--text-main)',
+            fontSize: item.noteFontSize || 16,
+            lineHeight: 1.35,
+            opacity: (item.opacity ?? 100) / 100
+          }}
+          placeholder="输入文字…"
+          defaultValue={item.text}
+          autoFocus
+          onFocus={(event) => {
+            const value = event.currentTarget.value
+            event.currentTarget.setSelectionRange(value.length, value.length)
+            const editor = event.currentTarget
+            requestAnimationFrame(() => {
+              const height = Math.max(item.height, editor.scrollHeight + 4)
+              if (editor.parentElement) editor.parentElement.style.height = `${height}px`
+            })
+          }}
+          onInput={(event) => {
+            const editor = event.currentTarget
+            const height = Math.max(item.height, editor.scrollHeight + 4)
+            if (editor.parentElement) editor.parentElement.style.height = `${height}px`
+          }}
+          onBlur={(event) => {
+            const value = event.currentTarget.value
+            const height = Math.max(item.height, event.currentTarget.scrollHeight + 4)
+            a.setEditingNoteId(null)
+            if (!value.trim()) {
+              a.pushHistory()
+              a.setSel([])
+              void window.api.deleteBoardItem(item.id).then(() => {
+                if (a.boardIdRef.current != null) return a.refreshBoardItems(a.boardIdRef.current)
+              })
+            } else if (value !== item.text || height !== item.height) {
+              a.pushHistory()
+              void window.api.updateBoardItem(item.id, { text: value, height }).then(() => {
+                if (a.boardIdRef.current != null) return a.refreshBoardItems(a.boardIdRef.current)
+              })
+            }
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' || ((event.ctrlKey || event.metaKey) && event.key === 'Enter')) {
+              event.preventDefault()
+              event.currentTarget.blur()
+            }
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+        />
+      ) : (
+        <div
+          data-board-text-display
+          className="h-full w-full whitespace-pre-wrap break-words p-1"
+          style={{
+            fontFamily: item.noteFont || undefined,
+            color: item.noteColor || 'var(--text-main)',
+            fontSize: item.noteFontSize || 16,
+            lineHeight: 1.35,
+            opacity: (item.opacity ?? 100) / 100
+          }}
+        >
+          {item.text}
+        </div>
+      )}
+      {/* 单选时的 8 向缩放手柄（照抄 MOTZ selection-handles） */}
+      {sel && !multiSelected && !editing && (
+        <div className="pointer-events-none absolute -inset-1">
+          {RESIZE_HANDLES.map((handle) => (
+            <span
+              key={handle}
+              data-resize-handle={handle}
+              className="pointer-events-auto absolute h-2.5 w-2.5 border border-[var(--accent)] bg-[var(--bg-base)]"
+              style={{
+                ...(handle.includes('n') ? { top: -4 } : handle.includes('s') ? { bottom: -4 } : { top: '50%', marginTop: -5 }),
+                ...(handle.includes('w') ? { left: -4 } : handle.includes('e') ? { right: -4 } : { left: '50%', marginLeft: -5 }),
+                cursor: `${handle === 'nw' || handle === 'se' ? 'nwse' : handle === 'ne' || handle === 'sw' ? 'nesw' : handle === 'n' || handle === 's' ? 'ns' : 'ew'}-resize`
+              }}
+              onPointerDown={(e) => {
+                if (a.spaceDownRef.current) return
+                e.stopPropagation()
+                e.preventDefault()
+                a.focusFrame(e.target)
+                a.onPointerDown(e, item, 'resize', handle)
+              }}
+              onPointerMove={a.onPointerMove}
+              onPointerUp={(e) => void a.onPointerUp(e)}
+              onPointerCancel={(e) => void a.onPointerUp(e)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+})
