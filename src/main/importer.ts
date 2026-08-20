@@ -14,6 +14,7 @@ import { getLibraryPath } from './library'
 import { stmt } from './stmtCache'
 import { logger } from './logger'
 import { parseExif } from './exif'
+import { computeNamePinyin } from './pinyin'
 import type { ImportResult } from '../shared/types'
 
 // Electron 主进程无 DOM canvas：注入纯 JS ImageData 工厂，
@@ -547,15 +548,17 @@ async function commitBatch(records: PreparedAsset[]): Promise<void> {
   const db = getDb()
   const insert = stmt(
     db,
-    `INSERT INTO assets (id, name, ext, rel_dir, size, width, height, colors, color_count, hash, star, comment, url, created_at, imported_at, exif)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?)`
+    `INSERT INTO assets (id, name, ext, rel_dir, size, width, height, colors, color_count, hash, star, comment, url, created_at, imported_at, exif, name_pinyin, name_pinyin_init)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?, ?, ?)`
   )
   const now = Date.now()
   const run = db.transaction((recs: PreparedAsset[]) => {
     for (const r of recs) {
+      const py = computeNamePinyin(r.name)
       insert.run(
         r.id, r.name, r.ext, r.relDir, r.size, r.width, r.height,
-        JSON.stringify(r.colors), r.colors ? r.colors.length : 0, r.hash, r.sourceUrl ?? '', r.mtimeMs, now, r.exif ?? ''
+        JSON.stringify(r.colors), r.colors ? r.colors.length : 0, r.hash, r.sourceUrl ?? '', r.mtimeMs, now, r.exif ?? '',
+        py.full, py.initial
       )
     }
   })

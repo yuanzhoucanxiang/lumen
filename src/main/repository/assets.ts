@@ -4,6 +4,7 @@ import { getDb } from '../db'
 import { getLibraryPath } from '../library'
 import { stmt } from '../stmtCache'
 import { assetKindOf, computeDHash } from '../importer'
+import { computeNamePinyin } from '../pinyin'
 import type { Asset, AssetQuery, DupeGroup } from '../../shared/types'
 
 interface AssetRow {
@@ -96,9 +97,18 @@ export function queryAssets(q: AssetQuery): Asset[] {
   else where.push('deleted_at IS NULL')
 
   if (q.keyword) {
-    where.push('(name LIKE ? OR comment LIKE ?)')
-    const kw = `%${q.keyword}%`
-    params.push(kw, kw)
+    // 拼音/模糊搜索(对标 Eagle):关键词含字母时,额外匹配全拼与首字母串
+    // (去空格/连字符再 LIKE,如「人物造型」首字母 rwzx 可命中;中文关键词不加拼音分支避免无效 LIKE)
+    if (/[a-z]/i.test(q.keyword)) {
+      where.push(`(name LIKE ? OR comment LIKE ? OR (name_pinyin != '' AND (name_pinyin LIKE ? OR name_pinyin_init LIKE ?)))`)
+      const kw = `%${q.keyword}%`
+      const py = `%${q.keyword.replace(/[^a-z0-9]+/gi, '')}%`
+      params.push(kw, kw, py, py)
+    } else {
+      where.push('(name LIKE ? OR comment LIKE ?)')
+      const kw = `%${q.keyword}%`
+      params.push(kw, kw)
+    }
   }
   if (q.exts && q.exts.length > 0) {
     where.push(`ext IN (${q.exts.map(() => '?').join(',')})`)
@@ -211,9 +221,17 @@ export function searchAssets(anyTagIds: number[], keywords: string[], limit = 50
   }
   for (const kw of keywords) {
     if (!kw.trim()) continue
-    where.push('(name LIKE ? OR comment LIKE ?)')
-    const like = `%${kw.trim()}%`
-    params.push(like, like)
+    // 拼音检索与 queryAssets 同口径:含字母的关键词额外匹配全拼/首字母
+    if (/[a-z]/i.test(kw)) {
+      where.push(`(name LIKE ? OR comment LIKE ? OR (name_pinyin != '' AND (name_pinyin LIKE ? OR name_pinyin_init LIKE ?)))`)
+      const like = `%${kw.trim()}%`
+      const py = `%${kw.trim().replace(/[^a-z0-9]+/gi, '')}%`
+      params.push(like, like, py, py)
+    } else {
+      where.push('(name LIKE ? OR comment LIKE ?)')
+      const like = `%${kw.trim()}%`
+      params.push(like, like)
+    }
   }
   if (where.length === 0) return []
 
@@ -272,8 +290,10 @@ export function updateAsset(
   const sets: string[] = []
   const params: unknown[] = []
   if (fields.name !== undefined) {
-    sets.push('name = ?')
-    params.push(fields.name)
+    // 改名同步重算拼音检索串(导入路径在 importer commitBatch 维护)
+    const py = computeNamePinyin(fields.name)
+    sets.push('name = ?', 'name_pinyin = ?', 'name_pinyin_init = ?')
+    params.push(fields.name, py.full, py.initial)
   }
   if (fields.star !== undefined) {
     sets.push('star = ?')

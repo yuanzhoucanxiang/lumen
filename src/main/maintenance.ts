@@ -13,6 +13,7 @@ import type Database from 'better-sqlite3'
 import { getDb } from './db'
 import { getLibraryPath } from './library'
 import { assetKindOf, computeDHash } from './importer'
+import { computeNamePinyin } from './pinyin'
 import { logger } from './logger'
 
 const ASSET_DIR_RE = /^[0-9a-f]{2}$/
@@ -90,6 +91,32 @@ export async function backfillMissingHashes(
   return done
 }
 
+/**
+ * 拼音检索串回填(里程碑 98,对标 Eagle):存量素材 name_pinyin='' 且名字含 CJK 时一次性计算。
+ * 新导入/改名路径由 importer/updateAsset 维护,这里只兜底旧库;纯 ASCII 名恒为 '' 跳过。
+ */
+export async function backfillMissingPinyin(
+  _libPath: string = getLibraryPath(),
+  db: Database.Database = getDb()
+): Promise<number> {
+  const rows = db
+    .prepare('SELECT id, name FROM assets WHERE name_pinyin = ?')
+    .all('') as { id: string; name: string }[]
+  if (rows.length === 0) return 0
+  const upd = db.prepare('UPDATE assets SET name_pinyin = ?, name_pinyin_init = ? WHERE id = ?')
+  let done = 0
+  for (const row of rows) {
+    const py = computeNamePinyin(row.name)
+    // full 为空 = 名字不含 CJK(或计算失败),保持 '' 不动;否则落库
+    if (py.full !== '') {
+      upd.run(py.full, py.initial, row.id)
+      done++
+    }
+  }
+  if (done > 0) logger.info('[maintenance]', `回填拼音检索串 ${done}/${rows.length}`)
+  return done
+}
+
 /** 启动维护入口(异步延迟执行,不阻塞启动) */
 export async function runStartupMaintenance(): Promise<void> {
   const t0 = Date.now()
@@ -103,6 +130,11 @@ export async function runStartupMaintenance(): Promise<void> {
     await backfillMissingHashes()
   } catch (e) {
     logger.warn('[maintenance]', `哈希回填异常: ${(e as Error).message}`)
+  }
+  try {
+    await backfillMissingPinyin()
+  } catch (e) {
+    logger.warn('[maintenance]', `拼音回填异常: ${(e as Error).message}`)
   }
   logger.info('[maintenance]', `启动维护完成 (${Date.now() - t0}ms)`)
 }

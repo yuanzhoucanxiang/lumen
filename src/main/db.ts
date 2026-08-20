@@ -194,7 +194,10 @@ function migrate(d: Database.Database): void {
     edited_ext: "TEXT NOT NULL DEFAULT ''",
     exif: 'TEXT NOT NULL DEFAULT \'\'',
     // colors 数量物化列(后端优化阶段 2b):筛选走列比较,避免逐行 json_array_length
-    color_count: 'INTEGER NOT NULL DEFAULT 0'
+    color_count: 'INTEGER NOT NULL DEFAULT 0',
+    // 拼音检索串(里程碑 98,对标 Eagle):导入/改名写入,存量由启动维护任务回填
+    name_pinyin: "TEXT NOT NULL DEFAULT ''",
+    name_pinyin_init: "TEXT NOT NULL DEFAULT ''"
   })
   ensureColumns(d, 'folders', {
     is_smart: 'INTEGER NOT NULL DEFAULT 0',
