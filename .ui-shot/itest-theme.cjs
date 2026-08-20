@@ -117,8 +117,14 @@ async function main() {
       })
     const rect = card.getBoundingClientRect()
     card.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: null, clientX: rect.left + 4, clientY: rect.top + 4 }))
-    await new Promise((resolve) => setTimeout(resolve, 560))
-    const preview = document.querySelector('[data-hover-preview]')
+    // 悬停延迟 420ms;dev 窗口在后台时 Electron 会把定时器节流到 >=1s,固定 sleep 会
+    // 等到不了——轮询最终状态(照 itest-board-workspace 的既有做法)
+    let preview = null
+    for (let i = 0; i < 25; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      preview = document.querySelector('[data-hover-preview]')
+      if (preview) break
+    }
     const p = preview?.getBoundingClientRect()
     const g = gallery.getBoundingClientRect()
     const within = !!p && p.left >= g.left && p.right <= g.right && p.top >= g.top && p.bottom <= g.bottom

@@ -66,14 +66,14 @@ export default function App() {
   /** 导入进度（阶段 A 逐文件 + 阶段 B 提交后一次），照抄 aiProgress 卡片模式 */
   const [importProgress, setImportProgress] = useState<{ phase: string; done: number; total: number } | null>(null)
 
-  // 立即下载更新（带反馈：失败 toast，下载中按钮禁用）
+  // 立即下载更新（失败反馈由主进程 error 状态推送 toast 承担,这里不重复提示）
   const startDownload = async () => {
     setDownloading(true)
     try {
       await window.api.downloadUpdate()
       // 下载完成后主进程会推送 downloaded 状态,这里不额外处理
     } catch {
-      useLibraryStore.getState().showToast('更新下载失败,请检查网络后重试')
+      /* 反馈走 onUpdateStatus 的 error toast,避免双 toast */
     } finally {
       setDownloading(false)
     }
