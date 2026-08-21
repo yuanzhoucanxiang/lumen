@@ -132,7 +132,7 @@ export default function BoardPanel() {
       <div className="archive-board-head flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--bg-panel)] px-3 text-[12px]">
         <select
           aria-label="切换白板"
-          className="field-input max-w-40 px-1.5 py-1 text-[12px]"
+          className="archive-board-select field-input max-w-40 px-1.5 py-1 text-[12px]"
           value={activeBoardId ?? ''}
           disabled={boards.length === 0}
           onChange={(e) => {
@@ -150,41 +150,43 @@ export default function BoardPanel() {
         <button
           aria-label="新建白板"
           title="新建白板"
-          className="flex h-6 w-6 items-center justify-center rounded-sm text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
+          className="archive-board-icon flex h-6 w-6 items-center justify-center rounded-sm text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
           onClick={() => void createBoard()}
         >
           <Icon name="plus" size={13} strokeWidth={2} />
         </button>
 
-        <div className="mx-1 h-4 w-px bg-[var(--border)]" />
-        <button
-          aria-label="导出白板文件"
-          title="导出 .lumenboard（跨设备交换参考白板）"
-          className="flex h-6 w-6 items-center justify-center rounded-sm text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
-          disabled={!hasBoard}
-          onClick={() => void exportBoard()}
-        >
-          <Icon name="save" size={13} />
-        </button>
-        <button
-          aria-label="导入白板文件"
-          title="导入 .lumenboard"
-          className="flex h-6 w-6 items-center justify-center rounded-sm text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
-          onClick={() => void importBoard()}
-        >
-          <Icon name="import" size={13} />
-        </button>
-        <button
-          aria-label="白板浮动置顶"
-          title="白板浮动置顶(参考作画时贴在旁边)"
-          className="flex h-6 w-6 items-center justify-center rounded-sm text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
-          disabled={!hasBoard}
-          onClick={() => void window.api.openFloatingBoard(activeBoardId!)}
-        >
-          <Icon name="pin" size={13} />
-        </button>
+        <div className="archive-board-divider mx-1 h-4 w-px bg-[var(--border)]" />
+        <div className="archive-board-file-tools flex items-center gap-1" data-channel="FILE I/O">
+          <button
+            aria-label="导出白板文件"
+            title="导出 .lumenboard（跨设备交换参考白板）"
+            className="archive-board-icon flex h-6 w-6 items-center justify-center rounded-sm text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
+            disabled={!hasBoard}
+            onClick={() => void exportBoard()}
+          >
+            <Icon name="save" size={13} />
+          </button>
+          <button
+            aria-label="导入白板文件"
+            title="导入 .lumenboard"
+            className="archive-board-icon flex h-6 w-6 items-center justify-center rounded-sm text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
+            onClick={() => void importBoard()}
+          >
+            <Icon name="import" size={13} />
+          </button>
+          <button
+            aria-label="白板浮动置顶"
+            title="白板浮动置顶(参考作画时贴在旁边)"
+            className="archive-board-icon flex h-6 w-6 items-center justify-center rounded-sm text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
+            disabled={!hasBoard}
+            onClick={() => void window.api.openFloatingBoard(activeBoardId!)}
+          >
+            <Icon name="pin" size={13} />
+          </button>
+        </div>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="archive-board-zoom ml-auto flex items-center gap-2" data-channel="SCALE">
           <span className="mono w-10 text-right text-[11px] text-[var(--text-faint)]">{Math.round(zoom * 100)}%</span>
           <input
             aria-label="白板缩放"
@@ -199,7 +201,7 @@ export default function BoardPanel() {
           <button
             aria-label={boardViewMode === 'board' ? '取消白板全屏' : '白板全屏'}
             title={boardViewMode === 'board' ? '取消白板全屏（分屏）' : '白板全屏'}
-            className={`flex h-6 w-6 items-center justify-center rounded-sm transition-colors duration-100 ${
+            className={`archive-board-mode flex h-6 w-6 items-center justify-center rounded-sm transition-colors duration-100 ${
               boardViewMode === 'board' ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]'
             }`}
             onClick={() => setBoardViewMode(boardViewMode === 'board' ? 'split' : 'board')}
@@ -220,37 +222,42 @@ export default function BoardPanel() {
 
       {/* 行 2：绘图工具 + 撤销/重做 + 视图/外观 */}
       <div className="archive-board-tools flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--border)] bg-[var(--bg-panel)] px-2 text-[12px]">
-        {TOOLS.map((t) => (
-          <button
+        <div className="archive-board-toolset flex shrink-0 items-center gap-1" data-channel="DRAW 00—06">
+          {TOOLS.map((t) => (
+            <button
             key={t.id}
             aria-label={`工具 ${t.label}`}
             title={t.title}
+            data-active={tool === t.id ? 'true' : 'false'}
             className={toolBtnCls(tool === t.id)}
-            onClick={() => setTool(t.id)}
+              onClick={() => setTool(t.id)}
+            >
+              <Icon name={t.icon} size={14} />
+            </button>
+          ))}
+        </div>
+        <div className="archive-board-divider mx-1 h-4 w-px shrink-0 bg-[var(--border)]" />
+        <div className="archive-board-history flex shrink-0 items-center gap-1" data-channel="HISTORY">
+          <button
+            aria-label="撤销"
+            title="撤销（Ctrl+Z）"
+            className={`${toolBtnCls(false)} disabled:opacity-40 disabled:hover:bg-transparent`}
+            disabled={!hist.undo}
+            onClick={() => void canvasApiRef.current?.undo()}
           >
-            <Icon name={t.icon} size={14} />
+            <Icon name="undo" size={13} />
           </button>
-        ))}
-        <div className="mx-1 h-4 w-px shrink-0 bg-[var(--border)]" />
-        <button
-          aria-label="撤销"
-          title="撤销（Ctrl+Z）"
-          className={`${toolBtnCls(false)} disabled:opacity-40 disabled:hover:bg-transparent`}
-          disabled={!hist.undo}
-          onClick={() => void canvasApiRef.current?.undo()}
-        >
-          <Icon name="undo" size={13} />
-        </button>
-        <button
-          aria-label="重做"
-          title="重做（Ctrl+Shift+Z / Ctrl+Y）"
-          className={`${toolBtnCls(false)} disabled:opacity-40 disabled:hover:bg-transparent`}
-          disabled={!hist.redo}
-          onClick={() => void canvasApiRef.current?.redo()}
-        >
-          <Icon name="redo" size={13} />
-        </button>
-        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <button
+            aria-label="重做"
+            title="重做（Ctrl+Shift+Z / Ctrl+Y）"
+            className={`${toolBtnCls(false)} disabled:opacity-40 disabled:hover:bg-transparent`}
+            disabled={!hist.redo}
+            onClick={() => void canvasApiRef.current?.redo()}
+          >
+            <Icon name="redo" size={13} />
+          </button>
+        </div>
+        <div className="archive-board-viewset ml-auto flex shrink-0 items-center gap-1" data-channel="VIEW">
           <button
             aria-label="适配全部内容"
             title="适配全部内容（F / 双击空白）"
@@ -263,6 +270,7 @@ export default function BoardPanel() {
             aria-label="画布外观"
             aria-expanded={appearanceOpen}
             aria-controls="board-appearance-drawer"
+            data-active={appearanceOpen ? 'true' : 'false'}
             title="画布外观（背景色/网格）"
             className={toolBtnCls(appearanceOpen)}
             onClick={() => setAppearanceOpen((v) => !v)}

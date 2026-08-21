@@ -32,26 +32,46 @@ export default function ArchiveHeader() {
     return `${prefix}-${String(id).padStart(3, '0')}`
   }, [view])
 
+  const mediaTypeCount = useMemo(() => new Set(assets.map((asset) => asset.ext.toLowerCase())).size, [assets])
+  const accessState = view.type === 'trash' ? 'RESTRICTED' : 'READ / WRITE'
+
   return (
     <header className="archive-masthead">
       <div className="archive-masthead__identity">
         <div className="archive-masthead__eyebrow">
-          <span>{pixel ? 'ASSET MATRIX' : 'CONTACT SHEET'}</span>
+          <span>{pixel ? 'MASTER INDEX' : 'CONTACT SHEET'}</span>
           <span aria-hidden="true">/</span>
           <span>{archiveCode}</span>
         </div>
         <div className="archive-masthead__title-row">
           <h2>{title}</h2>
-          <span className="archive-masthead__count tnum">{String(assets.length).padStart(3, '0')} {pixel ? 'NODES' : 'FRAMES'}</span>
+          <span className="archive-masthead__count tnum">{String(assets.length).padStart(3, '0')} {pixel ? 'RECORDS' : 'FRAMES'}</span>
         </div>
       </div>
 
+      {pixel && (
+        <div className="archive-masthead__telemetry" aria-hidden="true">
+          <span>
+            <small>CHANNEL</small>
+            <b>{archiveCode}</b>
+          </span>
+          <span>
+            <small>MEDIA</small>
+            <b>{String(mediaTypeCount).padStart(2, '0')} TYPES</b>
+          </span>
+          <span>
+            <small>ACCESS</small>
+            <b>{accessState}</b>
+          </span>
+        </div>
+      )}
+
       <div className="archive-masthead__readout" aria-label="当前档案状态">
         <span className="archive-selection-readout mono tnum">{pixel ? 'SEL' : '已选'} {String(selection.length).padStart(2, '0')}</span>
-        <div className={`archive-safe-light ${loading ? 'is-working' : ''}`} title={loading ? (pixel ? '正在同步素材' : '正在显影素材') : (pixel ? '终端已就绪' : '档案已就绪')}>
+        <div className={`archive-safe-light ${loading ? 'is-working' : ''}`} title={loading ? (pixel ? '正在编制索引' : '正在显影素材') : (pixel ? '索引已就绪' : '档案已就绪')}>
           <span className="archive-safe-light__lamp" aria-hidden="true" />
           <span>
-            {loading ? (pixel ? 'SYNCING' : 'PROCESSING') : (pixel ? 'ONLINE' : 'READY')}
+            {loading ? (pixel ? 'INDEXING' : 'PROCESSING') : 'READY'}
           </span>
           <Icon name={loading ? 'rotate' : 'check'} size={12} className={loading ? 'animate-spin' : ''} />
         </div>

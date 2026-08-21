@@ -24,8 +24,8 @@ export const THEMES: readonly ThemeDefinition[] = [
   {
     id: 'pixel-glitch',
     name: '像素故障',
-    code: 'PX–02',
-    description: '信号终端、像素切角与离散故障反馈；更锐利、更数字化，但不污染素材。'
+    code: 'PX–03.1',
+    description: '复古科幻终端美学与伪档案系统；继承原布局，以索引层级、点阵反馈和克制状态色建立身份。'
   }
 ] as const
 
@@ -52,7 +52,7 @@ function commitTheme(theme: ThemeId): void {
   document.documentElement.style.colorScheme = 'dark'
   document.querySelector('meta[name="theme-color"]')?.setAttribute(
     'content',
-    theme === 'silver-gelatin' ? '#090907' : '#070a0f'
+    theme === 'silver-gelatin' ? '#090907' : '#060807'
   )
   try {
     localStorage.setItem(THEME_STORAGE_KEY, theme)

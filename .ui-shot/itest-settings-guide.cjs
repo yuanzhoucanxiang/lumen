@@ -175,7 +175,13 @@ async function main() {
       const title = document.querySelector('.guide-article__header h3')
       return { clip: getComputedStyle(nav).clipPath, titleFont: getComputedStyle(title).fontFamily }
     })()`)
-    check(`${theme} 教程跟随主题`, theme === 'pixel-glitch' ? themed.clip !== 'none' : themed.clip === 'none', JSON.stringify(themed))
+    check(
+      `${theme} 教程跟随主题`,
+      theme === 'pixel-glitch'
+        ? themed.clip === 'none' && themed.titleFont.includes('Arial Narrow')
+        : themed.clip === 'none' && themed.titleFont.includes('Iowan Old Style'),
+      JSON.stringify(themed)
+    )
 
     await run(`document.querySelector('button[aria-label="关闭设置与帮助"]').click()`)
     await sleep(80)

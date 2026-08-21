@@ -204,7 +204,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           /* 可滚动内容区（高度超出时内部滚动，标题与底部按钮固定） */
           <div className="settings-preferences modal-scroll min-h-0 flex-1 space-y-5 overflow-y-auto">
         {/* 主题 */}
-        <section className="theme-settings" aria-labelledby="theme-settings-title">
+        <section className="settings-module theme-settings" data-code="00 / INTERFACE" aria-labelledby="theme-settings-title">
           <div className="mb-2 flex items-end justify-between gap-4">
             <div>
               <div id="theme-settings-title" className="section-title">主题</div>
@@ -248,7 +248,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         </section>
 
         {/* 导入模式 */}
-        <div>
+        <div className="settings-module" data-code="01 / INGEST">
           <div className="section-title mb-2">导入方式</div>
           <div className="flex gap-2" role="radiogroup" aria-label="导入方式">
             <button
@@ -281,7 +281,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* 监控文件夹 */}
-        <div>
+        <div className="settings-module" data-code="02 / WATCH">
           <div className="mb-2 flex items-center justify-between">
             <div className="section-title">监控文件夹（自动导入）</div>
             <button
@@ -320,7 +320,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* 备份 */}
-        <div className="border-t border-[var(--border)] pt-4">
+        <div className="settings-module border-t border-[var(--border)] pt-4" data-code="03 / ARCHIVE">
           <div className="section-title mb-2">备份</div>
           <div className="mb-2 text-[11px] text-[var(--text-dim)]">
             启动时已自动备份数据库；也可手动备份数据库或导出完整库（含原图）为 ZIP。
@@ -353,7 +353,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* AI 智能处理 */}
-        <div className="border-t border-[var(--border)] pt-4">
+        <div className="settings-module border-t border-[var(--border)] pt-4" data-code="04 / MODEL">
           <div className="section-title mb-2">AI 智能处理</div>
           <div className="mb-2 text-[11px] text-[var(--text-dim)]">
             配置后可批量为素材自动生成文件名和标签（OpenAI 兼容格式，支持智谱 GLM-4V / 通义 / Ollama 等）。
@@ -409,7 +409,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* 快捷键 */}
-        <div className="border-t border-[var(--border)] pt-4">
+        <div className="settings-module border-t border-[var(--border)] pt-4" data-code="05 / INPUT">
           <div className="section-title mb-2">快捷键</div>
           <div className="space-y-1.5">
             {SHORTCUT_DEFS.map((d) => (
@@ -422,7 +422,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* 关于 / 更新 */}
-        <div className="flex items-center justify-between border-t border-[var(--border)] pt-4">
+        <div className="settings-module flex items-center justify-between border-t border-[var(--border)] pt-4" data-code="06 / SYSTEM">
           <div>
             <div className="section-title mb-1">关于</div>
             <div className="mono text-[12px] text-[var(--text-dim)]">

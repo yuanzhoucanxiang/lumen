@@ -71,11 +71,11 @@ export default function BoardReferencePanel() {
           <span className="board-rail__opener" aria-hidden="true">
             <Icon name="chevronRight" size={12} />
           </span>
-          <span className="board-rail__code mono" aria-hidden="true">{pixel ? 'R-02' : '02'}</span>
-          <span className="board-rail__label mono" aria-hidden="true">{pixel ? 'REF NODE' : 'CONTACT SHEET'}</span>
+          <span className="board-rail__code mono" aria-hidden="true">{pixel ? 'R-03' : '02'}</span>
+          <span className="board-rail__label mono" aria-hidden="true">{pixel ? 'REF INDEX' : 'CONTACT SHEET'}</span>
           <span className="board-rail__signal" aria-hidden="true" />
           <span className="board-rail__count mono" aria-hidden="true">{String(assets.length).padStart(pixel ? 4 : 3, '0')}</span>
-          <small className="board-rail__foot mono" aria-hidden="true">{pixel ? 'LINK' : 'FRAMES'}</small>
+          <small className="board-rail__foot mono" aria-hidden="true">{pixel ? 'ARCHIVE' : 'FRAMES'}</small>
           <span className="sr-only">参考素材</span>
         </button>
       </aside>

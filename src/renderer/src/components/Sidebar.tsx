@@ -568,8 +568,8 @@ export default function Sidebar() {
           <span className="board-rail__opener" aria-hidden="true">
             <Icon name="chevronRight" size={12} />
           </span>
-          <span className="board-rail__code mono" aria-hidden="true">{pixel ? 'L-01' : '01'}</span>
-          <span className="board-rail__label mono" aria-hidden="true">{pixel ? 'LIB NODE' : 'ARCHIVE INDEX'}</span>
+          <span className="board-rail__code mono" aria-hidden="true">{pixel ? 'L-03' : '01'}</span>
+          <span className="board-rail__label mono" aria-hidden="true">{pixel ? 'LIB INDEX' : 'ARCHIVE INDEX'}</span>
           <span className="board-rail__signal" aria-hidden="true" />
           <small className="board-rail__foot mono" aria-hidden="true">{pixel ? 'SOURCE' : 'LIBRARY'}</small>
           <span className="sr-only">素材库列表</span>
@@ -588,16 +588,16 @@ export default function Sidebar() {
       {/* 品牌区 */}
       <header className="archive-brand">
         <div className="archive-brand__negative">
-          <span className="archive-brand__frame-no mono">{pixel ? 'PX' : '36'}</span>
+          <span className="archive-brand__frame-no mono">{pixel ? '03' : '36'}</span>
           <img className="brand-mark" src={ravenMarkUrl} alt="" draggable={false} />
         </div>
         <div className="archive-brand__copy">
           <span className="archive-brand__edition mono">
-            {boardViewMode === 'board' ? (pixel ? 'NODE CANVAS / 02' : 'LIGHT TABLE / 01') : pixel ? 'SIGNAL / 02' : 'ARCHIVE / 01'}
+            {boardViewMode === 'board' ? (pixel ? 'ARCHIVE CANVAS / 03' : 'LIGHT TABLE / 01') : pixel ? 'INDEX / 03' : 'ARCHIVE / 01'}
           </span>
           <h1 className="brand-wordmark">{boardViewMode === 'board' ? 'BOARD' : 'LUMEN'}</h1>
           <span className="archive-brand__subtitle mono">
-            {boardViewMode === 'board' ? (pixel ? 'REFERENCE NODE WORKSPACE' : 'REFERENCE ASSEMBLY DESK') : pixel ? 'VISUAL MEMORY TERMINAL' : 'RAVEN PHOTOGRAPHIC INDEX'}
+            {boardViewMode === 'board' ? (pixel ? 'REFERENCE INDEX WORKSPACE' : 'REFERENCE ASSEMBLY DESK') : pixel ? 'LOCAL VISUAL INDEX' : 'RAVEN PHOTOGRAPHIC INDEX'}
           </span>
         </div>
         {boardViewMode === 'board' && (
@@ -1141,7 +1141,7 @@ export default function Sidebar() {
       {/* 状态行 */}
       <div className="mono flex items-center gap-1.5 border-t border-[var(--border)] px-3.5 pt-2 text-[11px] uppercase tracking-[0.16em] text-[var(--text-faint)]">
         <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
-        {pixel ? 'LOCAL NODE · ONLINE' : 'LOCAL ARCHIVE · READY'}
+        {pixel ? 'LOCAL INDEX · READY' : 'LOCAL ARCHIVE · READY'}
       </div>
 
       {/* 库切换器 + 设置 */}

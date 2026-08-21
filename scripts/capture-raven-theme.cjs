@@ -93,11 +93,19 @@ async function main() {
   await clickByLabel('打开设置')
   await sleep(450)
   await shot('theme-dialog.png')
-  await clickByLabel('关闭设置')
+  await clickByLabel('关闭设置与帮助')
   await sleep(250)
 
-  await clickByText('白板')
+  await evaluate(`(() => {
+    const button = [...document.querySelectorAll('nav[aria-label="素材库导航"] button[aria-label]')]
+      .find((node) => node.getAttribute('aria-label')?.startsWith('白板'))
+    if (!button) throw new Error('Whiteboard navigation button not found')
+    button.click()
+    return true
+  })()`)
   await sleep(900)
+  const boardReady = await evaluate(`!!document.querySelector('select[aria-label="切换白板"]')`)
+  if (!boardReady.result.value) throw new Error('Whiteboard did not enter dedicated workspace')
   await shot('theme-board.png')
 
   await clickByText('全部素材')

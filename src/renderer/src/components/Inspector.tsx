@@ -106,8 +106,8 @@ export default function Inspector() {
     >
       <header className="archive-inspector__header">
         <div>
-          <span className="mono">{pixel ? 'TRACE PANEL' : 'INSPECTION RECORD'}</span>
-          <strong>{asset ? (pixel ? '素材解析' : '素材检视记录') : (pixel ? '等待信号' : '等待选片')}</strong>
+          <span className="mono">{pixel ? 'INDEX LOG' : 'INSPECTION RECORD'}</span>
+          <strong>{asset ? (pixel ? '素材记录' : '素材检视记录') : (pixel ? '等待索引' : '等待选片')}</strong>
         </div>
         <span className="archive-inspector__folio mono">{asset ? String(asset.id).slice(-4).padStart(4, '0') : '----'}</span>
       </header>
@@ -205,6 +205,23 @@ export default function Inspector() {
               <Icon name="file" size={34} strokeWidth={1.3} className="text-[var(--text-faint)]" />
             )}
           </div>
+
+          {pixel && (
+            <div className="archive-inspector__registry" aria-label="素材记录摘要">
+              <span>
+                <small>TYPE</small>
+                <b>{asset.ext.toUpperCase()}</b>
+              </span>
+              <span>
+                <small>FRAME</small>
+                <b>{asset.width > 0 ? `${asset.width}×${asset.height}` : 'N/A'}</b>
+              </span>
+              <span>
+                <small>SIZE</small>
+                <b>{fmtSize(asset.size)}</b>
+              </span>
+            </div>
+          )}
 
           {/* 名称 */}
           <label htmlFor="asset-name" className="sr-only">

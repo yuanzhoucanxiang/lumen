@@ -1,0 +1,29 @@
+<svg width="320" height="320" viewBox="0 0 320 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="dot-grid" width="8" height="8" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.35" fill="#E5E6E1" fill-opacity="0.34"/>
+    </pattern>
+    <radialGradient id="orb-fade" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(151 142) rotate(48) scale(188)">
+      <stop stop-color="#E5E6E1" stop-opacity="0.14"/>
+      <stop offset="0.7" stop-color="#E5E6E1" stop-opacity="0.04"/>
+      <stop offset="1" stop-color="#E5E6E1" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="orb-clip">
+      <circle cx="160" cy="160" r="134"/>
+    </clipPath>
+  </defs>
+
+  <circle cx="160" cy="160" r="134" fill="url(#orb-fade)" stroke="#E5E6E1" stroke-opacity="0.22"/>
+  <g clip-path="url(#orb-clip)">
+    <rect x="24" y="24" width="272" height="272" fill="url(#dot-grid)"/>
+    <path d="M26 160H294M160 26V294" stroke="#E5E6E1" stroke-opacity="0.16"/>
+    <circle cx="160" cy="160" r="82" stroke="#E5E6E1" stroke-opacity="0.16"/>
+    <circle cx="160" cy="160" r="38" stroke="#E5E6E1" stroke-opacity="0.22"/>
+  </g>
+
+  <path d="M160 12V34M160 286V308M12 160H34M286 160H308" stroke="#E5E6E1" stroke-opacity="0.46"/>
+  <path d="M160 22V31M160 289V298M22 160H31M289 160H298" stroke="#3F5FC8" stroke-width="3"/>
+  <rect x="156" y="156" width="8" height="8" fill="#E5E6E1"/>
+  <rect x="159" y="159" width="2" height="2" fill="#060807"/>
+  <rect x="264" y="248" width="7" height="7" fill="#D45158"/>
+</svg>

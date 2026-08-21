@@ -46,6 +46,14 @@ async function main() {
       params: { expression, awaitPromise: true, returnByValue: true }
     }))
   })
+  const sendCommand = (method, params = {}) => new Promise((resolve, reject) => {
+    const id = ++nextId
+    pending.set(id, (message) => {
+      if (message.error) reject(new Error(JSON.stringify(message.error)))
+      else resolve(message.result)
+    })
+    ws.send(JSON.stringify({ id, method, params }))
+  })
 
   let pass = 0
   let fail = 0
@@ -77,7 +85,23 @@ async function main() {
       sidebarNoX: !!index && index.scrollWidth <= index.clientWidth,
       masthead: document.querySelector('.archive-masthead')?.clientHeight,
       sidebar: document.querySelector('.archive-sidebar')?.clientWidth,
-      inspector: document.querySelector('.archive-inspector')?.clientWidth
+      inspector: document.querySelector('.archive-inspector')?.clientWidth,
+      brandText: document.querySelector('.archive-sidebar')?.textContent,
+      mastheadText: document.querySelector('.archive-masthead')?.textContent,
+      inspectorText: document.querySelector('.archive-inspector')?.textContent,
+      cardRadius: getComputedStyle(document.querySelector('.asset-card')).borderRadius,
+      bodyFont: getComputedStyle(document.body).fontFamily,
+      statusbar: (() => {
+        const node = document.querySelector('.pixel-statusbar')
+        const rect = node?.getBoundingClientRect()
+        return node && rect ? {
+          height: rect.height,
+          bottom: rect.bottom,
+          text: node.textContent,
+          visible: rect.top >= 0 && rect.bottom <= innerHeight + 0.5
+        } : null
+      })(),
+      assetImageFilter: getComputedStyle(document.querySelector('.asset-card img')).filter
     }
   })()`)
 
@@ -102,7 +126,31 @@ async function main() {
   const pixelLayout = await probeLayout()
   check('像素主题工具栏完整', pixelLayout.toolbarFits && pixelLayout.filtersFit && pixelLayout.fixedVisible, JSON.stringify(pixelLayout))
   check('像素主题滚动链正常', pixelLayout.galleryScrolls && pixelLayout.sidebarNoX, JSON.stringify(pixelLayout))
-  check('像素主题比例生效', pixelLayout.masthead >= 47 && pixelLayout.masthead <= 48 && pixelLayout.sidebar >= 215 && pixelLayout.sidebar <= 216 && pixelLayout.inspector >= 239 && pixelLayout.inspector <= 240, JSON.stringify(pixelLayout))
+  check('像素主题 PX–03.1 比例生效', pixelLayout.masthead >= 49 && pixelLayout.masthead <= 50 && pixelLayout.sidebar >= 199 && pixelLayout.sidebar <= 212 && pixelLayout.inspector >= 219 && pixelLayout.inspector <= 236, JSON.stringify(pixelLayout))
+  check('PX–03.1 继承原布局且不新增底部任务栏', pixelLayout.statusbar === null, JSON.stringify(pixelLayout.statusbar))
+  check('像素主题不污染素材原图', pixelLayout.assetImageFilter === 'none', pixelLayout.assetImageFilter)
+  check('PX–03.1 使用独立索引语义', pixelLayout.brandText.includes('INDEX / 03') && pixelLayout.mastheadText.includes('MASTER INDEX') && pixelLayout.inspectorText.includes('INDEX LOG'), JSON.stringify({ brand: pixelLayout.brandText.slice(0, 80), masthead: pixelLayout.mastheadText, inspector: pixelLayout.inspectorText.slice(0, 60) }))
+  check('PX–03.1 使用直角终端轮廓与独立字体', pixelLayout.cardRadius === '0px' && pixelLayout.bodyFont.includes('Cascadia Mono'), JSON.stringify({ radius: pixelLayout.cardRadius, font: pixelLayout.bodyFont }))
+
+  await sendCommand('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false })
+  await sleep(250)
+  const compactLayout = await evalJs(`(() => {
+    const bar = document.querySelector('.archive-filterbar')
+    const scroller = document.querySelector('.archive-filterbar__scroller')
+    const fixed = document.querySelector('.archive-filterbar__fixed')
+    const telemetry = document.querySelector('.archive-masthead__telemetry')
+    const right = (element) => element?.getBoundingClientRect().right ?? 0
+    return {
+      width: innerWidth,
+      telemetry: telemetry ? getComputedStyle(telemetry).display : null,
+      toolbarFits: !!bar && bar.scrollWidth <= bar.clientWidth,
+      filtersFit: !!scroller && scroller.scrollWidth <= scroller.clientWidth,
+      fixedVisible: !!fixed && !!bar && right(fixed) <= right(bar) + 0.5
+    }
+  })()`)
+  check('PX–03.1 中等宽度收起遥测且工具完整', compactLayout.width === 1366 && compactLayout.telemetry === 'none' && compactLayout.toolbarFits && compactLayout.filtersFit && compactLayout.fixedVisible, JSON.stringify(compactLayout))
+  await sendCommand('Emulation.clearDeviceMetricsOverride')
+  await sleep(250)
 
   const hover = await evalJs(`(async () => {
     const gallery = document.querySelector('.contact-sheet')
@@ -138,6 +186,9 @@ async function main() {
   check('银盐主题工具栏完整', silverLayout.toolbarFits && silverLayout.filtersFit && silverLayout.fixedVisible, JSON.stringify(silverLayout))
   check('银盐主题滚动链正常', silverLayout.galleryScrolls && silverLayout.sidebarNoX, JSON.stringify(silverLayout))
   check('银盐主题标准比例生效', silverLayout.masthead >= 53 && silverLayout.masthead <= 54 && silverLayout.sidebar >= 219 && silverLayout.sidebar <= 220 && silverLayout.inspector >= 251 && silverLayout.inspector <= 252, JSON.stringify(silverLayout))
+  check('银盐主题保持原布局且无附加任务栏', silverLayout.statusbar === null, JSON.stringify(silverLayout.statusbar))
+  check('银盐主题保持暗房档案语义', !silverLayout.brandText.includes('INDEX / 03') && !silverLayout.mastheadText.includes('MASTER INDEX') && !silverLayout.inspectorText.includes('INDEX LOG'), JSON.stringify({ brand: silverLayout.brandText.slice(0, 80), masthead: silverLayout.mastheadText, inspector: silverLayout.inspectorText.slice(0, 60) }))
+  check('两主题轮廓和字体不是换色复用', silverLayout.cardRadius !== pixelLayout.cardRadius && silverLayout.bodyFont !== pixelLayout.bodyFont, JSON.stringify({ silverRadius: silverLayout.cardRadius, pixelRadius: pixelLayout.cardRadius, silverFont: silverLayout.bodyFont, pixelFont: pixelLayout.bodyFont }))
 
   console.log(`\n${pass} PASS / ${fail} FAIL`)
   ws.close()

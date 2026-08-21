@@ -4,6 +4,7 @@ import App from './App'
 import FloatingBoard from './components/FloatingBoard'
 import { initializeTheme } from './theme'
 import './index.css'
+import './pixel-theme.css'
 
 // 在 React 首次绘制前应用持久化主题，避免启动时先闪过错误主题。
 initializeTheme()

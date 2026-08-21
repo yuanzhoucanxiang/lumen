@@ -2003,7 +2003,7 @@ export default function BoardCanvas({
       ref={frameRef}
       data-board-frame
       tabIndex={-1}
-      className="relative min-h-0 flex-1 overflow-hidden outline-none"
+      className="archive-board-frame relative min-h-0 flex-1 overflow-hidden outline-none"
       style={{
         backgroundColor: bgColor,
         cursor: panning ? 'grabbing' : spaceDown ? 'grab' : marquee ? 'crosshair' : tool !== 'select' ? 'crosshair' : 'default'
@@ -2020,7 +2020,7 @@ export default function BoardCanvas({
       {showTextStyleBar && (
         <div
           data-board-text-stylebar
-          className="absolute left-1/2 top-3 z-[220] flex -translate-x-1/2 items-center gap-2 rounded-sm border border-[var(--border-strong)] bg-[var(--bg-panel)]/95 px-2 py-1.5 shadow-lg backdrop-blur"
+          className="archive-board-text-stylebar absolute left-1/2 top-3 z-[220] flex -translate-x-1/2 items-center gap-2 rounded-sm border border-[var(--border-strong)] bg-[var(--bg-panel)]/95 px-2 py-1.5 shadow-lg backdrop-blur"
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
         >
@@ -2070,7 +2070,7 @@ export default function BoardCanvas({
         <div
           ref={gridRef}
           data-grid
-          className="pointer-events-none absolute inset-0"
+          className="archive-board-grid pointer-events-none absolute inset-0"
           style={{
             backgroundImage: `radial-gradient(circle, ${gridDotColor} 1px, transparent 1px)`,
             backgroundSize: `${appearance.gridSize}px ${appearance.gridSize}px`,
@@ -2255,8 +2255,8 @@ export default function BoardCanvas({
       {/* 空态必须留在屏幕坐标层，不能跟随持久化的画布 viewport 偏移。 */}
       {boardItems.length === 0 && (
         <div className="archive-board-empty pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
-          <span className="archive-board-empty__eyebrow mono">{pixel ? 'NODE CANVAS / EMPTY' : 'LIGHT TABLE / EMPTY'}</span>
-          <strong>{pixel ? '把素材接入视觉节点' : '把参考素材送上看片台'}</strong>
+          <span className="archive-board-empty__eyebrow mono">{pixel ? 'ARCHIVE CANVAS / EMPTY' : 'LIGHT TABLE / EMPTY'}</span>
+          <strong>{pixel ? '把素材编入视觉档案' : '把参考素材送上看片台'}</strong>
           <p>从左侧素材卡片发送或拖拽素材到这里，也可以右键添加文字并使用上方工具标注。</p>
           <small className="mono">F 适配 · 0 复位 · ± 缩放 · 方向键微调 · CTRL+D 复制</small>
         </div>
