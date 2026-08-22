@@ -66,7 +66,7 @@ async function main() {
   const folders = await run(`return await window.api.listFolders()`)
   const sourceFolder = folders.find((folder) => !folder.isSmart && folder.count > 0) ?? null
 
-  for (const theme of ['silver-gelatin', 'pixel-glitch']) {
+  for (const theme of ['silver-gelatin', 'pixel-glitch', 'cyber-glitch']) {
     console.log(`\n[${theme}]`)
     await run(`
       localStorage.setItem('lumen.theme', '${theme}')

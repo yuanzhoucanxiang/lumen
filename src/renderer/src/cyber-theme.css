@@ -1,0 +1,342 @@
+/* ========================================================================== */
+/* SIGNAL GLITCH PX–02R — restored cyber signal terminal                     */
+/* The historical PX–02 vocabulary is retained, then recalibrated here.      */
+/* Cyan = active channel, magenta = verification/error, content stays clean. */
+/* ========================================================================== */
+
+:root[data-theme='cyber-glitch'] {
+  --bg-base: #060a0f;
+  --bg-panel: #09121a;
+  --bg-raised: #0d1923;
+  --bg-hover: #122633;
+  --bg-active: #173746;
+  --paper: #d9fbff;
+  --paper-dim: #9fc4c9;
+  --film-edge: #142733;
+  --border: rgba(112, 221, 235, 0.13);
+  --border-strong: rgba(112, 229, 244, 0.34);
+  --accent: #63e7f4;
+  --accent-hover: #a1f7ff;
+  --accent-deep: #1f7a8c;
+  --accent-soft: rgba(99, 231, 244, 0.11);
+  --accent-text: #86f0fa;
+  --on-accent: #021014;
+  --text-main: #d4e9eb;
+  --text-dim: #89a5aa;
+  --text-faint: #506970;
+  --danger: #f15b9c;
+  --danger-soft: rgba(241, 91, 156, 0.11);
+  --ring: rgba(99, 231, 244, 0.72);
+}
+
+.theme-choice-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+[data-theme='cyber-glitch'] body::before {
+  opacity: 0.46;
+  background:
+    repeating-linear-gradient(180deg, transparent 0 3px, rgba(117, 226, 240, 0.018) 3px 4px),
+    radial-gradient(880px 310px at 48% -8%, rgba(34, 151, 170, 0.13), transparent 70%);
+  background-size: auto, auto;
+}
+
+[data-theme='cyber-glitch'] .archive-shell {
+  background:
+    radial-gradient(900px 420px at 57% 0, rgba(30, 126, 146, 0.055), transparent 74%),
+    var(--bg-base);
+}
+
+/* The cyber theme uses a signal bus, not PX–03.1's institutional ledger. */
+[data-theme='cyber-glitch'] .archive-masthead {
+  grid-template-columns: minmax(280px, 1fr) minmax(430px, 0.95fr) auto;
+  min-height: 52px;
+  background:
+    linear-gradient(90deg, rgba(99, 231, 244, 0.055), transparent 38%),
+    #08111a;
+}
+
+[data-theme='cyber-glitch'] .archive-masthead::before {
+  height: 2px;
+  background: linear-gradient(90deg, #63e7f4 0 72px, transparent 72px 82px, #f15b9c 82px 105px, transparent 105px);
+}
+
+[data-theme='cyber-glitch'] .archive-masthead__telemetry {
+  display: grid;
+  align-self: stretch;
+  grid-template-columns: repeat(3, minmax(112px, 1fr));
+  border-left: 1px solid rgba(99, 231, 244, 0.14);
+  border-right: 1px solid rgba(99, 231, 244, 0.14);
+  background: repeating-linear-gradient(90deg, transparent 0 23px, rgba(99, 231, 244, 0.025) 23px 24px);
+}
+
+[data-theme='cyber-glitch'] .archive-masthead__telemetry > span {
+  position: relative;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 5px 13px 4px;
+  border-right: 1px solid rgba(99, 231, 244, 0.12);
+}
+
+[data-theme='cyber-glitch'] .archive-masthead__telemetry > span::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  bottom: 7px;
+  left: 12px;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(99, 231, 244, 0.62) 0 34%, transparent 34% 72%, rgba(241, 91, 156, 0.7) 72% 82%, transparent 82%);
+}
+
+[data-theme='cyber-glitch'] .archive-masthead__telemetry small {
+  color: rgba(134, 240, 250, 0.5);
+  font: 7px/1 var(--font-data);
+  letter-spacing: 0.2em;
+}
+
+[data-theme='cyber-glitch'] .archive-masthead__telemetry b {
+  overflow: hidden;
+  color: #c5eef1;
+  font: 600 9px/1 var(--font-data);
+  letter-spacing: 0.1em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-theme='cyber-glitch'] .archive-safe-light__lamp {
+  box-shadow: 0 0 9px rgba(99, 231, 244, 0.48), 4px 0 0 rgba(241, 91, 156, 0.2);
+}
+
+[data-theme='cyber-glitch'] .archive-safe-light.is-working .archive-safe-light__lamp {
+  animation: cyber-channel-pulse 720ms steps(2, end) infinite;
+}
+
+/* Grid appears only in workspace chambers and at a lower density. */
+[data-theme='cyber-glitch'] .contact-sheet {
+  background-color: #060a0f;
+  background-image:
+    linear-gradient(rgba(99, 231, 244, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 231, 244, 0.018) 1px, transparent 1px),
+    radial-gradient(720px 330px at 54% 0, rgba(24, 118, 138, 0.095), transparent 72%);
+  background-size: 32px 32px, 32px 32px, auto;
+}
+
+[data-theme='cyber-glitch'] .asset-card {
+  clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px));
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.3);
+}
+
+[data-theme='cyber-glitch'] .asset-card:hover {
+  box-shadow: 4px 4px 0 rgba(24, 107, 125, 0.22), -1px -1px rgba(241, 91, 156, 0.24);
+}
+
+[data-theme='cyber-glitch'] .asset-media img,
+[data-theme='cyber-glitch'] .asset-card:hover .asset-media img,
+[data-theme='cyber-glitch'] .inspection-print img,
+[data-theme='cyber-glitch'] [data-board-reference-asset] img,
+[data-theme='cyber-glitch'] [data-board-item] img {
+  filter: none !important;
+}
+
+/* Real metadata is presented as a compact signal register. */
+[data-theme='cyber-glitch'] .archive-inspector__registry {
+  display: grid;
+  grid-template-columns: 0.8fr 1.35fr 1fr;
+  margin: -8px 0 15px;
+  border: 1px solid rgba(99, 231, 244, 0.18);
+  background:
+    linear-gradient(90deg, rgba(99, 231, 244, 0.05), transparent 42%),
+    #070d13;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.25);
+}
+
+[data-theme='cyber-glitch'] .archive-inspector__registry > span {
+  position: relative;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 9px 8px 10px;
+  border-right: 1px solid rgba(99, 231, 244, 0.12);
+}
+
+[data-theme='cyber-glitch'] .archive-inspector__registry > span:last-child {
+  border-right: 0;
+}
+
+[data-theme='cyber-glitch'] .archive-inspector__registry > span::after {
+  content: '';
+  position: absolute;
+  right: 8px;
+  bottom: 4px;
+  left: 8px;
+  height: 1px;
+  background: linear-gradient(90deg, #63e7f4 0 66%, #f15b9c 66% 82%, transparent 82%);
+}
+
+[data-theme='cyber-glitch'] .archive-inspector__registry small {
+  color: rgba(134, 240, 250, 0.48);
+  font: 7px/1 var(--font-data);
+  letter-spacing: 0.16em;
+}
+
+[data-theme='cyber-glitch'] .archive-inspector__registry b {
+  overflow: hidden;
+  color: #cbecee;
+  font: 600 9px/1.2 var(--font-data);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Settings become a patch bay instead of PX–03.1's numbered institution form. */
+[data-theme='cyber-glitch'] .settings-preferences {
+  background:
+    linear-gradient(rgba(99, 231, 244, 0.016) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 231, 244, 0.016) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+[data-theme='cyber-glitch'] .settings-module {
+  position: relative;
+  margin: 0 !important;
+  padding: 18px 18px 20px !important;
+  border: 1px solid rgba(99, 231, 244, 0.14) !important;
+  background: rgba(6, 12, 18, 0.78);
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.24);
+  clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
+}
+
+[data-theme='cyber-glitch'] .settings-module::before {
+  content: attr(data-code);
+  position: absolute;
+  top: 0;
+  right: 14px;
+  padding: 3px 8px 4px;
+  color: rgba(134, 240, 250, 0.46);
+  background: #071019;
+  border-right: 2px solid #f15b9c;
+  font: 7px/1 var(--font-data);
+  letter-spacing: 0.14em;
+}
+
+[data-theme='cyber-glitch'] .settings-module::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 54px;
+  height: 2px;
+  background: #63e7f4;
+  box-shadow: 60px 0 0 rgba(99, 231, 244, 0.24), 88px 0 0 #f15b9c;
+}
+
+[data-theme='cyber-glitch'] .settings-module [role='radio'][aria-checked='true'],
+[data-theme='cyber-glitch'] .settings-module .theme-choice.is-active {
+  border-color: rgba(99, 231, 244, 0.54) !important;
+  background: linear-gradient(90deg, rgba(99, 231, 244, 0.1), rgba(241, 91, 156, 0.035)) !important;
+  box-shadow: inset 3px 0 #63e7f4, inset -1px 0 #f15b9c;
+}
+
+/* The board is a node-routing surface: same product topology, different role. */
+[data-theme='cyber-glitch'] .archive-board-head,
+[data-theme='cyber-glitch'] .archive-board-tools {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 31px, rgba(99, 231, 244, 0.026) 31px 32px),
+    #08121a !important;
+}
+
+[data-theme='cyber-glitch'] .archive-board-file-tools,
+[data-theme='cyber-glitch'] .archive-board-zoom,
+[data-theme='cyber-glitch'] .archive-board-toolset,
+[data-theme='cyber-glitch'] .archive-board-history,
+[data-theme='cyber-glitch'] .archive-board-viewset {
+  position: relative;
+  padding-top: 8px;
+}
+
+[data-theme='cyber-glitch'] .archive-board-file-tools::before,
+[data-theme='cyber-glitch'] .archive-board-zoom::before,
+[data-theme='cyber-glitch'] .archive-board-toolset::before,
+[data-theme='cyber-glitch'] .archive-board-history::before,
+[data-theme='cyber-glitch'] .archive-board-viewset::before {
+  content: attr(data-channel);
+  position: absolute;
+  top: -5px;
+  left: 2px;
+  color: rgba(134, 240, 250, 0.42);
+  font: 6px/1 var(--font-data);
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+}
+
+[data-theme='cyber-glitch'] .archive-board-tools button[data-active='true'],
+[data-theme='cyber-glitch'] .archive-board-mode {
+  border-radius: 0;
+}
+
+[data-theme='cyber-glitch'] .archive-board-tools button[data-active='true'] {
+  color: #c9fbff !important;
+  background: rgba(99, 231, 244, 0.11) !important;
+  box-shadow: inset 0 -2px #63e7f4, inset 2px 0 rgba(241, 91, 156, 0.65);
+}
+
+[data-theme='cyber-glitch'] .archive-board-appearance {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 31px, rgba(99, 231, 244, 0.04) 31px 32px),
+    #07131c !important;
+}
+
+[data-theme='cyber-glitch'] .archive-board-appearance::before {
+  content: 'DISPLAY BUS / COLOR-GRID';
+  color: rgba(134, 240, 250, 0.45);
+}
+
+[data-theme='cyber-glitch'] .board-reference-panel__head {
+  background: linear-gradient(90deg, rgba(99, 231, 244, 0.07), transparent 66%), #071019;
+  border-bottom-color: rgba(99, 231, 244, 0.2);
+}
+
+[data-theme='cyber-glitch'] .board-reference-card:hover {
+  border-color: rgba(99, 231, 244, 0.52);
+  box-shadow: 3px 3px 0 rgba(24, 107, 125, 0.2), inset 2px 0 rgba(241, 91, 156, 0.55);
+}
+
+/* No ambient glitch. Distortion is restricted to explicit interactions. */
+[data-theme='cyber-glitch'] .glitch::before,
+[data-theme='cyber-glitch'] .glitch::after {
+  display: none !important;
+  animation: none !important;
+}
+
+@keyframes cyber-channel-pulse {
+  0%, 45% { opacity: 0.38; transform: translateX(0); }
+  46%, 82% { opacity: 1; transform: translateX(1px); }
+  83%, 100% { opacity: 0.72; transform: translateX(0); }
+}
+
+@media (max-width: 1380px) {
+  [data-theme='cyber-glitch'] .archive-masthead {
+    grid-template-columns: minmax(260px, 1fr) auto;
+  }
+
+  [data-theme='cyber-glitch'] .archive-masthead__telemetry {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .theme-choice-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme='cyber-glitch'] *,
+  [data-theme='cyber-glitch'] *::before,
+  [data-theme='cyber-glitch'] *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

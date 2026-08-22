@@ -11,6 +11,8 @@ import { useTheme } from '../theme'
 export default function ArchiveHeader() {
   const theme = useTheme()
   const pixel = theme === 'pixel-glitch'
+  const cyber = theme === 'cyber-glitch'
+  const terminal = pixel || cyber
   const view = useLibraryStore((s) => s.view)
   const assets = useLibraryStore((s) => s.assets)
   const folders = useLibraryStore((s) => s.folders)
@@ -39,39 +41,39 @@ export default function ArchiveHeader() {
     <header className="archive-masthead">
       <div className="archive-masthead__identity">
         <div className="archive-masthead__eyebrow">
-          <span>{pixel ? 'MASTER INDEX' : 'CONTACT SHEET'}</span>
+          <span>{pixel ? 'MASTER INDEX' : cyber ? 'SIGNAL MATRIX' : 'CONTACT SHEET'}</span>
           <span aria-hidden="true">/</span>
           <span>{archiveCode}</span>
         </div>
         <div className="archive-masthead__title-row">
           <h2>{title}</h2>
-          <span className="archive-masthead__count tnum">{String(assets.length).padStart(3, '0')} {pixel ? 'RECORDS' : 'FRAMES'}</span>
+          <span className="archive-masthead__count tnum">{String(assets.length).padStart(3, '0')} {pixel ? 'RECORDS' : cyber ? 'NODES' : 'FRAMES'}</span>
         </div>
       </div>
 
-      {pixel && (
+      {terminal && (
         <div className="archive-masthead__telemetry" aria-hidden="true">
           <span>
-            <small>CHANNEL</small>
+            <small>{cyber ? 'BUS' : 'CHANNEL'}</small>
             <b>{archiveCode}</b>
           </span>
           <span>
-            <small>MEDIA</small>
+            <small>{cyber ? 'FORMAT' : 'MEDIA'}</small>
             <b>{String(mediaTypeCount).padStart(2, '0')} TYPES</b>
           </span>
           <span>
-            <small>ACCESS</small>
-            <b>{accessState}</b>
+            <small>{cyber ? 'LINK' : 'ACCESS'}</small>
+            <b>{cyber ? (view.type === 'trash' ? 'LOCKED' : 'ONLINE') : accessState}</b>
           </span>
         </div>
       )}
 
       <div className="archive-masthead__readout" aria-label="当前档案状态">
-        <span className="archive-selection-readout mono tnum">{pixel ? 'SEL' : '已选'} {String(selection.length).padStart(2, '0')}</span>
-        <div className={`archive-safe-light ${loading ? 'is-working' : ''}`} title={loading ? (pixel ? '正在编制索引' : '正在显影素材') : (pixel ? '索引已就绪' : '档案已就绪')}>
+        <span className="archive-selection-readout mono tnum">{pixel ? 'SEL' : cyber ? 'BUF' : '已选'} {String(selection.length).padStart(2, '0')}</span>
+        <div className={`archive-safe-light ${loading ? 'is-working' : ''}`} title={loading ? (pixel ? '正在编制索引' : cyber ? '正在扫描信号' : '正在显影素材') : (pixel ? '索引已就绪' : cyber ? '信号链路已就绪' : '档案已就绪')}>
           <span className="archive-safe-light__lamp" aria-hidden="true" />
           <span>
-            {loading ? (pixel ? 'INDEXING' : 'PROCESSING') : 'READY'}
+            {loading ? (pixel ? 'INDEXING' : cyber ? 'SCANNING' : 'PROCESSING') : 'READY'}
           </span>
           <Icon name={loading ? 'rotate' : 'check'} size={12} className={loading ? 'animate-spin' : ''} />
         </div>

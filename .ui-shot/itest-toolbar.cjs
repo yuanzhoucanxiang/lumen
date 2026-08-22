@@ -83,7 +83,7 @@ async function main() {
     })()`)
   }
 
-  for (const theme of ['silver-gelatin', 'pixel-glitch']) {
+  for (const theme of ['silver-gelatin', 'pixel-glitch', 'cyber-glitch']) {
     await run(`localStorage.setItem('lumen.theme', '${theme}'); location.reload()`)
     let ready = false
     for (let i = 0; i < 50; i++) {

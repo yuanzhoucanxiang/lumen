@@ -3,7 +3,7 @@ import Icon from './Icon'
 import { useLibraryStore } from '../stores/libraryStore'
 import { SHORTCUT_DEFS, eventToKeys, loadShortcuts, saveShortcut } from '../shortcuts'
 import { applyTheme, THEMES, useTheme } from '../theme'
-import type { AppSettings } from '@shared/types'
+import type { AppSettings, Tag } from '@shared/types'
 import UserGuide from './UserGuide'
 
 type SettingsPage = 'preferences' | 'guide'
@@ -61,10 +61,13 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
   const [backing, setBacking] = useState(false)
   const [aiKeyInput, setAiKeyInput] = useState('')
   const [aiTesting, setAiTesting] = useState(false)
+  const [tags, setTags] = useState<Tag[]>([])
+  const [tagSearch, setTagSearch] = useState('')
 
   useEffect(() => {
     void window.api.getSettings().then(setSettings)
     void window.api.getAppVersion().then(setVersion)
+    void window.api.listTags().then(setTags)
   }, [])
 
   const doCheck = async () => {
@@ -140,6 +143,22 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
     }
   }
 
+  /** AI 优先标签：勾选/取消（复用标签 priority 标记，与标签管理里的 ⭐ 同步） */
+  const togglePriority = async (id: number, on: boolean) => {
+    await window.api.setTagPriority(id, on ? 1 : 0)
+    setTags((prev) => prev.map((t) => (t.id === id ? { ...t, priority: on ? 1 : 0 } : t)))
+    useLibraryStore.getState().showToast(on ? '已加入 AI 优先标签' : '已移出 AI 优先标签')
+  }
+
+  const priorityTags = tags
+    .filter((t) => t.priority === 1)
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+  const kw = tagSearch.trim().toLowerCase()
+  const candidateTags = tags
+    .filter((t) => t.priority !== 1)
+    .filter((t) => !kw || t.name.toLowerCase().includes(kw))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh-CN'))
+
   if (!settings) return null
 
   return (
@@ -212,7 +231,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             </div>
             <span className="mono shrink-0 text-[9px] tracking-[0.12em] text-[var(--text-faint)]">LIVE PREVIEW</span>
           </div>
-          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="界面主题">
+          <div className="theme-choice-grid grid gap-2" role="radiogroup" aria-label="界面主题">
             {THEMES.map((item) => {
               const active = theme === item.id
               return (
@@ -405,6 +424,59 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             >
               {aiTesting ? '测试中…' : '测试连接'}
             </button>
+          </div>
+
+          {/* AI 优先标签（大标签） */}
+          <div className="mt-3 border-t border-[var(--border)] pt-3">
+            <div className="mb-1 flex items-center justify-between">
+              <label className="text-[11px] text-[var(--text-dim)]">
+                AI 优先标签（大标签）
+                {priorityTags.length > 0 && (
+                  <span className="ml-1 text-[var(--accent-text)]">已选 {priorityTags.length} 个</span>
+                )}
+              </label>
+            </div>
+            <p className="mb-2 text-[10.5px] leading-[1.5] text-[var(--text-faint)]">
+              AI 打标签时，内容匹配到这些标签就优先选用。此处与「标签管理」里的 ⭐ 是同一标记，两处同步；建议选 3-8 个。
+            </p>
+            {priorityTags.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {priorityTags.map((t) => (
+                  <span key={t.id} className="ai-priority-chip" style={t.color ? { borderColor: t.color } : undefined}>
+                    <span className="max-w-[140px] truncate">{t.name}</span>
+                    <button
+                      aria-label={`移出优先标签 ${t.name}`}
+                      className="flex text-[var(--text-faint)] transition-colors hover:text-red-400"
+                      onClick={() => void togglePriority(t.id, false)}
+                    >
+                      <Icon name="close" size={10} strokeWidth={2.4} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <input
+              className="field-input mb-1.5 w-full text-[12px]"
+              aria-label="搜索AI优先标签"
+              value={tagSearch}
+              placeholder="搜索标签，点击加入优先列表…"
+              onChange={(e) => setTagSearch(e.target.value)}
+            />
+            <div className="ai-priority-pool">
+              {candidateTags.length === 0 ? (
+                <div className="rounded-md border border-dashed border-[var(--border-strong)] px-2.5 py-2 text-[11px] text-[var(--text-faint)]">
+                  {tags.length === 0 ? '还没有标签，可先在「标签管理」中新建' : '没有匹配的标签'}
+                </div>
+              ) : (
+                candidateTags.map((t) => (
+                  <button key={t.id} className="ai-priority-option" onClick={() => void togglePriority(t.id, true)}>
+                    <span className="min-w-0 flex-1 truncate text-left">{t.name}</span>
+                    {t.count > 0 && <span className="tnum shrink-0 text-[10px] text-[var(--text-faint)]">{t.count}</span>}
+                    <Icon name="plus" size={11} className="shrink-0 text-[var(--text-faint)]" />
+                  </button>
+                ))
+              )}
+            </div>
           </div>
         </div>
 

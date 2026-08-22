@@ -13,6 +13,8 @@ function fmtSize(n: number): string {
 export default function Inspector() {
   const theme = useTheme()
   const pixel = theme === 'pixel-glitch'
+  const cyber = theme === 'cyber-glitch'
+  const terminal = pixel || cyber
   const assets = useLibraryStore((s) => s.assets)
   const selection = useLibraryStore((s) => s.selection)
   const tags = useLibraryStore((s) => s.tags)
@@ -106,8 +108,8 @@ export default function Inspector() {
     >
       <header className="archive-inspector__header">
         <div>
-          <span className="mono">{pixel ? 'INDEX LOG' : 'INSPECTION RECORD'}</span>
-          <strong>{asset ? (pixel ? '素材记录' : '素材检视记录') : (pixel ? '等待索引' : '等待选片')}</strong>
+          <span className="mono">{pixel ? 'INDEX LOG' : cyber ? 'TRACE PANEL' : 'INSPECTION RECORD'}</span>
+          <strong>{asset ? (pixel ? '素材记录' : cyber ? '缓冲记录' : '素材检视记录') : (pixel ? '等待索引' : cyber ? '等待信号' : '等待选片')}</strong>
         </div>
         <span className="archive-inspector__folio mono">{asset ? String(asset.id).slice(-4).padStart(4, '0') : '----'}</span>
       </header>
@@ -206,18 +208,18 @@ export default function Inspector() {
             )}
           </div>
 
-          {pixel && (
+          {terminal && (
             <div className="archive-inspector__registry" aria-label="素材记录摘要">
               <span>
-                <small>TYPE</small>
+                <small>{cyber ? 'CODEC' : 'TYPE'}</small>
                 <b>{asset.ext.toUpperCase()}</b>
               </span>
               <span>
-                <small>FRAME</small>
+                <small>{cyber ? 'RASTER' : 'FRAME'}</small>
                 <b>{asset.width > 0 ? `${asset.width}×${asset.height}` : 'N/A'}</b>
               </span>
               <span>
-                <small>SIZE</small>
+                <small>{cyber ? 'BYTES' : 'SIZE'}</small>
                 <b>{fmtSize(asset.size)}</b>
               </span>
             </div>

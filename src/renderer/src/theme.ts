@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 
-export type ThemeId = 'silver-gelatin' | 'pixel-glitch'
+export type ThemeId = 'silver-gelatin' | 'pixel-glitch' | 'cyber-glitch'
 
 export interface ThemeDefinition {
   id: ThemeId
@@ -26,13 +26,19 @@ export const THEMES: readonly ThemeDefinition[] = [
     name: '像素故障',
     code: 'PX–03.1',
     description: '复古科幻终端美学与伪档案系统；继承原布局，以索引层级、点阵反馈和克制状态色建立身份。'
+  },
+  {
+    id: 'cyber-glitch',
+    name: '信号故障',
+    code: 'PX–02R',
+    description: '海军黑信号台、磷光青通道与洋红校验位；锐利、主动，以短促离散故障反馈强化数字工作流。'
   }
 ] as const
 
 const listeners = new Set<() => void>()
 
 function isThemeId(value: string | null): value is ThemeId {
-  return value === 'silver-gelatin' || value === 'pixel-glitch'
+  return value === 'silver-gelatin' || value === 'pixel-glitch' || value === 'cyber-glitch'
 }
 
 export function loadTheme(): ThemeId {
@@ -52,7 +58,7 @@ function commitTheme(theme: ThemeId): void {
   document.documentElement.style.colorScheme = 'dark'
   document.querySelector('meta[name="theme-color"]')?.setAttribute(
     'content',
-    theme === 'silver-gelatin' ? '#090907' : '#060807'
+    theme === 'silver-gelatin' ? '#090907' : theme === 'cyber-glitch' ? '#070a0f' : '#060807'
   )
   try {
     localStorage.setItem(THEME_STORAGE_KEY, theme)

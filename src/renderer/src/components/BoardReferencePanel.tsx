@@ -24,7 +24,9 @@ function beginAssetDrag(event: React.DragEvent, asset: Asset): void {
 }
 
 export default function BoardReferencePanel() {
-  const pixel = useTheme() === 'pixel-glitch'
+  const theme = useTheme()
+  const pixel = theme === 'pixel-glitch'
+  const cyber = theme === 'cyber-glitch'
   const assets = useLibraryStore((state) => state.assets)
   const boardItems = useLibraryStore((state) => state.boardItems)
   const folders = useLibraryStore((state) => state.folders)
@@ -71,11 +73,11 @@ export default function BoardReferencePanel() {
           <span className="board-rail__opener" aria-hidden="true">
             <Icon name="chevronRight" size={12} />
           </span>
-          <span className="board-rail__code mono" aria-hidden="true">{pixel ? 'R-03' : '02'}</span>
-          <span className="board-rail__label mono" aria-hidden="true">{pixel ? 'REF INDEX' : 'CONTACT SHEET'}</span>
+          <span className="board-rail__code mono" aria-hidden="true">{pixel ? 'R-03' : cyber ? 'R-02' : '02'}</span>
+          <span className="board-rail__label mono" aria-hidden="true">{pixel ? 'REF INDEX' : cyber ? 'BUFFER RACK' : 'CONTACT SHEET'}</span>
           <span className="board-rail__signal" aria-hidden="true" />
-          <span className="board-rail__count mono" aria-hidden="true">{String(assets.length).padStart(pixel ? 4 : 3, '0')}</span>
-          <small className="board-rail__foot mono" aria-hidden="true">{pixel ? 'ARCHIVE' : 'FRAMES'}</small>
+          <span className="board-rail__count mono" aria-hidden="true">{String(assets.length).padStart(pixel || cyber ? 4 : 3, '0')}</span>
+          <small className="board-rail__foot mono" aria-hidden="true">{pixel ? 'ARCHIVE' : cyber ? 'BUFFER' : 'FRAMES'}</small>
           <span className="sr-only">参考素材</span>
         </button>
       </aside>
@@ -86,7 +88,7 @@ export default function BoardReferencePanel() {
     <aside data-board-reference-panel data-collapsed="false" className="board-reference-panel flex min-h-0 w-[264px] shrink-0 flex-col">
       <header className="board-reference-panel__head shrink-0">
         <div className="min-w-0">
-          <span className="mono block text-[8px] tracking-[0.18em] text-[var(--accent-text)]">REFERENCE TRAY</span>
+          <span className="mono block text-[8px] tracking-[0.18em] text-[var(--accent-text)]">{cyber ? 'SIGNAL BUFFER' : 'REFERENCE TRAY'}</span>
           <div className="mt-1 flex items-baseline gap-2">
             <strong className="truncate text-[13px] font-medium text-[var(--text-main)]">{source}</strong>
             <span className="mono shrink-0 text-[9px] text-[var(--text-faint)]">{assets.length} FRAMES</span>

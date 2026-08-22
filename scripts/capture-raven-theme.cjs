@@ -4,11 +4,18 @@ const path = require('path')
 const WebSocket = require('ws')
 
 const root = path.resolve(__dirname, '..')
-const theme = process.argv[2] === 'pixel-glitch' ? 'pixel-glitch' : 'silver-gelatin'
+const requestedTheme = process.argv[2]
+const theme = ['silver-gelatin', 'pixel-glitch', 'cyber-glitch'].includes(requestedTheme)
+  ? requestedTheme
+  : 'silver-gelatin'
 const outDir = path.join(
   root,
   'design-proposals',
-  theme === 'pixel-glitch' ? 'pixel-glitch-theme' : 'raven-archive-theme'
+  theme === 'pixel-glitch'
+    ? 'pixel-glitch-theme'
+    : theme === 'cyber-glitch'
+      ? 'cyber-glitch-theme'
+      : 'raven-archive-theme'
 )
 
 function getJson(url) {

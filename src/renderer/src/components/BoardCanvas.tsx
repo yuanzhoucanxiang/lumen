@@ -176,6 +176,7 @@ export default function BoardCanvas({
 }) {
   const theme = useTheme()
   const pixel = theme === 'pixel-glitch'
+  const cyber = theme === 'cyber-glitch'
   const boardItems = useLibraryStore((s) => s.boardItems)
   const assets = useLibraryStore((s) => s.assets)
   const boards = useLibraryStore((s) => s.boards)
@@ -2255,8 +2256,8 @@ export default function BoardCanvas({
       {/* 空态必须留在屏幕坐标层，不能跟随持久化的画布 viewport 偏移。 */}
       {boardItems.length === 0 && (
         <div className="archive-board-empty pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
-          <span className="archive-board-empty__eyebrow mono">{pixel ? 'ARCHIVE CANVAS / EMPTY' : 'LIGHT TABLE / EMPTY'}</span>
-          <strong>{pixel ? '把素材编入视觉档案' : '把参考素材送上看片台'}</strong>
+          <span className="archive-board-empty__eyebrow mono">{pixel ? 'ARCHIVE CANVAS / EMPTY' : cyber ? 'NODE CANVAS / NO SIGNAL' : 'LIGHT TABLE / EMPTY'}</span>
+          <strong>{pixel ? '把素材编入视觉档案' : cyber ? '把素材接入信号矩阵' : '把参考素材送上看片台'}</strong>
           <p>从左侧素材卡片发送或拖拽素材到这里，也可以右键添加文字并使用上方工具标注。</p>
           <small className="mono">F 适配 · 0 复位 · ± 缩放 · 方向键微调 · CTRL+D 复制</small>
         </div>

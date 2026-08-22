@@ -90,6 +90,8 @@ async function main() {
       mastheadText: document.querySelector('.archive-masthead')?.textContent,
       inspectorText: document.querySelector('.archive-inspector')?.textContent,
       cardRadius: getComputedStyle(document.querySelector('.asset-card')).borderRadius,
+      cardClip: getComputedStyle(document.querySelector('.asset-card')).clipPath,
+      accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
       bodyFont: getComputedStyle(document.body).fontFamily,
       statusbar: (() => {
         const node = document.querySelector('.pixel-statusbar')
@@ -112,7 +114,7 @@ async function main() {
   await evalJs(`document.querySelector('button[aria-label^="打开设置"]')?.click()`)
   await sleep(900)
   const choices = await evalJs(`[...document.querySelectorAll('.theme-choice')].map((node) => ({ text: node.textContent, checked: node.getAttribute('aria-checked') }))`)
-  check('设置页包含两个主题', choices.length === 2, `${choices.length} 个`)
+  check('设置页包含三个主题', choices.length === 3, `${choices.length} 个`)
   check('银盐鸦影标记默认选中', choices[0]?.checked === 'true' && choices[0]?.text.includes('默认标准'), JSON.stringify(choices.map((item) => item.checked)))
 
   await evalJs(`document.querySelectorAll('.theme-choice')[1]?.click()`)
@@ -181,6 +183,30 @@ async function main() {
   })()`)
   check('悬停预览根层定位且不越界', hover.exists && hover.parent === 'BODY' && hover.within, JSON.stringify(hover))
 
+  await reloadAs('cyber-glitch')
+  const cyberLayout = await probeLayout()
+  check('信号故障主题工具栏完整', cyberLayout.toolbarFits && cyberLayout.filtersFit && cyberLayout.fixedVisible, JSON.stringify(cyberLayout))
+  check('信号故障主题滚动链正常', cyberLayout.galleryScrolls && cyberLayout.sidebarNoX, JSON.stringify(cyberLayout))
+  check('信号故障 PX–02R 比例生效', cyberLayout.masthead >= 51 && cyberLayout.masthead <= 53 && cyberLayout.sidebar >= 203 && cyberLayout.sidebar <= 217 && cyberLayout.inspector >= 223 && cyberLayout.inspector <= 241, JSON.stringify(cyberLayout))
+  check('PX–02R 使用独立信号语义', cyberLayout.brandText.includes('SIGNAL / 02') && cyberLayout.mastheadText.includes('SIGNAL MATRIX') && cyberLayout.inspectorText.includes('TRACE PANEL'), JSON.stringify({ brand: cyberLayout.brandText.slice(0, 80), masthead: cyberLayout.mastheadText, inspector: cyberLayout.inspectorText.slice(0, 60) }))
+  check('PX–02R 使用磷光青和像素切角', cyberLayout.accent.toLowerCase() === '#63e7f4' && cyberLayout.cardClip !== 'none', JSON.stringify({ accent: cyberLayout.accent, clip: cyberLayout.cardClip }))
+  check('信号故障不污染素材原图', cyberLayout.assetImageFilter === 'none', cyberLayout.assetImageFilter)
+
+  await sendCommand('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false })
+  await sleep(250)
+  const cyberCompact = await evalJs(`(() => {
+    const bar = document.querySelector('.archive-filterbar')
+    const telemetry = document.querySelector('.archive-masthead__telemetry')
+    return {
+      width: innerWidth,
+      telemetry: telemetry ? getComputedStyle(telemetry).display : null,
+      toolbarFits: !!bar && bar.scrollWidth <= bar.clientWidth
+    }
+  })()`)
+  check('PX–02R 中等宽度收起信号总线', cyberCompact.width === 1366 && cyberCompact.telemetry === 'none' && cyberCompact.toolbarFits, JSON.stringify(cyberCompact))
+  await sendCommand('Emulation.clearDeviceMetricsOverride')
+  await sleep(250)
+
   await reloadAs('silver-gelatin')
   const silverLayout = await probeLayout()
   check('银盐主题工具栏完整', silverLayout.toolbarFits && silverLayout.filtersFit && silverLayout.fixedVisible, JSON.stringify(silverLayout))
@@ -188,7 +214,7 @@ async function main() {
   check('银盐主题标准比例生效', silverLayout.masthead >= 53 && silverLayout.masthead <= 54 && silverLayout.sidebar >= 219 && silverLayout.sidebar <= 220 && silverLayout.inspector >= 251 && silverLayout.inspector <= 252, JSON.stringify(silverLayout))
   check('银盐主题保持原布局且无附加任务栏', silverLayout.statusbar === null, JSON.stringify(silverLayout.statusbar))
   check('银盐主题保持暗房档案语义', !silverLayout.brandText.includes('INDEX / 03') && !silverLayout.mastheadText.includes('MASTER INDEX') && !silverLayout.inspectorText.includes('INDEX LOG'), JSON.stringify({ brand: silverLayout.brandText.slice(0, 80), masthead: silverLayout.mastheadText, inspector: silverLayout.inspectorText.slice(0, 60) }))
-  check('两主题轮廓和字体不是换色复用', silverLayout.cardRadius !== pixelLayout.cardRadius && silverLayout.bodyFont !== pixelLayout.bodyFont, JSON.stringify({ silverRadius: silverLayout.cardRadius, pixelRadius: pixelLayout.cardRadius, silverFont: silverLayout.bodyFont, pixelFont: pixelLayout.bodyFont }))
+  check('三主题不是换色复用', silverLayout.bodyFont !== pixelLayout.bodyFont && cyberLayout.cardClip !== pixelLayout.cardClip && cyberLayout.accent !== pixelLayout.accent, JSON.stringify({ silverFont: silverLayout.bodyFont, pixelAccent: pixelLayout.accent, pixelClip: pixelLayout.cardClip, cyberAccent: cyberLayout.accent, cyberClip: cyberLayout.cardClip }))
 
   console.log(`\n${pass} PASS / ${fail} FAIL`)
   ws.close()

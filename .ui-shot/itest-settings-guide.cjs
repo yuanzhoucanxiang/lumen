@@ -75,7 +75,7 @@ async function main() {
     await sleep(180)
   }
 
-  for (const theme of ['silver-gelatin', 'pixel-glitch']) {
+  for (const theme of ['silver-gelatin', 'pixel-glitch', 'cyber-glitch']) {
     await run(`localStorage.setItem('lumen.theme', '${theme}'); location.reload()`)
     let ready = false
     for (let i = 0; i < 40; i++) {
@@ -104,6 +104,67 @@ async function main() {
     })()`)
     check(`${theme} 设置中心不越界`, hub.exists && hub.fits && hub.width >= 780 && hub.height >= 560, JSON.stringify(hub))
     check(`${theme} 偏好设置完整`, hub.navCount === 2 && hub.prefsScrollable && hub.hasTheme && hub.hasAi)
+
+    // AI 优先标签选择器：三主题断言区块渲染；首个主题做真实勾选/取消 IPC 链路（结束后恢复原状）
+    const aiPriority = await run(`return (() => {
+      const pool = document.querySelector('.ai-priority-pool')
+      const search = document.querySelector('input[aria-label="搜索AI优先标签"]')
+      const label = [...document.querySelectorAll('.settings-preferences label')].find((el) => el.textContent.includes('AI 优先标签'))
+      return { pool: !!pool, search: !!search, label: !!label, chips: document.querySelectorAll('.ai-priority-chip').length }
+    })()`)
+    check(`${theme} AI 优先标签选择器渲染`, aiPriority.pool && aiPriority.search && aiPriority.label, JSON.stringify(aiPriority))
+
+    if (theme === 'silver-gelatin') {
+      const pick = await run(`{
+        const tags = await window.api.listTags()
+        const target = tags.find((t) => t.priority === 0)
+        return target ? { id: target.id, name: target.name } : null
+      }`)
+      if (pick) {
+        await run(`{
+          const input = document.querySelector('input[aria-label="搜索AI优先标签"]')
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+          setter.call(input, ${JSON.stringify(pick.name)})
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+        }`)
+        await sleep(150)
+        const clicked = await run(`{
+          const option = [...document.querySelectorAll('.ai-priority-option')].find(
+            (button) => button.querySelector('span')?.textContent === ${JSON.stringify(pick.name)}
+          )
+          if (!option) return false
+          option.click()
+          return true
+        }`)
+        check(`${theme} 点选加入优先标签`, clicked, pick.name)
+        await sleep(250)
+        const afterAdd = await run(`{
+          const tags = await window.api.listTags()
+          const tag = tags.find((t) => t.id === ${pick.id})
+          const chip = [...document.querySelectorAll('.ai-priority-chip')].some((c) => c.textContent.includes(${JSON.stringify(pick.name)}))
+          return { priority: tag?.priority, chip }
+        }`)
+        check(`${theme} 勾选后落库 priority=1 且出现 chip`, afterAdd.priority === 1 && afterAdd.chip, JSON.stringify(afterAdd))
+        await run(`{
+          const button = document.querySelector('button[aria-label="移出优先标签 ${pick.name}"]')
+          if (button) button.click()
+        }`)
+        await sleep(250)
+        const afterRemove = await run(`{
+          const tags = await window.api.listTags()
+          return tags.find((t) => t.id === ${pick.id})?.priority
+        }`)
+        check(`${theme} 取消后 priority 回 0`, afterRemove === 0, String(afterRemove))
+        await run(`{
+          const input = document.querySelector('input[aria-label="搜索AI优先标签"]')
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+          setter.call(input, '')
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+        }`)
+      } else {
+        check(`${theme} 优先标签勾选链路(无可选标签跳过)`, true)
+      }
+    }
 
     await run(`([...document.querySelectorAll('.settings-hub__nav > button')].find((button) => button.textContent.includes('使用说明'))).click()`)
     await sleep(150)
@@ -179,7 +240,9 @@ async function main() {
       `${theme} 教程跟随主题`,
       theme === 'pixel-glitch'
         ? themed.clip === 'none' && themed.titleFont.includes('Arial Narrow')
-        : themed.clip === 'none' && themed.titleFont.includes('Iowan Old Style'),
+        : theme === 'cyber-glitch'
+          ? themed.clip !== 'none' && themed.titleFont.includes('Cascadia Mono')
+          : themed.clip === 'none' && themed.titleFont.includes('Iowan Old Style'),
       JSON.stringify(themed)
     )
 
