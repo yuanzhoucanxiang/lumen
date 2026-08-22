@@ -194,8 +194,9 @@ async function suggestForAsset(
     `{"name":"奇幻洞穴场景","tags":[{"name":"洞穴","cat":"scene"},{"name":"岩石地貌","cat":"subject"},{"name":"奇幻","cat":"style"},{"name":"暗黑氛围","cat":"color"}]}\n\n` +
     `只返回 JSON。`
 
-  // 共享 chat() 带 60s 超时保护（AbortController）:网络挂起不再无限等待
-  const content = await chat(cfg, prompt, [{ base64 }], 250, 60_000, 0.3)
+  // max_tokens 须给足:推理型模型(如 deepseek-v4-flash)的思考链与正文共享该预算,
+  // 250 会被思考吃光 → content 为空或 JSON 截断(日志 16:42-17:06 批量失败实证)
+  const content = await chat(cfg, prompt, [{ base64 }], 2000, 90_000, 0.3)
   const suggestion = extractJson(content, wantName)
   if (!suggestion) {
     logger.warn('[ai]', `无法解析 AI 返回: ${content.slice(0, 100)}`)
@@ -362,10 +363,10 @@ export async function aiProcessBatch(
   return aiApplySuggestions(items, options)
 }
 
-/** 测试 API 连通性（发一个最小文本请求，20s 超时防挂起） */
+/** 测试 API 连通性（发一个最小文本请求，20s 超时防挂起；maxTokens 给足防推理模型思考吃光预算返回空） */
 export async function testAiConnection(cfg: AiConfig): Promise<{ ok: boolean; message: string }> {
   try {
-    await chat(cfg, 'hi', undefined, 5, 20_000)
+    await chat(cfg, 'hi', undefined, 512, 20_000)
     return { ok: true, message: '连接成功' }
   } catch (e) {
     return { ok: false, message: (e as Error).message }

@@ -1,9 +1,14 @@
 appId: com.shiguang.materials
-# 注意:productName/executableName 保持「拾光素材库/ShiGuangMaterials」不变。
-# 改名会同时改变 NSIS 安装目录与 exe 文件名,破坏 electron-updater 对老用户的
-# 更新链路(装到新目录造成双安装、检测不到运行中的旧 exe)。用户可见的
-# 快捷方式/卸载项名称已改用 LUMEN(见 nsis 段)。
-productName: 拾光素材库
+# productName = LUMEN(2026-08-22,里程碑 102):NSIS 安装向导标题、开始菜单、mac .app 名统一为 LUMEN。
+# 安全依据(逐项核实):
+#  - 运行时 userData 跟 asar 内 package.json 的 productName(已是 LUMEN,%APPDATA%\LUMEN),
+#    与本字段无关,改名不影响用户配置/日志;
+#  - exe 文件名由 win.executableName 单独控制,保持 ShiGuangMaterials 不变 → 升级原地覆盖
+#    与运行中检测不受影响;
+#  - 老用户升级时 NSIS 按注册表 InstallLocation 原地覆盖(2026-08-19 Temp\LumenCustomInstall
+#    实验实证),不会双安装;NSIS 默认目录实测由 executableName 决定(2026-08-22 改名后静默
+#    安装仍落 Programs\ShiGuangMaterials),新老用户目录完全一致。
+productName: LUMEN
 directories:
   buildResources: build
 files:
@@ -37,8 +42,8 @@ nsis:
   createDesktopShortcut: always
   # 安装目录选择(2026-08-19,里程碑 95):从一键安装改为向导式,允许用户改安装目录
   # (对标 Eagle;素材库是重度空间应用,用户常想装 D 盘)。为保住自动更新链路:
-  #  - perMachine: false 保持每用户安装(默认目录仍是 %LOCALAPPDATA%\Programs\拾光素材库,
-  #    用户可改到 D:\xxx 等每用户可写目录)
+  #  - perMachine: false 保持每用户安装(默认目录 %LOCALAPPDATA%\Programs\ShiGuangMaterials,
+  #    由 executableName 决定、与 productName 无关,用户可改到 D:\xxx 等每用户可写目录)
   #  - 不建议选 C:\Program Files(需管理员 + 更新需提权,会自动更新断链)
   #  - electron-updater 对 assisted + per-user 自定义目录的标准支持,老用户更新链不受影响
   oneClick: false

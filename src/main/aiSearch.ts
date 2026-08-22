@@ -47,7 +47,8 @@ async function expandQuery(query: string, cfg: AiConfig, allTags: Tag[]): Promis
     `用户搜索:${query}\n\n` +
     `只返回 JSON。`
 
-  const content = await chat(cfg, prompt, undefined, 200, 60_000, 0.2)
+  // maxTokens 给足:推理型模型思考链与正文共享预算,200 会被吃光导致空返回
+  const content = await chat(cfg, prompt, undefined, 1500, 90_000, 0.2)
   const obj = extractJson(content)
   if (!obj) {
     logger.warn('[aiSearch]', `阶段1解析失败: ${content.slice(0, 100)}`)
@@ -116,7 +117,7 @@ async function rankByVision(
 
     const t0 = Date.now()
     try {
-      const content = await chat(cfg, prompt, images, 300, 60_000, 0.2)
+      const content = await chat(cfg, prompt, images, 2000, 90_000, 0.2)
       const obj = extractJson(content)
       const matches = obj?.matches
       if (Array.isArray(matches)) {
