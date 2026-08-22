@@ -5,6 +5,7 @@ import { SHORTCUT_DEFS, eventToKeys, loadShortcuts, saveShortcut } from '../shor
 import { applyTheme, THEMES, useTheme } from '../theme'
 import type { AppSettings, Tag } from '@shared/types'
 import UserGuide from './UserGuide'
+import RestoreDialog from './RestoreDialog'
 
 type SettingsPage = 'preferences' | 'guide'
 
@@ -63,6 +64,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
   const [aiTesting, setAiTesting] = useState(false)
   const [tags, setTags] = useState<Tag[]>([])
   const [tagSearch, setTagSearch] = useState('')
+  const [restoreOpen, setRestoreOpen] = useState(false)
 
   useEffect(() => {
     void window.api.getSettings().then(setSettings)
@@ -359,6 +361,9 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             >
               {backing ? '处理中…' : '导出完整库 ZIP'}
             </button>
+            <button className="btn-ghost" onClick={() => setRestoreOpen(true)}>
+              从备份恢复…
+            </button>
             <button
               className="btn-ghost"
               onClick={async () => {
@@ -522,6 +527,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             完成
           </button>
         </div>
+
+        {restoreOpen && <RestoreDialog onClose={() => setRestoreOpen(false)} />}
       </div>
     </div>
   )

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { Asset, AssetQuery, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSearchProgress, AiSuggestionItem, AppSettings, Board, BoardItem, BoardItemPatch, DupeGroup, ExportOptions, Folder, ImportResult, LibraryInfo, Tag, TagGroup, UpdateStatus } from '../shared/types'
+import type { Asset, AssetQuery, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSearchProgress, AiSuggestionItem, AppSettings, Board, BoardItem, BoardItemPatch, DbBackupInfo, DupeGroup, ExportOptions, Folder, ImportResult, LibraryInfo, Tag, TagGroup, UpdateStatus, ZipBackupInfo } from '../shared/types'
 
 const api = {
   /* 库管理 */
@@ -18,6 +18,11 @@ const api = {
   exportLogs: (): Promise<string | null> => ipcRenderer.invoke('logs:export'),
   backupLibraryToZip: (): Promise<{ count: number; target: string } | null> =>
     ipcRenderer.invoke('library:backupZip'),
+  listDbBackups: (): Promise<DbBackupInfo[]> => ipcRenderer.invoke('library:listDbBackups'),
+  listAutoZipBackups: (): Promise<ZipBackupInfo[]> => ipcRenderer.invoke('library:listAutoZips'),
+  restoreDatabase: (bakPath: string): Promise<{ restoredFrom: string; emergencyPath: string }> =>
+    ipcRenderer.invoke('library:restoreDb', bakPath),
+  revealBackup: (p: string): Promise<void> => ipcRenderer.invoke('library:revealBackup', p),
 
   /* 导入 */
   importViaDialog: (): Promise<ImportResult> => ipcRenderer.invoke('import:dialog'),
@@ -32,6 +37,9 @@ const api = {
   /** 按本地路径导入（主进程 import:paths 通道的包装，供测试/脚本用） */
   importFromPaths: (paths: string[]): Promise<ImportResult> =>
     ipcRenderer.invoke('import:paths', paths),
+  /** URL 粘贴抓图:主进程并发下载图片直链后走导入管线,来源写入 assets.url */
+  importFromUrls: (urls: string[]): Promise<ImportResult> =>
+    ipcRenderer.invoke('import:urls', urls),
   onImportProgress: (cb: (p: { phase: 'prepare' | 'commit'; done: number; total: number }) => void): void => {
     ipcRenderer.on('import:progress', (_e, p) => cb(p))
   },

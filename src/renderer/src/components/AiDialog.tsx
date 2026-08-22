@@ -68,6 +68,9 @@ export default function AiDialog({
   const [applyIds, setApplyIds] = useState<Set<string>>(new Set())
   /** 预览阶段:生成时的失败数(展示用) */
   const [suggestFailed, setSuggestFailed] = useState(0)
+  /** 预览阶段:生成失败的素材 id(供一键重试) */
+  const [failedIds, setFailedIds] = useState<string[]>([])
+  const [retrying, setRetrying] = useState(false)
 
   /** 用户标记的优先标签名集合（预览中 ⭐ 高亮） */
   const priorityTagNames = useMemo(
@@ -109,10 +112,41 @@ export default function AiDialog({
       setSuggestions(r.items)
       setApplyIds(new Set(r.items.map((it) => it.id)))
       setSuggestFailed(r.failed)
+      setFailedIds(r.failedIds ?? [])
       setPhase('preview')
     } catch (e) {
       useLibraryStore.getState().showToast(`AI 处理失败：${(e as Error).message}`)
       onClose()
+    }
+  }
+
+  /** 只重试生成失败的素材:成功建议追加进预览,仍失败的留在重试列表(可反复点) */
+  const retryFailed = async () => {
+    if (failedIds.length === 0 || retrying) return
+    setRetrying(true)
+    try {
+      const options: AiProcessOptions = {
+        rename: doRename,
+        tag: doTag,
+        maxTags,
+        tagGroupName: 'AI 标签'
+      }
+      const r = await window.api.aiSuggest(failedIds, options)
+      setSuggestions((prev) => [...prev, ...r.items])
+      setApplyIds((prev) => {
+        const next = new Set(prev)
+        for (const it of r.items) next.add(it.id)
+        return next
+      })
+      setSuggestFailed(r.failed)
+      setFailedIds(r.failedIds ?? [])
+      useLibraryStore.getState().showToast(
+        r.failed > 0 ? `重试完成:成功 ${r.items.length},仍失败 ${r.failed}` : `重试完成:${r.items.length} 个全部成功`
+      )
+    } catch (e) {
+      useLibraryStore.getState().showToast(`重试失败:${(e as Error).message}`)
+    } finally {
+      setRetrying(false)
     }
   }
 
@@ -348,6 +382,21 @@ export default function AiDialog({
               {suggestFailed > 0 && <span className="ml-2 text-red-400">失败 {suggestFailed}</span>}
               <span className="ml-2 text-[var(--text-faint)]">勾选要应用的,可删标签/改文件名</span>
             </p>
+            {/* 失败项一键重试:只对生成失败的素材再跑一次,成功的建议保留不动 */}
+            {suggestFailed > 0 && failedIds.length > 0 && (
+              <div className="mb-3 flex items-center gap-2 rounded-md border border-dashed border-[var(--border-strong)] px-2.5 py-2">
+                <span className="flex-1 text-[11px] leading-snug text-[var(--text-faint)]">
+                  有 {failedIds.length} 个素材未生成成功(网络/限流/余额等原因),可只重试这些。
+                </span>
+                <button
+                  className="btn-ghost shrink-0 disabled:opacity-40"
+                  disabled={retrying}
+                  onClick={() => void retryFailed()}
+                >
+                  {retrying ? '重试中…' : `重试失败项 (${failedIds.length})`}
+                </button>
+              </div>
+            )}
             <div className="modal-scroll min-h-0 flex-1 space-y-1.5 overflow-y-auto">
               {suggestions.map((item) => {
                 const checked = applyIds.has(item.id)

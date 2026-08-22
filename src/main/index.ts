@@ -36,6 +36,22 @@ const MIME_BY_EXT: Record<string, string> = {
 
 let mainWindow: BrowserWindow | null = null
 
+// 单实例锁:第二实例启动时聚焦已有窗口后自行退出。两个实例并发写同一素材库会互相
+// 锁定/损坏(备份恢复曾因双开实例锁 wal 暴露),config.json 也无并发保护。
+// LUMEN_ALLOW_MULTI=1 为测试/调试逃生门(itest 起 dev 时注入,不受已运行正式版影响)。
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+const allowMulti = process.env.LUMEN_ALLOW_MULTI === '1'
+if (!gotSingleInstanceLock && !allowMulti) {
+  app.quit()
+}
+app.on('second-instance', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+  }
+})
+
 // asset: 协议必须声明为 privileged scheme（stream: true），否则 <video>/<audio> 无法播放该协议内容。
 // 必须在 app ready 之前调用。
 protocol.registerSchemesAsPrivileged([
@@ -83,6 +99,9 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // 第二实例已在上面 quit():跳过全部初始化,避免退出前创建窗口/连接库
+  if (!gotSingleInstanceLock && !allowMulti) return
+
   // 日志系统优先初始化,后续所有业务均可记录错误
   initLogger()
 
@@ -139,11 +158,9 @@ app.whenReady().then(() => {
   ensureLibrary(loadConfig().current)
 
   // 启动时自动备份数据库（滚一份 library.db.bak,成本极低）
-  try {
-    backupDatabase()
-  } catch (e) {
+  void backupDatabase().catch((e: unknown) => {
     logger.error('[backup]', `启动自动备份失败: ${(e as Error).message}`)
-  }
+  })
 
   registerIpc(() => mainWindow)
 

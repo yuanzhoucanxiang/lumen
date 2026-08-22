@@ -1,12 +1,12 @@
 import { app } from 'electron'
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'fs/promises'
-import { existsSync } from 'fs'
-import { renameSync } from 'fs'
-import { join, relative } from 'path'
-import { getDb } from './db'
+import { copyFileSync, existsSync, renameSync, statSync, unlinkSync } from 'fs'
+import { basename, dirname, join, relative } from 'path'
+import { getDb, closeDb, openDb } from './db'
 import { getLibraryPath } from './library'
 import { logger } from './logger'
 import { zipStoreStreamToFile, type ZipStreamEntry } from './zipLib'
+import type { DbBackupInfo, ZipBackupInfo } from '../shared/types'
 
 /* ---------------- 备份 ---------------- */
 
@@ -39,13 +39,15 @@ function rotateDbBackups(): void {
 /**
  * 备份数据库到 library.db.bak(同目录,自动轮转保留多代)。
  * 使用 better-sqlite3 的 backup API 在线热备,不阻塞读写。
+ * 注意必须 await 完成:大库热备耗时数秒,fire-and-forget 会让"备份完成"成为假象,
+ * 且后台热备持有源库句柄,期间恢复/清理 wal 会 EBUSY(里程碑 105 实证)。
  */
-export function backupDatabase(): string {
+export async function backupDatabase(): Promise<string> {
   const libPath = getLibraryPath()
   const target = join(libPath, 'library.db.bak')
   rotateDbBackups()
   const db = getDb()
-  db.backup(target)
+  await db.backup(target)
   logger.info('[backup]', `数据库已备份到 ${target}`)
   return target
 }
@@ -159,7 +161,7 @@ export async function autoBackupStartup(): Promise<{ db?: string; zip?: string }
 
   if (marker.lastDb !== today) {
     try {
-      backupDatabase()
+      await backupDatabase()
       done.db = join(getLibraryPath(), 'library.db.bak')
       // 每步成功后增量写 marker:中途被杀(如全量 zip 耗时中被关进程)也不重复已完成的步骤
       await writeMarker({ lastDb: today, lastZip: marker.lastZip })
@@ -183,4 +185,115 @@ export async function autoBackupStartup(): Promise<{ db?: string; zip?: string }
     logger.info('[backup]', `自动备份完成 db=${!!done.db} zip=${!!done.zip}`)
   }
   return Object.keys(done).length > 0 ? done : null
+}
+
+/* ---------------- 恢复 ---------------- */
+
+/** 列出库目录内的数据库快照(library.db.bak 系列,最新在前)。libPath 可注入供测试 */
+export function listDbBackups(libPath = getLibraryPath()): DbBackupInfo[] {
+  const out: DbBackupInfo[] = []
+  for (const suffix of ['', '.1', '.2']) {
+    const p = join(libPath, `library.db.bak${suffix}`)
+    try {
+      const st = statSync(p)
+      out.push({ path: p, mtimeMs: st.mtimeMs, sizeBytes: st.size })
+    } catch {
+      /* 该代不存在 */
+    }
+  }
+  return out.sort((a, b) => b.mtimeMs - a.mtimeMs)
+}
+
+/** 列出自动全量 ZIP 备份(userData/backups,最新在前),供展示与打开位置 */
+export async function listAutoZipBackups(): Promise<ZipBackupInfo[]> {
+  const dir = backupDir()
+  const out: ZipBackupInfo[] = []
+  try {
+    for (const name of await readdir(dir)) {
+      if (!/^lumen-full-.+\.zip$/.test(name)) continue
+      const p = join(dir, name)
+      const st = await stat(p)
+      out.push({ path: p, mtimeMs: st.mtimeMs, sizeBytes: st.size })
+    }
+  } catch {
+    /* 目录不存在 */
+  }
+  return out.sort((a, b) => b.mtimeMs - a.mtimeMs)
+}
+
+/**
+ * 从指定快照恢复数据库:
+ * ①校验路径必须位于当前库目录且为 library.db.bak 系列(防任意文件读取);
+ * ②先把当前 library.db 复制为 .pre-restore-<时间戳> 现场(误恢复可反悔);
+ * ③closeDb → 覆盖 → 清 -wal/-shm(旧 wal 重放会损坏数据) → openDb(内部 quick_check 兜底校验)。
+ *
+ * 关键约束:③必须同步一口气完成,不得让出事件循环——若 close 与 open 之间有并发 IPC
+ * 触发 getDb(),会重建连接并把 wal 重新锁住,导致清理永久 EBUSY(里程碑 105 实证)。
+ * 故重试用 Atomics.wait 同步短阻塞(恢复为低频重操作,亚秒级阻塞可接受);
+ * 同时覆盖 Windows 下 Defender/索引服务对 wal/shm 的延迟解锁。
+ * 不触碰 config.json,当前库不变。libPath 可注入供测试。
+ */
+export function restoreDatabase(bakPath: string, libPath = getLibraryPath()): { restoredFrom: string; emergencyPath: string } {
+  const allowed = new Set(['library.db.bak', 'library.db.bak.1', 'library.db.bak.2'])
+  if (!allowed.has(basename(bakPath)) || dirname(bakPath) !== libPath) {
+    throw new Error(`非法的备份路径: ${bakPath}`)
+  }
+  if (!existsSync(bakPath)) throw new Error(`备份文件不存在: ${bakPath}`)
+
+  const dbPath = join(libPath, 'library.db')
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const emergencyPath = join(libPath, `library.db.pre-restore-${stamp}`)
+  if (existsSync(dbPath)) copyFileSync(dbPath, emergencyPath)
+
+  const sleepSync = (ms: number): void => {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+  }
+
+  closeDb()
+  copyFileSync(bakPath, dbPath)
+  let cleanFailed: (Error & { code?: string }) | null = null
+  for (const side of ['-wal', '-shm']) {
+    const sidePath = dbPath + side
+    for (let attempt = 0; ; attempt++) {
+      try {
+        if (existsSync(sidePath)) unlinkSync(sidePath)
+        break
+      } catch (e) {
+        if (attempt >= 12) {
+          cleanFailed = e as Error
+          break
+        }
+        sleepSync(120)
+      }
+    }
+    if (cleanFailed) break
+  }
+
+  if (cleanFailed) {
+    // 恢复无法完成(典型:另一 LUMEN 实例占用同库锁着 wal)。此时绝不能让应用停留在
+    // "连接已关、未重开"的砖化状态:把现场复制回去并重开连接(WAL 支持多进程,另一实例
+    // 会继续维护其 wal),然后再抛出可操作的错误。
+    const occupied = cleanFailed.code === 'EBUSY' || cleanFailed.code === 'EPERM'
+    try {
+      copyFileSync(emergencyPath, dbPath)
+      openDb(libPath)
+    } catch (rbErr) {
+      logger.error('[backup]', `恢复中断且回滚失败: ${(rbErr as Error).message};请重启应用`)
+      throw new Error(`恢复中断且自动回滚失败,请重启应用后在设置中重试:${cleanFailed.message}`)
+    }
+    logger.warn('[backup]', `恢复被占用中断,已回滚保留原库(${basename(emergencyPath)} 为额外现场)`)
+    throw new Error(
+      occupied
+        ? '素材库正被另一个 LUMEN 实例或程序占用,无法完成恢复。请关闭其他 LUMEN 窗口后重试。'
+        : `清理 ${basename(dbPath)} 配套文件失败: ${cleanFailed.message}`
+    )
+  }
+  try {
+    openDb(libPath)
+  } catch (e) {
+    logger.error('[backup]', `恢复后校验失败(${basename(bakPath)}): ${(e as Error).message};原库现场保留于 ${emergencyPath}`)
+    throw e
+  }
+  logger.info('[backup]', `数据库已从 ${basename(bakPath)} 恢复;原库另存为 ${basename(emergencyPath)}`)
+  return { restoredFrom: bakPath, emergencyPath }
 }

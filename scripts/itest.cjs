@@ -81,7 +81,9 @@ async function main() {
     cwd: ROOT,
     stdio: 'inherit',
     shell: true,
-    detached: process.platform !== 'win32'
+    detached: process.platform !== 'win32',
+    // 测试逃生门:用户正式版 LUMEN 持有单实例锁时,dev 仍可启动(里程碑 105)
+    env: { ...process.env, LUMEN_ALLOW_MULTI: '1' }
   })
   let failed = 0
   try {

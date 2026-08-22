@@ -16,7 +16,7 @@ const MAX_BODY = 80 * 1024 * 1024 // 80MB
 const CLIENT_HEADER = 'x-lumen-client'
 const CLIENT_TOKEN = 'lumen-clip/1'
 
-const MIME_EXT: Record<string, string> = {
+export const MIME_EXT: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
   'image/gif': 'gif',

@@ -139,6 +139,8 @@ export interface ImportResult {
   failedFiles?: string[]
   /** 本次成功导入的素材 id(白板外部拖入需把新素材放到画布上) */
   importedIds?: string[]
+  /** URL 抓图失败清单(含原因),仅 import:urls 返回 */
+  failedUrls?: string[]
 }
 
 export interface AssetQuery {
@@ -272,6 +274,21 @@ export interface AiApplyRequest {
 export interface LibraryInfo {
   path: string
   assetCount: number
+}
+
+/** 数据库快照备份信息（library.db.bak 系列，最新在前） */
+export interface DbBackupInfo {
+  path: string
+  /** 文件修改时间（epoch ms） */
+  mtimeMs: number
+  sizeBytes: number
+}
+
+/** 自动全量 ZIP 备份信息（userData/backups，只读展示） */
+export interface ZipBackupInfo {
+  path: string
+  mtimeMs: number
+  sizeBytes: number
 }
 
 /** 自动更新状态机（主进程推送，渲染进程渲染提示） */

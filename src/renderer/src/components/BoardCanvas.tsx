@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { assetThumbUrl, useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 import { useTheme } from '../theme'
-import type { Asset, BoardItem, ShapeSpec } from '@shared/types'
+import type { Asset, BoardItem, BoardItemPatch, ShapeSpec } from '@shared/types'
 
 const ASSET_MIME = 'application/x-eaglelike-assets'
 
@@ -1884,6 +1884,38 @@ export default function BoardCanvas({
     await refreshBoardItems(boardId)
     setCtxMenu(null)
   }
+  /** 多选等距分布(对标 Figma/PureRef distribute):保持首尾位置不动,中间均匀间距,不改尺寸 */
+  const distributeCtx = async (axis: 'h' | 'v') => {
+    if (boardId == null) return
+    const target = ctxTarget()
+    if (target.length < 3) return
+    pushHistory()
+    const updates: { id: string; patch: BoardItemPatch }[] = []
+    if (axis === 'h') {
+      const sorted = [...target].sort((a, b) => a.x - b.x)
+      const span = sorted[sorted.length - 1].x - sorted[0].x
+      const sumSizes = sorted.reduce((s, it) => s + it.width, 0)
+      const gap = (span - sumSizes) / (sorted.length - 1)
+      let x = sorted[0].x
+      for (const it of sorted) {
+        updates.push({ id: it.id, patch: { x: Math.round(x) } })
+        x += it.width + gap
+      }
+    } else {
+      const sorted = [...target].sort((a, b) => a.y - b.y)
+      const span = sorted[sorted.length - 1].y - sorted[0].y
+      const sumSizes = sorted.reduce((s, it) => s + effHeight(it), 0)
+      const gap = (span - sumSizes) / (sorted.length - 1)
+      let y = sorted[0].y
+      for (const it of sorted) {
+        updates.push({ id: it.id, patch: { y: Math.round(y) } })
+        y += effHeight(it) + gap
+      }
+    }
+    await window.api.updateBoardItems(updates)
+    await refreshBoardItems(boardId)
+    setCtxMenu(null)
+  }
   const setNoteStyle = async (patch: NoteStylePatch) => {
     const target = ctxTarget()
     if (target.length === 0) return
@@ -2484,6 +2516,22 @@ export default function BoardCanvas({
           <button className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]" onClick={() => void arrangeCtx('column')}>
             纵向排列{multiSelected ? '选中' : ctxItem ? '选中' : ''}
           </button>
+          {multiSelected && selectedIdsRef.current.length >= 3 && (
+            <>
+              <button
+                className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                onClick={() => void distributeCtx('h')}
+              >
+                水平等距分布选中
+              </button>
+              <button
+                className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                onClick={() => void distributeCtx('v')}
+              >
+                垂直等距分布选中
+              </button>
+            </>
+          )}
         </div>
       )}
 

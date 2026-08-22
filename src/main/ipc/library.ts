@@ -1,7 +1,7 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { copyFileSync } from 'fs'
 import { addAndSwitchLibrary, getLibraryPath, loadConfig, removeLibrary, switchLibrary } from '../library'
-import { backupDatabase, backupLibraryToZip } from '../backup'
+import { backupDatabase, backupLibraryToZip, listAutoZipBackups, listDbBackups, restoreDatabase } from '../backup'
 import { logFilePath } from '../logger'
 import { libraryStats } from '../repository'
 import type { LibraryInfo } from '../../shared/types'
@@ -35,8 +35,22 @@ export function registerLibraryIpc(getWindow: () => BrowserWindow | null): void 
   ipcMain.handle('library:remove', (_e, path: string) => removeLibrary(path))
 
   /* ---------------- 备份 ---------------- */
-  // 立即备份数据库到 library.db.bak（启动时已自动备份一次,此为手动触发）
-  ipcMain.handle('library:backupDb', (): string => backupDatabase())
+  // 立即备份数据库到 library.db.bak（启动时已自动备份一次,此为手动触发;await 热备完成,大库需数秒）
+  ipcMain.handle('library:backupDb', async (): Promise<string> => backupDatabase())
+
+  // 列出可恢复的数据库快照(library.db.bak 系列,最新在前)
+  ipcMain.handle('library:listDbBackups', () => listDbBackups())
+
+  // 列出自动全量 ZIP 备份(userData/backups,只读展示)
+  ipcMain.handle('library:listAutoZips', () => listAutoZipBackups())
+
+  // 从快照恢复数据库(closeDb → 覆盖 → 清 wal/shm → openDb;当前库先另存现场)
+  ipcMain.handle('library:restoreDb', (_e, bakPath: string) => restoreDatabase(bakPath))
+
+  // 在系统文件管理器中显示备份文件
+  ipcMain.handle('library:revealBackup', (_e, p: string) => {
+    shell.showItemInFolder(p)
+  })
 
   // 导出日志文件（排查问题用，保存 main.log 到用户选择的位置）
   ipcMain.handle('logs:export', async (): Promise<string | null> => {

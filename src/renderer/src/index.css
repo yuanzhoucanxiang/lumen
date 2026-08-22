@@ -3228,6 +3228,17 @@ button:active:not(:disabled) {
   animation: pixel-dialog-in 180ms steps(4, end) both !important;
 }
 
+/* 业务弹窗基类(确认框/AI/导出/标签管理等)= 与设置中心同款的信号面板语言:
+   切角 + 青边 + drop-shadow 硬阴影(clip-path 会裁 box-shadow,故用 filter 实现硬阴影) */
+[data-theme='cyber-glitch'] .dialog {
+  border-radius: 0;
+  border-color: rgba(103, 232, 249, 0.26);
+  background: #0b1118;
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+  filter: drop-shadow(10px 10px 0 rgba(4, 20, 26, 0.6));
+  animation: pixel-dialog-in 180ms steps(4, end) both !important;
+}
+
 [data-theme='cyber-glitch'] .settings-sheet h2 {
   font-family: var(--font-ui);
   font-size: 16px;

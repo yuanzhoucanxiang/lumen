@@ -11,6 +11,20 @@ export interface AiConfig {
   model: string
 }
 
+/** 把常见 API 错误转译成可操作的中文提示;未知错误保留原文(截断) */
+function friendlyApiError(status: number, body: string): string {
+  const raw = body.slice(0, 160)
+  if (status === 401 || status === 403) return 'API Key 无效或没有权限,请在设置中检查 Key'
+  if (status === 429) {
+    if (/余额|1113|资源包|quota|insufficient/i.test(body))
+      return 'AI 账户余额不足或无可用资源包,请前往服务商充值后重试'
+    return '请求过于频繁(触发限流),请稍后重试或减小批量'
+  }
+  if (status === 404) return '接口或模型不存在,请检查设置中的 Base URL 与模型名'
+  if (status >= 500) return 'AI 服务商服务异常,请稍后重试'
+  return `API ${status}: ${raw}`
+}
+
 /**
  * 调 OpenAI 兼容 API(纯文本或含图)。
  * @param images 图片 base64 列表(多模态视觉输入,可选)
@@ -48,10 +62,16 @@ export async function chat(
     })
     if (!resp.ok) {
       const errText = await resp.text().catch(() => '')
-      throw new Error(`API ${resp.status}: ${errText.slice(0, 120)}`)
+      throw new Error(friendlyApiError(resp.status, errText))
     }
     const data = (await resp.json()) as { choices?: { message?: { content?: string } }[] }
     return data.choices?.[0]?.message?.content ?? ''
+  } catch (e) {
+    // AbortController 超时的原始报错是英文 abort 信息,转译成可操作提示
+    if (controller.signal.aborted) {
+      throw new Error(`请求超时(${Math.round(timeoutMs / 1000)}s),请检查网络或稍后重试`)
+    }
+    throw e
   } finally {
     clearTimeout(timer)
   }

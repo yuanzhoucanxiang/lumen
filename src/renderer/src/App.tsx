@@ -186,13 +186,32 @@ export default function App() {
     }
   }, [])
 
-  // Ctrl+V 粘贴图片/截图导入
+  // Ctrl+V 粘贴导入:剪贴板文件(截图/复制的图)直接导入;纯 http(s) 链接文本则抓取入库
   useEffect(() => {
     const onPaste = (e: ClipboardEvent): void => {
       const files = Array.from(e.clipboardData?.files ?? [])
       if (files.length > 0) {
         e.preventDefault()
         void importFiles(files)
+        return
+      }
+      // URL 抓图:焦点在输入框/备注等可编辑元素内时不拦截,保持默认粘贴行为
+      const target = e.target as HTMLElement | null
+      if (target?.closest('input, textarea, [contenteditable="true"]')) return
+      const text = (e.clipboardData?.getData('text/plain') ?? '').trim()
+      if (!text) return
+      const tokens = text.split(/\s+/).filter(Boolean)
+      const urls = tokens.filter((t) => /^https?:\/\//i.test(t))
+      // 仅当整段文本都是 URL 时才接管(部分是链接的普通文本不拦截)
+      if (urls.length > 0 && urls.length === tokens.length) {
+        e.preventDefault()
+        useLibraryStore.getState().showToast(`开始抓取 ${urls.length} 个链接…`)
+        void window.api.importFromUrls(urls).then((r) => {
+          const failedCount = r.failedUrls?.length ?? 0
+          useLibraryStore.getState().showToast(
+            `抓取完成:导入 ${r.imported},跳过 ${r.skipped}${failedCount > 0 ? `,失败 ${failedCount}` : ''}`
+          )
+        })
       }
     }
     window.addEventListener('paste', onPaste)
