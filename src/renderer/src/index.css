@@ -1153,6 +1153,12 @@ body::before {
   box-shadow: inset 0 -2px var(--accent);
 }
 
+/* 暗房语言:悬停时按钮呈滤光片插槽的内凹感 */
+.archive-filter:hover,
+.archive-filterbar .btn-ghost:hover {
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.32);
+}
+
 .archive-filterbar .btn-primary {
   position: relative;
   min-height: 30px;
@@ -2998,6 +3004,81 @@ button:active:not(:disabled) {
 [data-theme='cyber-glitch'] .archive-ai-action {
   border-color: rgba(232,90,168,.42) !important;
   color: #f188c2;
+}
+
+/* ---- 工具栏深度定制:筛选按钮 = 总线通道开关(小切角/青光悬停/青色通道点亮) ---- */
+[data-theme='cyber-glitch'] .archive-filter,
+[data-theme='cyber-glitch'] .archive-filterbar .btn-ghost {
+  clip-path: polygon(0 0, calc(100% - 5px) 0, 100% 5px, 100% 100%, 0 100%);
+  transition: border-color 100ms linear, box-shadow 100ms linear, color 100ms linear;
+}
+
+[data-theme='cyber-glitch'] .archive-filter:hover,
+[data-theme='cyber-glitch'] .archive-filterbar .btn-ghost:hover {
+  border-color: rgba(103, 232, 249, 0.55) !important;
+  box-shadow: 0 0 8px rgba(103, 232, 249, 0.22), inset 0 0 6px rgba(103, 232, 249, 0.08);
+  color: #d8f7fd;
+}
+
+/* 激活 = 青色通道点亮:左侧信号条 + 边框转青 + 文字变青 */
+[data-theme='cyber-glitch'] .archive-filter[aria-pressed='true'] {
+  position: relative;
+  border-color: rgba(103, 232, 249, 0.62) !important;
+  color: #9beefb;
+  background:
+    linear-gradient(90deg, rgba(103, 232, 249, 0.4) 0 2px, transparent 2px),
+    rgba(6, 26, 32, 0.55);
+  box-shadow: inset 0 0 8px rgba(103, 232, 249, 0.12);
+}
+
+/* 弹层菜单:120ms 信号接入(线性,无显影曲线) */
+[data-theme='cyber-glitch'] .anim-menu {
+  animation: cyber-menu-link 120ms linear both;
+}
+
+@keyframes cyber-menu-link {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 工具栏滑块与弹层内滑块 = 推子:刻度轨 + 方形青色推块 */
+[data-theme='cyber-glitch'] .archive-filterbar input[type='range'],
+[data-theme='cyber-glitch'] .menu input[type='range'] {
+  height: 14px;
+  appearance: none;
+  background:
+    repeating-linear-gradient(90deg, rgba(103, 232, 249, 0.3) 0 1px, transparent 1px 12px) center 2px / 100% 4px no-repeat,
+    linear-gradient(90deg, rgba(103, 232, 249, 0.36), rgba(103, 232, 249, 0.36)) center / 100% 1px no-repeat;
+}
+
+[data-theme='cyber-glitch'] .archive-filterbar input[type='range']::-webkit-slider-thumb,
+[data-theme='cyber-glitch'] .menu input[type='range']::-webkit-slider-thumb {
+  width: 10px;
+  height: 14px;
+  border: 1px solid rgba(103, 232, 249, 0.85);
+  border-radius: 0;
+  appearance: none;
+  background: #0a2530;
+  box-shadow: inset 0 0 3px rgba(103, 232, 249, 0.5);
+}
+
+[data-theme='cyber-glitch'] .archive-filterbar input[type='range']:hover::-webkit-slider-thumb,
+[data-theme='cyber-glitch'] .menu input[type='range']:hover::-webkit-slider-thumb {
+  background: #10404f;
+}
+
+/* 视图切换组:激活通道点亮青色 */
+[data-theme='cyber-glitch'] .archive-filterbar [role='group'] button[aria-pressed='true'] {
+  background: linear-gradient(90deg, rgba(103, 232, 249, 0.34) 0 2px, transparent 2px), rgba(10, 37, 48, 0.6) !important;
+  color: #9beefb;
+  box-shadow: inset 0 0 6px rgba(103, 232, 249, 0.14);
+}
+
+/* 键盘焦点:青色 outline 内缩(对齐 pixel 做法但更轻) */
+[data-theme='cyber-glitch'] .archive-filter:focus-visible,
+[data-theme='cyber-glitch'] .archive-filterbar .btn-ghost:focus-visible {
+  outline: 1px solid rgba(103, 232, 249, 0.75);
+  outline-offset: -2px;
 }
 
 [data-theme='cyber-glitch'] .contact-sheet {

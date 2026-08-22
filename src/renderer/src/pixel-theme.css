@@ -248,14 +248,18 @@
   width: 40px;
   height: 40px;
   padding: 3px;
-  border: 1px solid rgba(229, 230, 225, 0.58);
-  background: #d9dad5;
-  box-shadow: 3px 3px 0 rgba(229, 230, 225, 0.1);
+  border: 1px solid rgba(229, 230, 225, 0.34);
+  /* PX3.1 终端语言:深底 + 扫描线 + 蓝/红错位硬阴影(呼应右侧信号条),不用银盐式浅色负片框 */
+  background:
+    repeating-linear-gradient(0deg, rgba(229, 230, 225, 0.055) 0 1px, transparent 1px 3px),
+    #0b0e0c;
+  box-shadow: 2px 2px 0 rgba(63, 95, 200, 0.32), -2px -2px 0 rgba(212, 81, 88, 0.2);
   clip-path: none;
 }
 
 [data-theme='pixel-glitch'] .archive-brand__negative .brand-mark {
-  filter: grayscale(1) contrast(1.5) brightness(.62);
+  /* SVG 原图为浅空+黑鸦,invert 后成深底亮鸦剪影,进入像素终端配色 */
+  filter: grayscale(1) invert(1) contrast(1.22) brightness(0.98);
 }
 
 [data-theme='pixel-glitch'] .archive-brand__frame-no {
@@ -496,6 +500,79 @@
 [data-theme='pixel-glitch'] .archive-ai-action {
   border-color: rgba(63, 95, 200, 0.72) !important;
   color: #c7cef0;
+}
+
+/* ---- 工具栏深度定制:筛选按钮 = 终端指令键(直角/硬阴影位移/按下归位) ---- */
+[data-theme='pixel-glitch'] .archive-filter,
+[data-theme='pixel-glitch'] .archive-filterbar .btn-ghost {
+  position: relative;
+  border-radius: 0;
+  transition: none;
+}
+
+[data-theme='pixel-glitch'] .archive-filter:hover,
+[data-theme='pixel-glitch'] .archive-filterbar .btn-ghost:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 rgba(229, 230, 225, 0.22);
+}
+
+[data-theme='pixel-glitch'] .archive-filter:active,
+[data-theme='pixel-glitch'] .archive-filterbar .btn-ghost:active {
+  transform: translate(0, 0);
+  box-shadow: none;
+}
+
+/* 激活态右上角钴蓝信号角标 */
+[data-theme='pixel-glitch'] .archive-filter[aria-pressed='true']::after {
+  content: '';
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  width: 4px;
+  height: 4px;
+  background: #3f5fc8;
+}
+
+/* 弹层菜单:steps 快切入场,替换银盐显影曲线 */
+[data-theme='pixel-glitch'] .anim-menu {
+  animation: archive-panel-in 150ms steps(3, end) both;
+}
+
+/* 工具栏滑块(缩略图大小)与弹层内滑块(色环容差)= 刻度尺轨 + 方形钴蓝推块 */
+[data-theme='pixel-glitch'] .archive-filterbar input[type='range'],
+[data-theme='pixel-glitch'] .menu input[type='range'] {
+  height: 14px;
+  appearance: none;
+  background:
+    repeating-linear-gradient(90deg, rgba(229, 230, 225, 0.28) 0 1px, transparent 1px 12px) center 2px / 100% 4px no-repeat,
+    linear-gradient(90deg, rgba(229, 230, 225, 0.34), rgba(229, 230, 225, 0.34)) center / 100% 1px no-repeat;
+}
+
+[data-theme='pixel-glitch'] .archive-filterbar input[type='range']::-webkit-slider-thumb,
+[data-theme='pixel-glitch'] .menu input[type='range']::-webkit-slider-thumb {
+  width: 9px;
+  height: 14px;
+  border: 1px solid #e5e6e1;
+  border-radius: 0;
+  appearance: none;
+  background: #3f5fc8;
+  box-shadow: 2px 0 #050605;
+}
+
+/* 视图切换组:直角 + 激活通道点亮钴蓝信号底 */
+[data-theme='pixel-glitch'] .archive-filterbar [role='group'] {
+  border-radius: 0;
+  background: #070908;
+}
+
+[data-theme='pixel-glitch'] .archive-filterbar [role='group'] button {
+  border-radius: 0;
+}
+
+[data-theme='pixel-glitch'] .archive-filterbar [role='group'] button[aria-pressed='true'] {
+  background: linear-gradient(90deg, rgba(63, 95, 200, 0.32) 0 3px, transparent 3px), #12151a !important;
+  color: #c7cef0;
+  box-shadow: inset 0 0 0 1px rgba(63, 95, 200, 0.4);
 }
 
 /* 素材区：黑色负空间、薄框和稳定图片；点阵不覆盖素材。 */
