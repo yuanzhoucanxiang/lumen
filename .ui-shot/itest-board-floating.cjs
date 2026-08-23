@@ -197,8 +197,46 @@ async function main() {
   check('展开还原窗口高度(>200)', expState.h > 200, `innerHeight=${expState.h}`)
   check('展开后画布元素回归(2 元素+缩放)', expState.items === 2 && expState.slider, `items=${expState.items} slider=${expState.slider}`)
 
-  /* ---------- 8. 关闭浮动窗口 → target 消失 ---------- */
+  /* ---------- 7.5 最小化态持久化:折叠→关闭→重开,新窗恢复为折叠 ---------- */
+  await floatRun(`document.querySelector('button[aria-label="最小化浮动白板"]').click()`)
+  await sleep(700)
   await floatRun(`document.querySelector('button[aria-label="关闭浮动白板"]').click()`)
+  await sleep(500)
+  await mainRun(`(() => {
+    const btn = document.querySelector('button[aria-label="白板浮动置顶"]')
+    btn.click()
+  })()`)
+  let reFloatTarget = null
+  for (let i = 0; i < 40; i++) {
+    await sleep(500)
+    const ts = await getJson('http://127.0.0.1:9333/json/list')
+    reFloatTarget = ts.find((t) => t.type === 'page' && t.url.includes('floating=1') && t.url.includes(`board=${boardId}`))
+    if (reFloatTarget) break
+  }
+  check('重开浮动窗(新 target)', !!reFloatTarget, reFloatTarget ? reFloatTarget.url.slice(0, 60) : 'none')
+  const reFloat = await connect(reFloatTarget.webSocketDebuggerUrl)
+  const reFloatRun = reFloat.run
+  await sleep(800)
+  const persistState = await reFloatRun(`
+    return {
+      h: window.innerHeight,
+      slider: !!document.querySelector('input[aria-label="浮动白板缩放"]'),
+      expandBtn: !!document.querySelector('button[aria-label="展开浮动白板"]'),
+      minimizedQ: new URLSearchParams(location.search).get('minimized')
+    }
+  `)
+  check('重开后保持折叠态(标题条+展开按钮+query)', persistState.h > 0 && persistState.h < 100 && persistState.expandBtn && persistState.minimizedQ === '1', JSON.stringify(persistState))
+  // 展开回满血,留给后续干净状态(config.minimized=false)
+  await reFloatRun(`document.querySelector('button[aria-label="展开浮动白板"]').click()`)
+  await sleep(800)
+  const expAfterReopen = await reFloatRun(`return {
+    h: window.innerHeight,
+    items: document.querySelectorAll('[data-board-item]').length
+  }`)
+  check('重开后展开恢复(元素回归)', expAfterReopen.h > 200 && expAfterReopen.items === 2, JSON.stringify(expAfterReopen))
+
+  /* ---------- 8. 关闭浮动窗口 → target 消失 ---------- */
+  await reFloatRun(`document.querySelector('button[aria-label="关闭浮动白板"]').click()`)
   let gone = false
   for (let i = 0; i < 20; i++) {
     await sleep(300)

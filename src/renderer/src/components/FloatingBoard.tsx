@@ -14,8 +14,9 @@ export default function FloatingBoard({ boardId }: { boardId: number }) {
   const refreshBoardItems = useLibraryStore((s) => s.refreshBoardItems)
   const [currentBoardId, setCurrentBoardId] = useState(boardId)
   const [zoom, setZoom] = useState(1)
-  /** 折叠（最小化）态：主进程把窗口收成标题条高,画布卸载 */
-  const [minimized, setMinimized] = useState(false)
+  /** 折叠（最小化）态：主进程把窗口收成标题条高,画布卸载。
+   *  初始值读 URL query(主进程创建窗口时按上次状态写入),重开保持折叠/展开态 */
+  const [minimized, setMinimized] = useState(() => new URLSearchParams(window.location.search).get('minimized') === '1')
   const canvasApiRef = useRef<{ zoomTo: (s: number) => void } | null>(null)
   // 稳定回调：内联箭头会让 BoardCanvas 的滚轮监听每帧重挂
   const onViewportChange = useCallback((s: number) => setZoom(s), [])

@@ -218,7 +218,9 @@ function migrate(d: Database.Database): void {
   ensureColumns(d, 'boards', {
     guides: "TEXT NOT NULL DEFAULT '[]'",
     // 画布外观 JSON：{bg:'dark'|'gray'|'light'|'white'|'black'|'#rrggbb', grid:boolean, gridSize:number}
-    appearance: "TEXT NOT NULL DEFAULT '{\"bg\":\"dark\",\"grid\":true,\"gridSize\":24}'"
+    appearance: "TEXT NOT NULL DEFAULT '{\"bg\":\"dark\",\"grid\":true,\"gridSize\":24}'",
+    // 上次视口 JSON：{s:缩放, x:平移x, y:平移y},''=未保存(首开用默认视口)
+    viewport: "TEXT NOT NULL DEFAULT ''"
   })
 
   // 回填迁移:把当前回收站里的软删记录一次性写入 tombstone,

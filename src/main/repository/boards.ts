@@ -6,7 +6,7 @@ import type { Board, BoardItem } from '../../shared/types'
 export function listBoards(): Board[] {
   return stmt(
     getDb(),
-    `SELECT id, name, created_at AS createdAt, updated_at AS updatedAt, guides, appearance
+    `SELECT id, name, created_at AS createdAt, updated_at AS updatedAt, guides, appearance, viewport
        FROM boards ORDER BY updated_at DESC`
   ).all() as Board[]
 }
@@ -15,7 +15,7 @@ export function createBoard(name: string): Board {
   const db = getDb()
   const now = Date.now()
   const info = db.prepare('INSERT INTO boards (name, created_at, updated_at) VALUES (?, ?, ?)').run(name, now, now)
-  return { id: Number(info.lastInsertRowid), name, createdAt: now, updatedAt: now, guides: '[]', appearance: '{"bg":"dark","grid":true,"gridSize":24}' }
+  return { id: Number(info.lastInsertRowid), name, createdAt: now, updatedAt: now, guides: '[]', appearance: '{"bg":"dark","grid":true,"gridSize":24}', viewport: '' }
 }
 
 export function renameBoard(id: number, name: string): void {
@@ -251,4 +251,9 @@ export function updateBoardGuides(boardId: number, guidesJson: string): void {
 export function updateBoardAppearance(boardId: number, appearanceJson: string): void {
   const db = getDb()
   db.prepare('UPDATE boards SET appearance = ?, updated_at = ? WHERE id = ?').run(appearanceJson, Date.now(), boardId)
+}
+
+/** 保存白板视口（JSON：{s,x,y}）。纯视图状态,不 bump updated_at——否则每次平移/缩放都重排白板列表 */
+export function updateBoardViewport(boardId: number, viewportJson: string): void {
+  getDb().prepare('UPDATE boards SET viewport = ? WHERE id = ?').run(viewportJson, boardId)
 }

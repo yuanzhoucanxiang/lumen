@@ -22,6 +22,8 @@ export interface AppConfig {
   aiModel?: string
   /** 导入后自动执行 AI 处理（改名+打标签） */
   aiAutoOnImport?: boolean
+  /** 浮动白板窗状态(位置/尺寸/最小化),重开保持与上次一致 */
+  floatingWindow?: { x: number; y: number; width: number; height: number; minimized: boolean }
 }
 
 function configPath(): string {
@@ -63,7 +65,8 @@ export function loadConfig(): AppConfig {
       aiBaseUrl: raw.aiBaseUrl ?? 'https://open.bigmodel.cn/api/paas/v4',
       aiApiKey: raw.aiApiKey ?? '',
       aiModel: raw.aiModel ?? 'glm-4v',
-      aiAutoOnImport: raw.aiAutoOnImport ?? false
+      aiAutoOnImport: raw.aiAutoOnImport ?? false,
+      floatingWindow: raw.floatingWindow
     }
   }
   const def = defaultLibraryPath()

@@ -1,6 +1,6 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { writeFileSync } from 'fs'
-import { addBoardItem, bringBoardItemToFront, createBoard, deleteBoard, deleteBoardItem, listBoardItems, listBoards, renameBoard, updateBoardAppearance, updateBoardGuides, updateBoardItem, updateBoardItems } from '../repository'
+import { addBoardItem, bringBoardItemToFront, createBoard, deleteBoard, deleteBoardItem, listBoardItems, listBoards, renameBoard, updateBoardAppearance, updateBoardGuides, updateBoardItem, updateBoardItems, updateBoardViewport } from '../repository'
 import { exportBoardToFile, importBoardFromFile } from '../boardFile'
 import { closeFloatingBoardIfBoard } from '../floatingBoard'
 import type { BoardItem } from '../../shared/types'
@@ -39,6 +39,7 @@ export function registerBoardsIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('board:front', (_e, id: string, boardId: number) => bringBoardItemToFront(id, boardId))
   ipcMain.handle('board:setGuides', (_e, boardId: number, guidesJson: string) => updateBoardGuides(boardId, guidesJson))
   ipcMain.handle('board:setAppearance', (_e, boardId: number, appearanceJson: string) => updateBoardAppearance(boardId, appearanceJson))
+  ipcMain.handle('board:setViewport', (_e, boardId: number, viewportJson: string) => updateBoardViewport(boardId, viewportJson))
   ipcMain.handle('board:exportSvg', async (_e, boardId: number, svg: string) => {
     const win = getWindow()
     if (!win) return null

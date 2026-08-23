@@ -64,6 +64,8 @@ export interface Board {
   guides: string
   /** 画布外观 JSON：{bg:'dark'|'gray'|'light'|'white'|'black'|'#rrggbb', grid:boolean, gridSize:number} */
   appearance: string
+  /** 上次视口 JSON：{s:缩放, x:平移x, y:平移y}，''=未保存(首开用默认视口)。白板重开保持缩放与位置 */
+  viewport: string
 }
 
 /** 形状元素规格（points 为元素内归一化坐标 0-1，渲染时乘 width/height） */

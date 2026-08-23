@@ -170,6 +170,9 @@ const api = {
     ipcRenderer.invoke('board:setGuides', boardId, guidesJson),
   setBoardAppearance: (boardId: number, appearanceJson: string): Promise<void> =>
     ipcRenderer.invoke('board:setAppearance', boardId, appearanceJson),
+  /** 保存白板视口(缩放+位置),重开保持;视图状态不触发列表重排 */
+  setBoardViewport: (boardId: number, viewportJson: string): Promise<void> =>
+    ipcRenderer.invoke('board:setViewport', boardId, viewportJson),
   exportBoardSvg: (boardId: number, svg: string): Promise<{ target: string } | null> =>
     ipcRenderer.invoke('board:exportSvg', boardId, svg),
 

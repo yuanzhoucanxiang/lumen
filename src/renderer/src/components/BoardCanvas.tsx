@@ -15,6 +15,19 @@ interface Viewport {
   y: number // translate y (px)
 }
 
+/** 解析白板已保存视口 JSON(boards.viewport),缺失/非法返回 null(用默认视口) */
+function parseBoardViewport(json: string): Viewport | null {
+  try {
+    const p = JSON.parse(json) as { s?: number; x?: number; y?: number }
+    if (typeof p.s === 'number' && typeof p.x === 'number' && typeof p.y === 'number') {
+      return { s: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, p.s)), x: p.x, y: p.y }
+    }
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 4
 const MIN_SIZE = 40
@@ -741,19 +754,57 @@ export default function BoardCanvas({
     setCtxMenu(null)
   }
 
-  // 切换白板时重置视口与选中
+  // 切换白板时重置选中,并恢复上次视口(缩放+位置,无保存则默认)。
+  // 视口保存只写 DB 不同步 store,故恢复用 listBoards 取最新值;已恢复过的板不再重复应用
+  const lastSavedViewportRef = useRef<Viewport | null>(null)
+  const restoredForRef = useRef<number | null>(null)
   useEffect(() => {
-    const reset = { s: 1, x: 0, y: 0 }
-    viewportRef.current = reset
-    setViewport(reset)
+    if (!activeBoardId || restoredForRef.current === activeBoardId) return
     setSel([])
     setMarquee(null)
     setDrawPreview(null)
     drawingRef.current = null
     // 正在编辑的 note 随 boardItems 替换被卸载,textarea 卸载不触发 blur:显式退出编辑态
     setEditingNoteId(null)
-    if (surfaceRef.current) surfaceRef.current.style.transform = 'translate3d(0px, 0px, 0px) scale(1)'
-    onViewportChange?.(1)
+    let cancelled = false
+    void window.api.listBoards().then((bs) => {
+      if (cancelled) return
+      const b = bs.find((x) => x.id === activeBoardId)
+      const next = (b ? parseBoardViewport(b.viewport) : null) ?? { s: 1, x: 0, y: 0 }
+      applyViewport(next)
+      lastSavedViewportRef.current = { ...next }
+      restoredForRef.current = activeBoardId
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeBoardId])
+
+  // 视口持久化:缩放/平移后防抖 600ms 落库;未变或恢复值不重复写
+  useEffect(() => {
+    if (!activeBoardId || restoredForRef.current !== activeBoardId) return
+    const last = lastSavedViewportRef.current
+    if (last && last.s === viewport.s && last.x === viewport.x && last.y === viewport.y) return
+    const t = setTimeout(() => {
+      lastSavedViewportRef.current = { ...viewport }
+      void window.api.setBoardViewport(activeBoardId, JSON.stringify(viewport))
+    }, 600)
+    return () => clearTimeout(t)
+  }, [viewport, activeBoardId])
+
+  // 卸载/切板前把防抖窗口内的最后一次视口立即写入(白板重开保持上次缩放与位置)
+  useEffect(() => {
+    return () => {
+      const id = activeBoardId
+      if (!id) return
+      const v = viewportRef.current
+      const last = lastSavedViewportRef.current
+      if (last && (last.s !== v.s || last.x !== v.x || last.y !== v.y)) {
+        lastSavedViewportRef.current = { ...v }
+        void window.api.setBoardViewport(id, JSON.stringify(v))
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeBoardId])
 
