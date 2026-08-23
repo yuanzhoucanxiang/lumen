@@ -13,7 +13,14 @@ import { runStartupMaintenance } from './maintenance'
 import { initUpdater } from './updater'
 import { initLogger, logger } from './logger'
 import { backupDatabase } from './backup'
-import { closeFloatingBoard, openFloatingBoard } from './floatingBoard'
+import {
+  closeFloatingBoard,
+  minimizeFloatingBoard,
+  openFloatingBoard,
+  resetFloatingBoardPosition,
+  restoreFloatingBoard,
+  toggleFloatingBoardMinimize
+} from './floatingBoard'
 import { ipcMain } from 'electron'
 
 // 无头 CI(xvfb):禁用 GPU 硬件加速,让重载/导入等场景在 headless Chromium 下更稳
@@ -184,6 +191,10 @@ app.whenReady().then(() => {
   // 白板浮动置顶窗口
   ipcMain.handle('window:floatingOpen', (_e, boardId: number) => openFloatingBoard(boardId))
   ipcMain.handle('window:floatingClose', () => closeFloatingBoard())
+  ipcMain.handle('window:floatingMinimize', () => minimizeFloatingBoard())
+  ipcMain.handle('window:floatingRestore', () => restoreFloatingBoard())
+  ipcMain.handle('window:floatingToggleMinimize', () => toggleFloatingBoardMinimize())
+  ipcMain.handle('window:floatingResetPos', () => resetFloatingBoardPosition())
 
   // 浏览器剪藏接收服务：导入成功后通知渲染进程刷新
   startClipServer((count) => {

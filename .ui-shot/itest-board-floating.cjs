@@ -160,7 +160,44 @@ async function main() {
   const aMain = mainItems.find((i) => i.text === 'A')
   check('主窗口读取到浮动窗改动(DB 一致)', aMain.x === a2.x, `主窗看到 x=${aMain.x}`)
 
-  /* ---------- 5. 关闭浮动窗口 → target 消失 ---------- */
+  /* ---------- 5. 最小化：折叠为标题条窄条,画布卸载 ---------- */
+  await floatRun(`(() => {
+    const btn = document.querySelector('button[aria-label="最小化浮动白板"]')
+    btn.click()
+  })()`)
+  await sleep(800)
+  const minState = await floatRun(`
+    return {
+      h: window.innerHeight,
+      items: document.querySelectorAll('[data-board-item]').length,
+      slider: !!document.querySelector('input[aria-label="浮动白板缩放"]'),
+      expandBtn: !!document.querySelector('button[aria-label="展开浮动白板"]')
+    }
+  `)
+  check('最小化折叠(高度≈标题条)', minState.h > 0 && minState.h < 100, `innerHeight=${minState.h}`)
+  check('折叠后画布卸载(元素/缩放滑块消失)', minState.items === 0 && !minState.slider, `items=${minState.items} slider=${minState.slider}`)
+  check('折叠后出现展开按钮', minState.expandBtn, '')
+
+  /* ---------- 6. 归位：贴回屏幕右上角（无崩溃,窗口仍在） ---------- */
+  await floatRun(`document.querySelector('button[aria-label="浮动白板归位"]').click()`)
+  await sleep(500)
+  const aliveAfterReset = await getJson('http://127.0.0.1:9333/json/list')
+  check('归位后窗口仍存活', aliveAfterReset.some((t) => t.type === 'page' && t.url.includes(`board=${boardId}`)), '')
+
+  /* ---------- 7. 展开：还原到折叠前大小,画布元素回归 ---------- */
+  await floatRun(`document.querySelector('button[aria-label="展开浮动白板"]').click()`)
+  await sleep(800)
+  const expState = await floatRun(`
+    return {
+      h: window.innerHeight,
+      items: document.querySelectorAll('[data-board-item]').length,
+      slider: !!document.querySelector('input[aria-label="浮动白板缩放"]')
+    }
+  `)
+  check('展开还原窗口高度(>200)', expState.h > 200, `innerHeight=${expState.h}`)
+  check('展开后画布元素回归(2 元素+缩放)', expState.items === 2 && expState.slider, `items=${expState.items} slider=${expState.slider}`)
+
+  /* ---------- 8. 关闭浮动窗口 → target 消失 ---------- */
   await floatRun(`document.querySelector('button[aria-label="关闭浮动白板"]').click()`)
   let gone = false
   for (let i = 0; i < 20; i++) {

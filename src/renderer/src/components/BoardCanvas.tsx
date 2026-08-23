@@ -18,10 +18,15 @@ interface Viewport {
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 4
 const MIN_SIZE = 40
-/** 原图切换(方案 B,对标 PureRef 像素级真实):放大超过阈值换原图,缩回阈值以下回缩略图。
- *  带滞回避免在阈值附近反复抖动;切回缩略图以控制大图显存占用。 */
-const ORIG_ZOOM_UP = 1.25
-const ORIG_ZOOM_DOWN = 0.85
+/** 素材上板初始尺寸:按原比例入板(长边取原像素尺寸、封顶 1280,不放大)。
+ *  旧版封顶 280px 太小,大图一进来就是小缩略图,需放大才清晰(对标 PureRef 原尺寸入板)。 */
+const BOARD_DROP_LONG_EDGE = 1280
+/** 原图切换(方案 B 像素级判据,对标 PureRef):缩略图长边上限 512px(与主进程生成一致),
+ *  素材渲染尺寸超过它(= 缩略图被放大)就切原图,否则缩略图足够清晰。
+ *  旧版用整体缩放阈值(≥1.25 才开),100% 缩放下的大图仍是放大的缩略图,必须放大才清晰;
+ *  逐项滞回防抖动:渲染长边 >512 开原图、< ~358 切回缩略图(控制大图显存)。 */
+const ORIG_PX_UP = 512
+const ORIG_PX_DOWN = 512 * 0.7
 /** 白板可直接用浏览器解码的扩展名(heic/psd/ai 等无浏览器原图,仍用缩略图) */
 const BOARD_ORIG_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'tiff', 'tif', 'svg'])
 /** 框选拖拽超过该距离(画布坐标 px)才视为框选而非点击 */
@@ -240,17 +245,28 @@ export default function BoardCanvas({
   const panRef = useRef<{ startX: number; startY: number; vx: number; vy: number; moved: boolean } | null>(null)
   const suppressItemClickUntilRef = useRef(0)
 
-  /* ---------- 原图/缩略图切换(方案 B)----------
-     放大超阈值时,视口内的静态图片叠加加载原图(淡入覆盖缩略图),像素级清晰;
-     缩回阈值以下切回缩略图,控制大图显存。滞回防抖动。 */
-  const [origOn, setOrigOn] = useState(false)
+  /* ---------- 原图/缩略图切换(方案 B,逐项像素判据)----------
+     素材渲染长边超过缩略图分辨率才换原图(淡入覆盖,像素级清晰),否则缩略图足够;
+     逐项滞回防抖动,切回缩略图控制大图显存。 */
+  const [origItems, setOrigItems] = useState<ReadonlySet<string>>(new Set())
   useEffect(() => {
-    setOrigOn((on) => {
-      if (viewport.s >= ORIG_ZOOM_UP && !on) return true
-      if (viewport.s <= ORIG_ZOOM_DOWN && on) return false
-      return on
+    setOrigItems((prev) => {
+      const next = new Set<string>()
+      for (const it of boardItems) {
+        if (it.type !== 'asset' || !it.assetId) continue
+        const h = it.height > 0 ? it.height : it.width * (aspectCacheRef.current[it.assetId] ?? 0.75)
+        const rendered = Math.max(it.width, h) * viewport.s
+        if (prev.has(it.id)) {
+          if (rendered > ORIG_PX_DOWN) next.add(it.id) // 已在原图:缩回阈值以下才切回
+        } else if (rendered >= ORIG_PX_UP) {
+          next.add(it.id) // 缩略图被放大:换原图
+        }
+      }
+      if (next.size !== prev.size) return next
+      for (const id of next) if (!prev.has(id)) return next
+      return prev
     })
-  }, [viewport.s])
+  }, [viewport.s, boardItems])
   /** 已成功加载原图的 assetId(驱动淡入,避免原图未就绪时的空白闪动) */
   const [origLoaded, setOrigLoaded] = useState<Set<string>>(new Set())
   const markOrigLoaded = (id: string): void => {
@@ -1000,21 +1016,22 @@ export default function BoardCanvas({
           cursorY += rowHeight
           rowHeight = 0
         }
-        const asset = assetById.get(ids[i])
-        // 照抄 MOTZ fitImageNodeSize：最大 280 宽,保持比例
+        // 实时回退:外部文件刚导入时 assetById 闭包可能未及刷新(await refreshAssets 后旧闭包
+        // 仍缺新素材),从 store 现态补查,保证新导入素材也按原比例落位
+        const asset = assetById.get(ids[i]) ?? useLibraryStore.getState().assets.find((a) => a.id === ids[i])
+        // 按原比例入板:长边取原像素尺寸、封顶 1280(不放大),比例保持
         let w = 240
         if (asset && asset.width > 0 && asset.height > 0) {
-          const maxW = 280
-          const ratio = asset.height / Math.max(1, asset.width)
-          w = Math.min(maxW, asset.width > maxW ? maxW : asset.width)
-          const h = w * ratio
+          const scale = Math.min(1, BOARD_DROP_LONG_EDGE / Math.max(asset.width, asset.height))
+          w = Math.round(asset.width * scale)
+          const h = Math.round(asset.height * scale)
           await window.api.addBoardItem(boardId, {
             assetId: ids[i],
             type: 'asset',
             x: Math.round(cursorX),
             y: Math.round(cursorY),
-            width: Math.round(w),
-            height: Math.round(h)
+            width: w,
+            height: h
           })
           cursorX += w
           rowHeight = Math.max(rowHeight, h)
@@ -2139,10 +2156,10 @@ export default function BoardCanvas({
           const editing = item.type === 'note' && editingNoteId === item.id
           // 视口降级:素材渲染尺寸过小时用主色色块占位,免除缩略图解码/绘制(仅 asset,文字/形状保持可读)
           const degraded = item.type === 'asset' && (item.width * viewport.s < DEGRADE_PX || autoH * viewport.s < DEGRADE_PX)
-          // 方案 B:放大且浏览器可解码的静态图,叠加原图淡入(视口内才加载,控显存)
+          // 方案 B:渲染尺寸超过缩略图分辨率(被放大)且浏览器可解码的静态图,叠加原图淡入(视口内才加载,控显存)
           const elig =
             !degraded &&
-            origOn &&
+            origItems.has(item.id) &&
             !!asset &&
             BOARD_ORIG_EXTS.has(asset.ext) &&
             asset.width > 0 &&

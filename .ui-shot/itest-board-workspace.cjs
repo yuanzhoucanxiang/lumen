@@ -123,7 +123,8 @@ async function main() {
       check('参考素材架切换到目标文件夹', afterFolder.source === sourceFolder.name && afterFolder.count > 0, JSON.stringify(afterFolder))
     }
 
-    const beforeItems = await run(`return (await window.api.listBoardItems(${boardId})).length`)
+    const beforeIds = await run(`return (await window.api.listBoardItems(${boardId})).map((i) => i.id)`)
+    const beforeItems = beforeIds.length
     const dragResult = await run(`return (() => {
       const source = document.querySelector('[data-board-reference-asset]')
       const canvas = document.querySelector('[data-board-frame]')
@@ -140,6 +141,19 @@ async function main() {
     const afterItems = await run(`return (await window.api.listBoardItems(${boardId})).length`)
     check('参考素材使用专用 MIME 拖入', dragResult.ok && dragResult.types.includes('application/x-eaglelike-assets'), JSON.stringify(dragResult))
     check('拖放后素材真实进入当前白板', afterItems > beforeItems, `${beforeItems} → ${afterItems}`)
+
+    // 按原比例入板(里程碑 113):长边=原像素尺寸、封顶 1280、不放大(旧版封顶 280)
+    const dropSize = await run(`return (async () => {
+      const id = document.querySelector('[data-board-reference-asset]').dataset.boardReferenceAsset
+      const asset = await window.api.getAsset(id)
+      const before = new Set(${JSON.stringify(beforeIds)})
+      const now = await window.api.listBoardItems(${boardId})
+      const added = now.find((i) => !before.has(i.id))
+      if (!asset || asset.width <= 0 || asset.height <= 0 || !added) return { ok: false, reason: 'missing data' }
+      const scale = Math.min(1, 1280 / Math.max(asset.width, asset.height))
+      return { ok: true, w: added.width, h: added.height, expW: Math.round(asset.width * scale), expH: Math.round(asset.height * scale), aw: asset.width, ah: asset.height }
+    })()`)
+    check('按原比例入板(长边原尺寸封顶1280不放大)', dropSize.ok && dropSize.w === dropSize.expW && dropSize.h === dropSize.expH, dropSize.ok ? `asset ${dropSize.aw}x${dropSize.ah} → 入板 ${dropSize.w}x${dropSize.h}` : dropSize.reason)
 
     // 外部文件拖入白板(对标 PureRef):真实导入返回 importedIds,可放到画布
     const os = require('os')
@@ -237,14 +251,15 @@ async function main() {
       orig: document.querySelectorAll('[data-board-orig]').length,
       loaded: document.querySelectorAll('[data-board-orig][style*="opacity: 1"]').length
     }`)
-    await run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '0', bubbles: true }))`)
-    await sleep(300)
-    await run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '-', bubbles: true }))`)
-    await sleep(300)
-    await run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '-', bubbles: true }))`)
-    await sleep(600)
-    const origShrunk = await run(`return document.querySelectorAll('[data-board-orig]').length`)
     check('放大加载原图(叠加 data-board-orig 且淡入完成)', origZoomed.scale >= 1.25 && origZoomed.orig > 0 && origZoomed.loaded > 0, JSON.stringify(origZoomed))
+    // 缩小切回缩略图:入板尺寸越大(1280 长边)需越多次 '-' 才降到滞回下沿以下,循环按压直到移除(上限 10)
+    let origShrunk = -1
+    for (let k = 0; k < 10; k++) {
+      await run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '-', bubbles: true }))`)
+      await sleep(250)
+      origShrunk = await run(`return document.querySelectorAll('[data-board-orig]').length`)
+      if (origShrunk === 0) break
+    }
     check('缩小后切回缩略图(原图层移除)', origShrunk === 0, `orig=${origShrunk}`)
     await run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '0', bubbles: true }))`)
     await sleep(300)

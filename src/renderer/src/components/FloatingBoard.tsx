@@ -14,6 +14,8 @@ export default function FloatingBoard({ boardId }: { boardId: number }) {
   const refreshBoardItems = useLibraryStore((s) => s.refreshBoardItems)
   const [currentBoardId, setCurrentBoardId] = useState(boardId)
   const [zoom, setZoom] = useState(1)
+  /** 折叠（最小化）态：主进程把窗口收成标题条高,画布卸载 */
+  const [minimized, setMinimized] = useState(false)
   const canvasApiRef = useRef<{ zoomTo: (s: number) => void } | null>(null)
   // 稳定回调：内联箭头会让 BoardCanvas 的滚轮监听每帧重挂
   const onViewportChange = useCallback((s: number) => setZoom(s), [])
@@ -21,6 +23,11 @@ export default function FloatingBoard({ boardId }: { boardId: number }) {
   // 主进程复用已开的浮动窗时会发 board:switch 通知切换白板
   useEffect(() => {
     window.api.onBoardSwitch((id) => setCurrentBoardId(id))
+  }, [])
+
+  // 主进程折叠/展开后同步 UI 状态（窗口高度变化由主进程负责）
+  useEffect(() => {
+    window.api.onBoardMinimized((m) => setMinimized(m))
   }, [])
 
   // 初始化 store：激活该白板并加载元素/白板列表。
@@ -43,21 +50,45 @@ export default function FloatingBoard({ boardId }: { boardId: number }) {
         <Icon name="shapes" size={12} />
         <span className="truncate font-medium">{board?.name ?? '白板'}</span>
         <div className="ml-auto flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <span className="mono text-[11px] text-[var(--text-faint)]">{Math.round(zoom * 100)}%</span>
-          <input
-            aria-label="浮动白板缩放"
-            type="range"
-            min={0.1}
-            max={4}
-            step={0.01}
-            value={zoom}
-            onChange={(e) => {
-              const v = Number(e.target.value)
-              setZoom(v)
-              canvasApiRef.current?.zoomTo(v)
+          {!minimized && (
+            <>
+              <span className="mono text-[11px] text-[var(--text-faint)]">{Math.round(zoom * 100)}%</span>
+              <input
+                aria-label="浮动白板缩放"
+                type="range"
+                min={0.1}
+                max={4}
+                step={0.01}
+                value={zoom}
+                onChange={(e) => {
+                  const v = Number(e.target.value)
+                  setZoom(v)
+                  canvasApiRef.current?.zoomTo(v)
+                }}
+                className="w-20 accent-[var(--accent)]"
+              />
+            </>
+          )}
+          <button
+            aria-label={minimized ? '展开浮动白板' : '最小化浮动白板'}
+            title={minimized ? '展开浮动白板' : '最小化浮动白板（折叠为标题条）'}
+            className="flex h-6 w-6 items-center justify-center rounded-sm text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]"
+            onClick={() => {
+              // 先乐观更新,主进程 setBounds + 事件兜底同步
+              setMinimized((m) => !m)
+              void window.api.toggleFloatingWindowMinimize()
             }}
-            className="w-20 accent-[var(--accent)]"
-          />
+          >
+            <Icon name={minimized ? 'restoreDown' : 'minimize'} size={13} />
+          </button>
+          <button
+            aria-label="浮动白板归位"
+            title="归位（贴回屏幕右上角）"
+            className="flex h-6 w-6 items-center justify-center rounded-sm text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]"
+            onClick={() => void window.api.resetFloatingWindowPosition()}
+          >
+            <Icon name="corner" size={13} />
+          </button>
           <button
             aria-label="关闭浮动白板"
             title="关闭浮动白板"
@@ -68,10 +99,12 @@ export default function FloatingBoard({ boardId }: { boardId: number }) {
           </button>
         </div>
       </div>
-      <BoardCanvas
-        onViewportChange={onViewportChange}
-        onApiReady={(api) => (canvasApiRef.current = api)}
-      />
+      {!minimized && (
+        <BoardCanvas
+          onViewportChange={onViewportChange}
+          onApiReady={(api) => (canvasApiRef.current = api)}
+        />
+      )}
     </div>
   )
 }

@@ -239,6 +239,22 @@ const PATHS = {
     <>
       <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
     </>
+  ),
+  /* 白板浮动窗：最小化（折叠为标题条窄条） */
+  minimize: <path d="M5 12h14" />,
+  /* 白板浮动窗：展开（折叠态还原） */
+  restoreDown: (
+    <>
+      <rect x="4.5" y="9" width="10.5" height="10.5" rx="1.5" />
+      <path d="M9 4.5h8.5a2 2 0 0 1 2 2V15" />
+    </>
+  ),
+  /* 白板浮动窗：归位（贴回屏幕右上角） */
+  corner: (
+    <>
+      <path d="M5 19 19 5" />
+      <path d="M19 13V5h-8" />
+    </>
   )
 } satisfies Record<string, ReactNode>
 

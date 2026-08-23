@@ -177,6 +177,15 @@ const api = {
   openFloatingBoard: (boardId: number): Promise<void> =>
     ipcRenderer.invoke('window:floatingOpen', boardId),
   closeFloatingWindow: (): Promise<void> => ipcRenderer.invoke('window:floatingClose'),
+  /** 最小化：折叠为仅标题条高度的窄条（对标 PureRef） */
+  minimizeFloatingWindow: (): Promise<void> => ipcRenderer.invoke('window:floatingMinimize'),
+  /** 展开：从标题条窄条还原到折叠前大小 */
+  restoreFloatingWindow: (): Promise<void> => ipcRenderer.invoke('window:floatingRestore'),
+  /** 切换折叠/展开,返回新状态 */
+  toggleFloatingWindowMinimize: (): Promise<boolean> =>
+    ipcRenderer.invoke('window:floatingToggleMinimize'),
+  /** 归位：贴回所在显示器工作区右上角 */
+  resetFloatingWindowPosition: (): Promise<void> => ipcRenderer.invoke('window:floatingResetPos'),
 
   /* 白板文件（.lumenboard）导入导出 */
   exportBoardToPath: (boardId: number, targetPath: string): Promise<{ count: number; target: string }> =>
@@ -208,6 +217,11 @@ const api = {
   /* 浮动白板窗：主进程复用窗口时通知切换白板 */
   onBoardSwitch: (cb: (boardId: number) => void): void => {
     ipcRenderer.on('board:switch', (_e, boardId: number) => cb(boardId))
+  },
+
+  /* 浮动白板窗：主进程折叠/展开时同步状态（折叠后画布卸载） */
+  onBoardMinimized: (cb: (minimized: boolean) => void): void => {
+    ipcRenderer.on('board:minimized', (_e, minimized: boolean) => cb(minimized))
   },
 
   /* 自动更新 */
