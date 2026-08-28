@@ -2,6 +2,7 @@ import { copyFileSync, existsSync, mkdirSync } from 'fs'
 import { extname, join } from 'path'
 import { assetPaths } from './repository'
 import { getDb } from './db'
+import { safePathSegment } from './safePath'
 import { zipStoreStreamToFile, type ZipStreamEntry } from './zipLib'
 import type { ExportOptions } from '../shared/types'
 
@@ -21,11 +22,6 @@ function uniqueName(name: string, taken: Set<string>, dir?: string): string {
     }
   }
   return `${stem}_${Date.now()}${ext}`
-}
-
-/** 清洗文件名/文件夹名中的非法字符（Windows 保留字符） */
-function safePathSegment(s: string): string {
-  return s.replace(/[\\/:*?"<>|]/g, '').trim() || '_'
 }
 
 /* ---------------- 导出 ---------------- */
@@ -68,7 +64,8 @@ function buildName(a: ExportAssetInfo, index: number, naming: ExportOptions['nam
     case 'name_index':
       return `${safePathSegment(stem)}_${String(index).padStart(3, '0')}.${a.ext}`
     default:
-      return a.name
+      // original 命名也要过消毒：素材名可能源于 .lumenboard manifest/AI 改名，曾可携带 ..\ 实现导出穿越
+      return safePathSegment(a.name)
   }
 }
 

@@ -1,10 +1,12 @@
-import { app } from 'electron'
+import { app, safeStorage } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { basename, join } from 'path'
 import { closeDb, openDb } from './db'
 import { logger } from './logger'
 
 const CONFIG_NAME = 'config.json'
+/** safeStorage 加密值前缀（DPAPI/keyring 密文 base64） */
+const ENC_PREFIX = 'enc:v1:'
 
 export interface LibraryEntry {
   name: string
@@ -29,6 +31,33 @@ export interface AppConfig {
 function configPath(): string {
   return join(app.getPath('userData'), CONFIG_NAME)
 }
+
+/** AI Key 加密存储（Windows DPAPI / macOS Keychain / Linux keyring）。不可用或未 ready 时退回明文 */
+function encryptKey(key: string): string {
+  if (!key || !app.isReady()) return key
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      return ENC_PREFIX + safeStorage.encryptString(key).toString('base64')
+    }
+  } catch (e) {
+    logger.warn('[library]', `API Key 加密失败,退回明文: ${(e as Error).message}`)
+  }
+  return key
+}
+
+/** 解密 enc:v1: 前缀的 Key；解密失败（换机/换系统用户）时丢弃——密文已不可恢复 */
+function decryptKey(v: string): string {
+  if (!v.startsWith(ENC_PREFIX)) return v
+  try {
+    return safeStorage.decryptString(Buffer.from(v.slice(ENC_PREFIX.length), 'base64'))
+  } catch (e) {
+    logger.warn('[library]', `API Key 解密失败已丢弃(可能因换机/换系统用户): ${(e as Error).message}`)
+    return ''
+  }
+}
+
+/** 旧配置里的明文 Key 首次读取时立即回写为加密形态（只做一次，loadConfig 调用频繁不能反复写盘） */
+let keyMigrated = false
 
 export function defaultLibraryPath(): string {
   return join(app.getPath('documents'), 'EagleLike.library')
@@ -57,17 +86,27 @@ export function loadConfig(): AppConfig {
     return cfg
   }
   if (raw.libraries && raw.libraries.length > 0 && raw.current) {
-    return {
+    const cfg: AppConfig = {
       libraries: raw.libraries,
       current: raw.current,
       watchDirs: raw.watchDirs ?? [],
       importMode: raw.importMode ?? 'copy',
       aiBaseUrl: raw.aiBaseUrl ?? 'https://open.bigmodel.cn/api/paas/v4',
-      aiApiKey: raw.aiApiKey ?? '',
+      aiApiKey: decryptKey(raw.aiApiKey ?? ''),
       aiModel: raw.aiModel ?? 'glm-4v',
       aiAutoOnImport: raw.aiAutoOnImport ?? false,
       floatingWindow: raw.floatingWindow
     }
+    if (!keyMigrated && typeof raw.aiApiKey === 'string' && raw.aiApiKey && !raw.aiApiKey.startsWith(ENC_PREFIX)) {
+      keyMigrated = true
+      try {
+        saveConfig(cfg)
+        logger.info('[library]', '已将明文 AI Key 迁移为系统级加密存储')
+      } catch {
+        /* 回写失败不影响本次启动 */
+      }
+    }
+    return cfg
   }
   const def = defaultLibraryPath()
   const cfg: AppConfig = {
@@ -85,7 +124,10 @@ export function loadConfig(): AppConfig {
 }
 
 export function saveConfig(cfg: AppConfig): void {
-  writeFileSync(configPath(), JSON.stringify(cfg, null, 2), 'utf-8')
+  const out: AppConfig = { ...cfg }
+  // Key 只以密文落盘（safeStorage 不可用时退回明文，行为与旧版一致）；已是密文则不再二次加密
+  if (out.aiApiKey && !out.aiApiKey.startsWith(ENC_PREFIX)) out.aiApiKey = encryptKey(out.aiApiKey)
+  writeFileSync(configPath(), JSON.stringify(out, null, 2), 'utf-8')
 }
 
 export function ensureLibrary(libraryPath: string): string {

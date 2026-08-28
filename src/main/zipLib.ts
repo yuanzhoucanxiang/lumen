@@ -150,6 +150,8 @@ export interface ZipStreamEntry {
 }
 
 const STREAM_CHUNK = 16 * 1024 * 1024
+/** zip bomb 防护：单条目解压输出上限 1GB */
+const MAX_ENTRY_OUTPUT = 1024 * 1024 * 1024
 
 /** 等待 WriteStream 排空(backpressure);完成后移除监听,避免累积触发 MaxListeners 告警 */
 function drain(ws: Writable): Promise<void> {
@@ -299,8 +301,10 @@ export function zipRead(buf: Buffer): Map<string, Buffer> {
       const data = buf.subarray(dataStart, dataStart + compSize)
       let content: Buffer
       if (method === 0) content = Buffer.from(data)
-      else if (method === 8) content = inflateRawSync(data)
-      else throw new Error(`不支持的 ZIP 压缩方式: ${method}`)
+      else if (method === 8) {
+        // zip bomb 防护：单条目解压输出上限 1GB（恶意高压缩比包会同步解压到 OOM 并卡死主进程）
+        content = inflateRawSync(data, { maxOutputLength: MAX_ENTRY_OUTPUT })
+      } else throw new Error(`不支持的 ZIP 压缩方式: ${method}`)
       // CRC32 校验:损坏数据在此拦截,避免把坏图当新素材走导入管线入库
       if (crc32(content) !== crc) throw new Error(`ZIP 数据校验失败(CRC32): ${name}`)
       out.set(name, content)

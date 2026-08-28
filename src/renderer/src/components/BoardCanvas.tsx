@@ -87,6 +87,19 @@ function xmlEscape(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+/** 收敛为有限数值（白板元素字段可能源于导入的 .lumenboard，防 SVG 属性逃逸；null/undefined 回退默认） */
+function toFiniteNum(v: unknown, fallback: number): number {
+  if (v === null || v === undefined || v === '') return fallback
+  const n = Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+
+/** 画布背景白名单：仅预设键或 #hex，其余回退 dark（bg 源于可导入的 .lumenboard） */
+function resolveBgColor(bg: string): string {
+  if (APPEARANCE_PRESETS[bg]) return APPEARANCE_PRESETS[bg]
+  return /^#[0-9a-f]{3,8}$/i.test(bg) ? bg : APPEARANCE_PRESETS.dark
+}
+
 /** 形状元素 → SVG 子元素（元素内坐标,unit=item 尺寸） */
 function shapeSvgNodes(shape: ShapeSpec, w: number, h: number): ReactNode | null {
   const color = shape.color || DEFAULT_SHAPE_STYLE.color
@@ -334,7 +347,7 @@ export default function BoardCanvas({
     }
     setAppearance(a)
   }, [boards, activeBoardId])
-  const bgColor = APPEARANCE_PRESETS[appearance.bg] ?? appearance.bg
+  const bgColor = resolveBgColor(appearance.bg)
   const gridDotColor = hexLuminance(bgColor) > 0.6 ? 'rgba(60,60,60,0.22)' : 'rgba(255,255,255,0.14)'
   // ref 镜像：导出 SVG 等异步回调避免闭包过期
   const appearanceRef = useRef(appearance)
@@ -927,7 +940,7 @@ export default function BoardCanvas({
     const ox = bbox.x - pad
     const oy = bbox.y - pad
     const appr = appearanceRef.current
-    const bg = APPEARANCE_PRESETS[appr.bg] ?? appr.bg
+    const bg = resolveBgColor(appr.bg)
     const dotColor = hexLuminance(bg) > 0.6 ? 'rgba(60,60,60,0.22)' : 'rgba(255,255,255,0.14)'
     const parts: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`]
     parts.push(`<rect x="0" y="0" width="${w}" height="${h}" fill="${bg}"/>`)
@@ -942,7 +955,17 @@ export default function BoardCanvas({
       if (g.horizontal) parts.push(`<line x1="0" y1="${(g.y ?? 0) - oy}" x2="${w}" y2="${(g.y ?? 0) - oy}" stroke="rgba(90,160,255,0.55)" stroke-dasharray="6 4"/>`)
       else parts.push(`<line x1="${(g.x ?? 0) - ox}" y1="0" x2="${(g.x ?? 0) - ox}" y2="${h}" stroke="rgba(90,160,255,0.55)" stroke-dasharray="6 4"/>`)
     }
-    for (const it of boardItemsRef.current) {
+    for (const rawIt of boardItemsRef.current) {
+      // 元素几何/样式字段源于可导入的 .lumenboard，统一收敛为有限数值/白名单，防 SVG 属性逃逸
+      const it = {
+        ...rawIt,
+        x: toFiniteNum(rawIt.x, 0),
+        y: toFiniteNum(rawIt.y, 0),
+        width: Math.max(0, toFiniteNum(rawIt.width, 100)),
+        height: Math.max(0, toFiniteNum(rawIt.height, 100)),
+        opacity: Math.min(100, Math.max(0, toFiniteNum(rawIt.opacity, 100))),
+        noteFontSize: Math.min(200, Math.max(8, toFiniteNum(rawIt.noteFontSize, 16)))
+      }
       const ex = it.x - ox
       const ey = it.y - oy
       const op = ((it.opacity ?? 100) / 100).toFixed(2)
@@ -962,10 +985,10 @@ export default function BoardCanvas({
         // noteColor/noteFont 可能源于恶意 .lumenboard 导入：注入 SVG 前白名单化/转义
         const rawColor = it.noteColor || '#e8eef7'
         const color = /^#[0-9a-f]{3,8}$/i.test(rawColor) ? rawColor : '#e8eef7'
-        const font = (it.noteFont || 'sans-serif').replace(/[<>"'\\]/g, '')
+        const font = (it.noteFont || 'sans-serif').replace(/[^a-zA-Z0-9 _.-]/g, '') || 'sans-serif'
         const text = xmlEscape(it.text).replace(/\n/g, '<br/>')
         parts.push(
-          `<foreignObject x="${ex}" y="${ey}" width="${it.width}" height="${it.height}" opacity="${op}"><div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;color:${color};font-family:${font};font-size:${it.noteFontSize || 16}px;line-height:1.35;padding:4px;box-sizing:border-box;overflow:hidden;white-space:pre-wrap">${text}</div></foreignObject>`
+          `<foreignObject x="${ex}" y="${ey}" width="${it.width}" height="${it.height}" opacity="${op}"><div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;color:${color};font-family:${font};font-size:${it.noteFontSize}px;line-height:1.35;padding:4px;box-sizing:border-box;overflow:hidden;white-space:pre-wrap">${text}</div></foreignObject>`
         )
       } else if (it.type === 'shape' && it.shape) {
         let shape: ShapeSpec
@@ -974,15 +997,18 @@ export default function BoardCanvas({
         } catch {
           continue
         }
-        const sw = shape.sw ?? 2.5
-        const color = shape.color || '#5aa0ff'
+        const sw = Math.min(30, Math.max(0.5, toFiniteNum(shape.sw, 2.5)))
+        const rawShapeColor = shape.color || '#5aa0ff'
+        const color = /^#[0-9a-f]{3,8}$/i.test(rawShapeColor) ? rawShapeColor : '#5aa0ff'
         parts.push(`<g transform="translate(${ex},${ey})" opacity="${op}">`)
         if (shape.kind === 'rect') {
           parts.push(`<rect x="${sw / 2}" y="${sw / 2}" width="${Math.max(0, it.width - sw)}" height="${Math.max(0, it.height - sw)}" rx="2" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linejoin="round"/>`)
         } else if (shape.kind === 'ellipse') {
           parts.push(`<ellipse cx="${it.width / 2}" cy="${it.height / 2}" rx="${Math.max(0, it.width / 2 - sw / 2)}" ry="${Math.max(0, it.height / 2 - sw / 2)}" fill="none" stroke="${color}" stroke-width="${sw}"/>`)
         } else {
-          const pts = shape.points ?? []
+          const pts = (Array.isArray(shape.points) ? shape.points : []).map(
+            (p) => [toFiniteNum(p?.[0], 0), toFiniteNum(p?.[1], 0)] as [number, number]
+          )
           const p0 = pts[0] ?? [0, 0]
           const p1 = pts[1] ?? [1, 1]
           const x1 = p0[0] * it.width

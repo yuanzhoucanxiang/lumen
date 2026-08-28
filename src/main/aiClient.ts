@@ -11,6 +11,33 @@ export interface AiConfig {
   model: string
 }
 
+/** 校验/归一 AI Base URL：仅 http(s)；远程必须 https，回环/局域网地址允许 http（Ollama/LM Studio 等本地推理）。
+ *  防止渲染层把 baseUrl 改到任意地址后，主进程带着真实 Key 外发（settings:get 的脱敏会被此路径旁路）。 */
+export function normalizeAiBaseUrl(raw: string): string {
+  const base = String(raw ?? '').trim().replace(/\/+$/, '')
+  if (!base) throw new Error('AI 接口地址不能为空')
+  let u: URL
+  try {
+    u = new URL(base)
+  } catch {
+    throw new Error('AI 接口地址必须是合法 URL')
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('AI 接口地址仅支持 http(s)')
+  if (u.protocol === 'http:') {
+    const h = u.hostname
+    const okHttp =
+      h === 'localhost' ||
+      h === '127.0.0.1' ||
+      h === '[::1]' ||
+      h === '::1' ||
+      /^10\./.test(h) ||
+      /^192\.168\./.test(h) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(h)
+    if (!okHttp) throw new Error('远程 AI 接口地址必须使用 https（本地推理服务可用 http://127.0.0.1）')
+  }
+  return base
+}
+
 /** 把常见 API 错误转译成可操作的中文提示;未知错误保留原文(截断) */
 function friendlyApiError(status: number, body: string): string {
   const raw = body.slice(0, 160)
@@ -38,7 +65,7 @@ export async function chat(
   timeoutMs = 60_000,
   temperature = 0.3
 ): Promise<string> {
-  const url = `${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`
+  const url = `${normalizeAiBaseUrl(cfg.baseUrl)}/chat/completions`
   const content: Record<string, unknown>[] = [{ type: 'text', text }]
   for (const img of images ?? []) {
     content.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${img.base64}` } })

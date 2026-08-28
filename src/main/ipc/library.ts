@@ -1,5 +1,6 @@
-import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell, app } from 'electron'
 import { copyFileSync } from 'fs'
+import { join, resolve, sep } from 'path'
 import { addAndSwitchLibrary, getLibraryPath, loadConfig, removeLibrary, switchLibrary } from '../library'
 import { backupDatabase, backupLibraryToZip, listAutoZipBackups, listDbBackups, restoreDatabase } from '../backup'
 import { logFilePath } from '../logger'
@@ -47,9 +48,15 @@ export function registerLibraryIpc(getWindow: () => BrowserWindow | null): void 
   // 从快照恢复数据库(closeDb → 覆盖 → 清 wal/shm → openDb;当前库先另存现场)
   ipcMain.handle('library:restoreDb', (_e, bakPath: string) => restoreDatabase(bakPath))
 
-  // 在系统文件管理器中显示备份文件
+  // 在系统文件管理器中显示备份文件（仅限库目录/自动备份目录内，防展示任意路径）
   ipcMain.handle('library:revealBackup', (_e, p: string) => {
-    shell.showItemInFolder(p)
+    const resolved = resolve(String(p ?? ''))
+    const lower = resolved.toLowerCase()
+    const lib = resolve(getLibraryPath()).toLowerCase()
+    const backups = resolve(join(app.getPath('userData'), 'backups')).toLowerCase()
+    if (!lower.startsWith(lib + sep) && !lower.startsWith(backups + sep)) return false
+    shell.showItemInFolder(resolved)
+    return true
   })
 
   // 导出日志文件（排查问题用，保存 main.log 到用户选择的位置）

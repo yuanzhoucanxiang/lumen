@@ -2,6 +2,7 @@ import { app } from 'electron'
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'fs/promises'
 import { copyFileSync, existsSync, renameSync, statSync, unlinkSync } from 'fs'
 import { basename, dirname, join, relative } from 'path'
+import Database from 'better-sqlite3'
 import { getDb, closeDb, openDb } from './db'
 import { getLibraryPath } from './library'
 import { logger } from './logger'
@@ -239,6 +240,27 @@ export function restoreDatabase(bakPath: string, libPath = getLibraryPath()): { 
     throw new Error(`非法的备份路径: ${bakPath}`)
   }
   if (!existsSync(bakPath)) throw new Error(`备份文件不存在: ${bakPath}`)
+
+  // 预校验备份文件是合法 SQLite 库：坏 .bak 若直接覆盖在用库，openDb 失败后应用会话内砖化
+  const probePath = `${bakPath}.restore-check`
+  try {
+    copyFileSync(bakPath, probePath)
+    const probe = new Database(probePath, { readonly: true })
+    try {
+      const ok = probe.pragma('quick_check', { simple: true })
+      if (ok !== 'ok') throw new Error(`quick_check=${String(ok)}`)
+    } finally {
+      probe.close()
+    }
+  } catch (e) {
+    throw new Error(`备份文件无效,已取消恢复: ${(e as Error).message}`)
+  } finally {
+    try {
+      if (existsSync(probePath)) unlinkSync(probePath)
+    } catch {
+      /* 探针清理失败不阻断恢复 */
+    }
+  }
 
   const dbPath = join(libPath, 'library.db')
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')

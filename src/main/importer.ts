@@ -444,7 +444,7 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
 
     if (kind === 'image' && ext !== 'svg') {
       try {
-        let base: sharp.Sharp
+        let base: ReturnType<typeof sharp>
         if (ext === 'psd') {
           // PSD:源文件无法直接 sharp,从已复制的 targetPath 取合成图(ag-psd)
           const raw = await psdToRaw(targetPath)

@@ -82,8 +82,14 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
   }
 
   const update = async (patch: Partial<AppSettings>) => {
-    const next = await window.api.updateSettings(patch)
-    setSettings(next)
+    try {
+      const next = await window.api.updateSettings(patch)
+      setSettings(next)
+    } catch (e) {
+      useLibraryStore.getState().showToast(`设置保存失败: ${(e as Error).message}`)
+      // 回读实际生效值，避免 UI 与主进程状态不一致
+      void window.api.getSettings().then(setSettings)
+    }
   }
 
   const addWatchDir = async () => {

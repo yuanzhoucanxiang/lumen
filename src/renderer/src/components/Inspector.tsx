@@ -405,7 +405,15 @@ export default function Inspector() {
               </div>
             )}
             {(() => {
-              const exif = asset.exif ? JSON.parse(asset.exif) : null
+              // exif 列损坏（非法 JSON）时兜底为 null，避免整窗崩溃（渲染树无 ErrorBoundary）
+              let exif: Record<string, any> | null = null
+              if (asset.exif) {
+                try {
+                  exif = JSON.parse(asset.exif)
+                } catch {
+                  exif = null
+                }
+              }
               if (!exif) return null
               const items: { label: string; value: string }[] = []
               if (exif.make || exif.model) {

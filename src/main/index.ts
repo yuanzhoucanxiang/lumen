@@ -43,6 +43,20 @@ const MIME_BY_EXT: Record<string, string> = {
 
 let mainWindow: BrowserWindow | null = null
 
+/** asset: 响应公共头。sandbox+禁脚本防库内 SVG（恶意 .lumenboard/导入文件）以文档方式打开时执行脚本；
+ *  对 <img>/<video>/<audio> 子资源加载无影响（CSP 不作用于非文档子资源） */
+function ASSET_RESPONSE_HEADERS(mime: string, contentRange?: string, length?: string): Record<string, string> {
+  const h: Record<string, string> = {
+    'Content-Type': mime,
+    'Accept-Ranges': 'bytes',
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+  }
+  if (contentRange) h['Content-Range'] = contentRange
+  if (length) h['Content-Length'] = length
+  return h
+}
+
 // 单实例锁:第二实例启动时聚焦已有窗口后自行退出。两个实例并发写同一素材库会互相
 // 锁定/损坏(备份恢复曾因双开实例锁 wal 暴露),config.json 也无并发保护。
 // LUMEN_ALLOW_MULTI=1 为测试/调试逃生门(itest 起 dev 时注入,不受已运行正式版影响)。
@@ -94,8 +108,18 @@ function createWindow(): void {
   })
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    // 仅放行 http(s)（与 shell:openExternal IPC 同一白名单）；file:///自定义协议处理器一律拒绝
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  // 导航防护：preload 带全部 IPC 面，只允许自身页面（dev server / file://）持有；
+  // 页面发起的跨文档导航一律拦截，外链转交系统浏览器
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const devUrl = process.env['ELECTRON_RENDERER_URL']
+    if (devUrl ? url.startsWith(devUrl) : url.startsWith('file://')) return
+    event.preventDefault()
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url)
   })
 
   if (process.env['ELECTRON_RENDERER_URL']) {
@@ -143,21 +167,12 @@ app.whenReady().then(() => {
       if (start > end || start >= size) return new Response(null, { status: 416 })
       return new Response(Readable.toWeb(createReadStream(file, { start, end })), {
         status: 206,
-        headers: {
-          'Content-Type': mime,
-          'Content-Length': String(end - start + 1),
-          'Content-Range': `bytes ${start}-${end}/${size}`,
-          'Accept-Ranges': 'bytes'
-        }
+        headers: ASSET_RESPONSE_HEADERS(mime, `bytes ${start}-${end}/${size}`, String(end - start + 1))
       })
     }
 
     return new Response(Readable.toWeb(createReadStream(file)), {
-      headers: {
-        'Content-Type': mime,
-        'Content-Length': String(size),
-        'Accept-Ranges': 'bytes'
-      }
+      headers: ASSET_RESPONSE_HEADERS(mime, undefined, String(size))
     })
   })
 

@@ -10,6 +10,7 @@ import {
 } from './repository'
 import { getDb } from './db'
 import { logger } from './logger'
+import { safePathSegment } from './safePath'
 import { chat, mapWithConcurrency } from './aiClient'
 import type { AiConfig } from './aiClient'
 import type {
@@ -292,10 +293,12 @@ export async function aiApplySuggestions(
         addedTags: []
       }
 
-      // 改名（保留扩展名）
+      // 改名（保留扩展名）。suggestedName 经渲染层中转（AI 建议/用户编辑），落库前消毒：
+      // 素材名后续参与导出路径拼接，不能携带路径分隔符/控制字符
       if (rename && item.suggestedName && item.suggestedName !== asset.name) {
-        updateAsset(item.id, { name: item.suggestedName })
-        result.newName = item.suggestedName
+        const cleanName = safePathSegment(item.suggestedName).slice(0, 200)
+        updateAsset(item.id, { name: cleanName })
+        result.newName = cleanName
       }
 
       // 收集标签

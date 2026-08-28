@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { aiApplySuggestions, aiProcessBatch, aiSuggestBatch, testAiConnection } from '../aiRename'
 import { aiSearch } from '../aiSearch'
+import { normalizeAiBaseUrl } from '../aiClient'
 import { loadConfig } from '../library'
 import { isUnnamedName, queryAssets } from '../repository'
 import type { AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope } from '../../shared/types'
@@ -63,9 +64,10 @@ export function registerAiIpc(getWindow: () => BrowserWindow | null): void {
     return all.map((a) => a.id)
   })
 
-  // 测试连通性：用户在设置页填完 key 后点「测试连接」
+  // 测试连通性：用户在设置页填完 key 后点「测试连接」。
+  // baseUrl 与 settings:update 同一校验：主进程不向任意地址携带凭据发请求
   ipcMain.handle('ai:testKey', async (_e, cfg: { baseUrl: string; apiKey: string; model: string }) => {
-    return testAiConnection(cfg)
+    return testAiConnection({ ...cfg, baseUrl: normalizeAiBaseUrl(String(cfg?.baseUrl ?? '')) })
   })
 
   // AI 智能搜索：自然语言找图（语义扩展 -> SQL 候选 -> 视觉精排）

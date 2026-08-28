@@ -1,5 +1,7 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { isAbsolute } from 'path'
 import { loadConfig, saveConfig } from '../library'
+import { normalizeAiBaseUrl } from '../aiClient'
 import { syncWatchers } from '../watcher'
 
 export function registerSettingsIpc(getWindow: () => BrowserWindow | null): void {
@@ -32,12 +34,20 @@ export function registerSettingsIpc(getWindow: () => BrowserWindow | null): void
       }
     ) => {
       const cfg = loadConfig()
-      if (patch.watchDirs) cfg.watchDirs = patch.watchDirs
-      if (patch.importMode) cfg.importMode = patch.importMode
-      if (patch.aiBaseUrl !== undefined) cfg.aiBaseUrl = patch.aiBaseUrl
-      if (patch.aiApiKey !== undefined) cfg.aiApiKey = patch.aiApiKey
-      if (patch.aiModel !== undefined) cfg.aiModel = patch.aiModel
-      if (patch.aiAutoOnImport !== undefined) cfg.aiAutoOnImport = patch.aiAutoOnImport
+      // 参数全部收敛：watchDirs 仅收绝对路径（防渲染层失陷后注入垃圾值），importMode 限枚举，
+      // aiBaseUrl 过 normalizeAiBaseUrl（否则主进程会带着真实 Key 向任意地址发请求）
+      if (Array.isArray(patch.watchDirs)) {
+        cfg.watchDirs = [...new Set(patch.watchDirs.filter((d): d is string => typeof d === 'string' && isAbsolute(d)))].slice(0, 20)
+      }
+      if (patch.importMode === 'copy' || patch.importMode === 'move') cfg.importMode = patch.importMode
+      if (patch.aiBaseUrl !== undefined) {
+        const raw = String(patch.aiBaseUrl).trim()
+        if (raw === '') delete cfg.aiBaseUrl
+        else cfg.aiBaseUrl = normalizeAiBaseUrl(raw)
+      }
+      if (patch.aiApiKey !== undefined) cfg.aiApiKey = String(patch.aiApiKey).trim()
+      if (patch.aiModel !== undefined) cfg.aiModel = String(patch.aiModel).trim().slice(0, 100)
+      if (patch.aiAutoOnImport !== undefined) cfg.aiAutoOnImport = !!patch.aiAutoOnImport
       saveConfig(cfg)
       syncWatchers((count) => getWindow()?.webContents.send('clip:imported', count))
       return {

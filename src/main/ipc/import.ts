@@ -4,6 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { importFiles } from '../importer'
 import { mapWithConcurrency } from '../aiClient'
+import { guardedFetch, readBodyCapped } from '../netGuard'
 import { MIME_EXT } from '../clipServer'
 import { loadConfig } from '../library'
 import type { ImportResult } from '../../shared/types'
@@ -56,16 +57,14 @@ export function registerImportIpc(getWindow: () => BrowserWindow | null): void {
       const usedNames = new Set<string>()
       const downloaded = await mapWithConcurrency(urls, 3, async (url): Promise<{ url: string; file: string } | null> => {
         try {
-          const resp = await fetch(url, {
-            signal: AbortSignal.timeout(URL_FETCH_TIMEOUT),
-            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LUMEN asset import)' }
-          })
+          // 出网防护：逐跳协议校验 + 30s 超时 + 流式读取边下边限 100MB。
+          // allowLocal: 用户主动粘贴的 URL 允许本机/局域网图源（响应只进本机素材库，无外泄通道）
+          const resp = await guardedFetch(url, URL_FETCH_TIMEOUT, { allowLocal: true })
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
           const contentType = (resp.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
           if (!contentType.startsWith('image/')) throw new Error(`非图片内容(${contentType || '未知类型'})`)
-          const buf = Buffer.from(await resp.arrayBuffer())
+          const buf = await readBodyCapped(resp, URL_MAX_BYTES)
           if (buf.length === 0) throw new Error('空内容')
-          if (buf.length > URL_MAX_BYTES) throw new Error('超过 100MB 上限')
 
           // 文件名:URL 尾段优先 → 非法字符清洗;无扩展名/扩展名异常时按 content-type 补全;同名加序号
           let base = ''

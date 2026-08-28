@@ -4,9 +4,11 @@ import { rmSync } from 'fs'
 import { writeFile } from 'fs/promises'
 import { join } from 'path'
 import { importFiles } from './importer'
+import { guardedFetch, readBodyCapped } from './netGuard'
 
 const PORT = 45678
 const MAX_BODY = 80 * 1024 * 1024 // 80MB
+const MAX_IMAGE_BYTES = 80 * 1024 * 1024 // imageUrl 下载上限,与请求体一致
 
 /**
  * 鉴权头:只接受 LUMEN Clip 扩展发来的请求。
@@ -26,8 +28,12 @@ export const MIME_EXT: Record<string, string> = {
   'image/svg+xml': 'svg'
 }
 
-/** 校验请求来源:必须携带合法客户端头,否则拒绝(403) */
+/** 校验请求来源：Host 必须指向本机服务 + 客户端头匹配。
+ *  Host 校验防 DNS rebinding——恶意页面把自己的域名解析到 127.0.0.1 后浏览器视为同源，
+ *  可自由携带自定义鉴权头并读取响应，仅靠回环绑定与自定义头挡不住这一手。 */
 function isAuthorized(req: IncomingMessage): boolean {
+  const host = (req.headers.host ?? '').toLowerCase()
+  if (host !== `127.0.0.1:${PORT}` && host !== `localhost:${PORT}`) return false
   return req.headers[CLIENT_HEADER] === CLIENT_TOKEN
 }
 
@@ -78,11 +84,12 @@ async function saveClip(payload: ClipPayload): Promise<number> {
     ext = MIME_EXT[m[1]] ?? 'jpg'
     buffer = Buffer.from(m[2], 'base64')
   } else if (payload.imageUrl) {
-    const resp = await fetch(payload.imageUrl)
+    // 出网防护：协议白名单 + 拒绝回环/链路本地地址 + 重定向逐跳复检 + 30s 超时 + 大小上限
+    const resp = await guardedFetch(payload.imageUrl)
     if (!resp.ok) throw new Error(`download failed: ${resp.status}`)
     const contentType = resp.headers.get('content-type')?.split(';')[0] ?? ''
     if (MIME_EXT[contentType]) ext = MIME_EXT[contentType]
-    buffer = Buffer.from(await resp.arrayBuffer())
+    buffer = await readBodyCapped(resp, MAX_IMAGE_BYTES)
   }
   if (!buffer || buffer.length === 0) throw new Error('empty image')
 

@@ -125,6 +125,12 @@ async function main() {
   }
   check('浮动窗口已创建(独立 target)', !!floatTarget, floatTarget ? floatTarget.url.slice(0, 60) : 'none')
 
+  // 防脏状态:上次运行可能以折叠态收尾(状态持久化重开保持),先展开再测画布渲染
+  if (floatTarget.url.includes('minimized=1')) {
+    await mainRun('await window.api.restoreFloatingWindow()')
+    await sleep(1000)
+  }
+
   /* ---------- 2. 浮动窗口渲染：标题条 + 2 个元素 + 缩放滑块 ---------- */
   const float = await connect(floatTarget.webSocketDebuggerUrl)
   const floatRun = float.run

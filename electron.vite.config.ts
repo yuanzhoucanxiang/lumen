@@ -16,7 +16,7 @@ const CSP = [
   "img-src 'self' asset: data: blob:",
   "media-src 'self' asset: blob:",
   "font-src 'self' data:",
-  "connect-src 'self'"
+  "connect-src 'self' asset:" // BoardCanvas 导出 SVG 时 fetch asset:// 缩略图转 base64
 ].join('; ')
 
 const injectCsp = (): Plugin => ({

@@ -8,7 +8,7 @@
  * 导入策略：嵌入图片走真实导入管线（自动去重 + 缩略图/主色/dHash 全量计算），
  * 临时文件名带序号前缀用于映射回 manifest（导入后还原原名）。
  */
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
@@ -26,6 +26,7 @@ import {
 import { getDb } from './db'
 import { importFiles } from './importer'
 import { logger } from './logger'
+import { safePathSegment } from './safePath'
 import { zipRead, zipStore } from './zipLib'
 import type { ZipEntry } from './zipLib'
 import { VIDEO_EXTS } from '../shared/types'
@@ -33,6 +34,13 @@ import type { BoardItem } from '../shared/types'
 
 const MANIFEST = 'manifest.json'
 const ASSET_DIR = 'assets'
+
+/** 收敛为有限数值（manifest 字段来自外部文件，可能是任意 JSON 值；null/undefined 回退默认） */
+function toFinite(v: unknown, fallback: number): number {
+  if (v === null || v === undefined || v === '') return fallback
+  const n = Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
 
 /** 导出白板为 .lumenboard 文件 */
 export function exportBoardToFile(boardId: number, targetPath: string): { count: number; target: string } {
@@ -117,6 +125,9 @@ interface Manifest {
 
 /** 导入 .lumenboard：图片入素材库（去重），重建白板与元素 */
 export async function importBoardFromFile(filePath: string): Promise<{ boardId: number; name: string; imported: number }> {
+  // 源文件大小预检：超大包会在 zipRead 同步解压时长时间阻塞主进程
+  const MAX_BOARD_BYTES = 1024 * 1024 * 1024
+  if (statSync(filePath).size > MAX_BOARD_BYTES) throw new Error('白板文件超过 1GB 上限')
   const entries = zipRead(readFileSync(filePath))
   const manifestBuf = entries.get(MANIFEST)
   if (!manifestBuf) throw new Error('.lumenboard 缺少 manifest.json')
@@ -162,15 +173,17 @@ export async function importBoardFromFile(filePath: string): Promise<{ boardId: 
       const stem = `lumenboard-${f.idx}-`
       let hit = queryAssets({ keyword: stem, limit: 10 }).find((a) => a.name.startsWith(stem))
       if (!hit && meta) {
-        const stem2 = meta.name.replace(/\.[^.]+$/, '')
+        const stem2 = String(meta.name ?? '').replace(/\.[^.]+$/, '')
         const byName = queryAssets({ keyword: stem2, limit: 50 }).find((a) => a.size === meta.size)
         if (byName) hit = byName
       }
       if (hit) {
         idMap.set(f.assetId, hit.id)
-        // 还原原名（去掉序号前缀）
+        // 还原原名（去掉序号前缀）。manifest.name 来自外部文件：素材名后续参与导出路径拼接，
+        // 不能携带路径分隔符/控制字符（防导出穿越），统一消毒
         if (meta && hit.name.startsWith(stem)) {
-          updateAsset(hit.id, { name: meta.name })
+          const cleanName = safePathSegment(String(meta.name ?? '')).slice(0, 200)
+          if (cleanName !== '_') updateAsset(hit.id, { name: cleanName })
         }
       } else {
         logger.warn('[boardFile]', `找不到导入素材映射: ${f.assetId}`)
@@ -192,8 +205,19 @@ export async function importBoardFromFile(filePath: string): Promise<{ boardId: 
     }
 
     // 5. 重建元素（保持 z 顺序；asset 映射失败的丢弃）
+    // 几何/样式字段来自外部文件，统一收敛为有限数值，防止垃圾数据进库影响画布与 SVG 导出
     let imported = 0
-    for (const it of manifest.items ?? []) {
+    for (const it0 of manifest.items ?? []) {
+      const it = {
+        ...it0,
+        x: toFinite(it0.x, 0),
+        y: toFinite(it0.y, 0),
+        width: Math.max(0, toFinite(it0.width, 100)),
+        height: Math.max(0, toFinite(it0.height, 100)),
+        z: toFinite(it0.z, 0),
+        opacity: Math.min(100, Math.max(0, toFinite(it0.opacity, 100))),
+        noteFontSize: Math.min(200, Math.max(8, toFinite(it0.noteFontSize, 16)))
+      }
       if (it.type === 'asset' && it.assetId) {
         const mappedId = idMap.get(it.assetId)
         if (!mappedId) {
@@ -210,7 +234,7 @@ export async function importBoardFromFile(filePath: string): Promise<{ boardId: 
           text: ''
         })
         if (row) {
-          await updateBoardItem(row.id, { z: it.z, opacity: it.opacity ?? 100 })
+          await updateBoardItem(row.id, { z: it.z, opacity: it.opacity })
           imported++
         }
       } else if (it.type === 'note') {
@@ -225,10 +249,10 @@ export async function importBoardFromFile(filePath: string): Promise<{ boardId: 
         if (row) {
           await updateBoardItem(row.id, {
             z: it.z,
-            opacity: it.opacity ?? 100,
+            opacity: it.opacity,
             noteFont: it.noteFont ?? '',
             noteColor: it.noteColor ?? '',
-            noteFontSize: it.noteFontSize ?? 16
+            noteFontSize: it.noteFontSize
           })
           imported++
         }
@@ -242,7 +266,7 @@ export async function importBoardFromFile(filePath: string): Promise<{ boardId: 
           shape: it.shape
         })
         if (row) {
-          await updateBoardItem(row.id, { z: it.z, opacity: it.opacity ?? 100 })
+          await updateBoardItem(row.id, { z: it.z, opacity: it.opacity })
           imported++
         }
       }

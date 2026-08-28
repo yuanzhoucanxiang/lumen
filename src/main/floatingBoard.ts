@@ -4,7 +4,7 @@
  * 窗口能力：标题条拖拽移动、最小化折叠为标题条窄条、一键归位到屏幕右上角；
  * 位置/尺寸/最小化态持久化到 config,重开保持与上次一致。
  */
-import { BrowserWindow, screen, type Rectangle } from 'electron'
+import { BrowserWindow, screen, shell, type Rectangle } from 'electron'
 import { join } from 'path'
 import { loadConfig, saveConfig } from './library'
 
@@ -115,6 +115,17 @@ export function openFloatingBoard(boardId: number): void {
   }
   floatingBoardId = boardId
   floatingWindow = new BrowserWindow(opts)
+  // 与主窗同一导航防护：preload 带全部 IPC 面，不可交给导航后的外部页面
+  floatingWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  floatingWindow.webContents.on('will-navigate', (e, url) => {
+    const devUrl = process.env['ELECTRON_RENDERER_URL']
+    if (devUrl ? url.startsWith(devUrl) : url.startsWith('file://')) return
+    e.preventDefault()
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url)
+  })
   // floating 层级：常驻普通窗口之上、全屏之下
   floatingWindow.setAlwaysOnTop(true, 'floating')
   floatingWindow.on('ready-to-show', () => floatingWindow?.show())
