@@ -166,6 +166,9 @@ export default function App() {
         if (inInput) return
         e.preventDefault()
         if (s.selection.length === 1) s.openPreview(s.selection[0])
+      } else if (matchesShortcut(e, sc.screenshot)) {
+        e.preventDefault()
+        void window.api.screenshotStart().catch(() => useLibraryStore.getState().showToast('截图启动失败'))
       } else if (/^[1-5]$/.test(e.key) && !e.ctrlKey && !e.metaKey) {
         if (inInput) return
         const id = s.selection[0]

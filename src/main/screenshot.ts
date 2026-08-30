@@ -1,9 +1,10 @@
 /**
- * 区域截图(对标 Eagle 借鉴点「区域截图」):工具栏触发 → 隐藏主窗 → 捕获主窗所在显示器 →
- * 全屏透明覆层框选 → 裁剪后走真实导入管线入库(sourceUrl=屏幕截图)。
+ * 区域截图(对标 Eagle 借鉴点「区域截图」):工具栏/快捷键触发 → 隐藏主窗 → 逐屏捕获 →
+ * 每个显示器一个全屏透明覆层框选 → 裁剪后走真实导入管线入库(sourceUrl=屏幕截图)。
  *
- * V1 范围:仅捕获主窗所在显示器;覆层为无边框透明置顶窗(Windows 上 setFullscreen 会破坏
- * 透明,故用 setBounds 贴显示器边界)。commit/cancel 对无覆层状态幂等,便于测试直调 commit。
+ * 覆层为无边框透明置顶窗(Windows 上 setFullscreen 会破坏透明,故用 setBounds 贴显示器边界);
+ * 多显示器时每个覆层各持自己那一屏的捕获图,任意覆层确认/取消即结束整个会话。
+ * commit 的 source 参数允许直传整屏 dataUrl(测试用,覆层路径不用);对无会话状态幂等。
  */
 import { BrowserWindow, desktopCapturer, ipcMain, screen } from 'electron'
 import { mkdtempSync, writeFileSync } from 'fs'
@@ -15,9 +16,17 @@ import { importFiles } from './importer'
 import { logger } from './logger'
 import type { ImportResult } from '../shared/types'
 
-let overlayWindow: BrowserWindow | null = null
-/** 本次捕获的整屏图与缩放比(commit 裁剪换算用;置 null 即"无进行中会话") */
-let captureMeta: { dataUrl: string; dpr: number } | null = null
+/** 一次捕获:整屏图 + 逻辑像素→物理像素缩放比;wcId 为承载它的覆层 webContents id(未挂接前 null) */
+interface CaptureSession {
+  dataUrl: string
+  dpr: number
+  wcId: number | null
+}
+
+let overlays: BrowserWindow[] = []
+let sessions: CaptureSession[] = []
+/** 覆层 webContents → 所属会话(ready/commit 时定位是哪一屏) */
+const wcSessions = new WeakMap<Electron.WebContents, CaptureSession>()
 
 const EMPTY_RESULT: ImportResult = { imported: 0, skipped: 0, failed: 0 }
 
@@ -35,8 +44,8 @@ function loadOverlayPage(win: BrowserWindow): void {
   }
 }
 
-/** 捕获指定显示器整屏(按物理像素),返回 dataUrl 与逻辑像素→物理像素缩放比 */
-async function captureDisplay(display: Electron.Display): Promise<{ dataUrl: string; dpr: number }> {
+/** 捕获指定显示器整屏(按物理像素),返回会话 */
+async function captureDisplay(display: Electron.Display): Promise<CaptureSession> {
   const sources = await desktopCapturer.getSources({
     types: ['screen'],
     thumbnailSize: {
@@ -48,14 +57,15 @@ async function captureDisplay(display: Electron.Display): Promise<{ dataUrl: str
   if (!src || src.thumbnail.isEmpty()) throw new Error('屏幕捕获失败')
   const size = src.thumbnail.getSize()
   const dpr = clamp(size.width / Math.max(1, display.size.width), 0.5, 4)
-  return { dataUrl: src.thumbnail.toDataURL(), dpr }
+  return { dataUrl: src.thumbnail.toDataURL(), dpr, wcId: null }
 }
 
-/** 结束截图会话:关覆层 + 恢复主窗(可重入) */
-function finishOverlay(getMainWindow: () => BrowserWindow | null): void {
-  captureMeta = null
-  if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.destroy()
-  overlayWindow = null
+/** 结束截图会话:关全部覆层 + 恢复主窗(可重入) */
+function finishAll(getMainWindow: () => BrowserWindow | null): void {
+  sessions = []
+  const alive = overlays.filter((w) => !w.isDestroyed())
+  overlays = []
+  for (const w of alive) w.destroy()
   const main = getMainWindow()
   if (main && !main.isDestroyed()) {
     main.show()
@@ -64,77 +74,83 @@ function finishOverlay(getMainWindow: () => BrowserWindow | null): void {
 }
 
 export function registerScreenshotIpc(getMainWindow: () => BrowserWindow | null): void {
-  /* 工具栏触发:隐藏主窗 → 捕获 → 打开覆层 */
+  /* 工具栏/快捷键触发:隐藏主窗 → 逐屏捕获 → 每屏一个覆层 */
   ipcMain.handle('screenshot:start', async (): Promise<boolean> => {
-    if (overlayWindow && !overlayWindow.isDestroyed()) return false
+    if (sessions.length > 0) return false
     const main = getMainWindow()
     if (!main || main.isDestroyed()) return false
-    const display = screen.getDisplayMatching(main.getBounds())
     main.hide()
     try {
       // 等待窗口隐藏后的合成器重绘,否则主窗会出现在截屏里
       await new Promise((r) => setTimeout(r, 260))
-      captureMeta = await captureDisplay(display)
-      const overlay = new BrowserWindow({
-        x: display.bounds.x,
-        y: display.bounds.y,
-        width: display.size.width,
-        height: display.size.height,
-        frame: false,
-        transparent: true,
-        resizable: false,
-        movable: false,
-        minimizable: false,
-        maximizable: false,
-        skipTaskbar: true,
-        hasShadow: false,
-        enableLargerThanScreen: true,
-        show: false,
-        backgroundColor: '#00000000',
-        webPreferences: {
-          preload: join(__dirname, '../preload/index.js'),
-          sandbox: true,
-          contextIsolation: true
-        }
-      })
-      overlay.setAlwaysOnTop(true, 'screen-saver')
-      overlay.once('ready-to-show', () => overlay.show())
-      overlay.on('closed', () => {
-        // 覆层被意外关闭(如任务管理器/崩溃):恢复主窗,会话作废
-        if (overlayWindow && overlayWindow.isDestroyed()) finishOverlay(getMainWindow)
-        overlayWindow = null
-      })
-      overlayWindow = overlay
-      loadOverlayPage(overlay)
+      sessions = []
+      for (const display of screen.getAllDisplays()) {
+        const session = await captureDisplay(display)
+        sessions.push(session)
+        const overlay = new BrowserWindow({
+          x: display.bounds.x,
+          y: display.bounds.y,
+          width: display.size.width,
+          height: display.size.height,
+          frame: false,
+          transparent: true,
+          resizable: false,
+          movable: false,
+          minimizable: false,
+          maximizable: false,
+          skipTaskbar: true,
+          hasShadow: false,
+          enableLargerThanScreen: true,
+          show: false,
+          backgroundColor: '#00000000',
+          webPreferences: {
+            preload: join(__dirname, '../preload/index.js'),
+            sandbox: true,
+            contextIsolation: true
+          }
+        })
+        overlay.setAlwaysOnTop(true, 'screen-saver')
+        overlay.once('ready-to-show', () => overlay.show())
+        overlay.on('closed', () => {
+          overlays = overlays.filter((w) => w !== overlay)
+          // 全部覆层都没了而会话还在(意外关闭/逐个被关):收尾恢复主窗
+          if (sessions.length > 0 && overlays.length === 0) finishAll(getMainWindow)
+        })
+        wcSessions.set(overlay.webContents, session)
+        session.wcId = overlay.webContents.id
+        overlays.push(overlay)
+        loadOverlayPage(overlay)
+      }
       return true
     } catch (e) {
-      captureMeta = null
-      finishOverlay(getMainWindow)
+      finishAll(getMainWindow)
       logger.warn('[screenshot]', `启动失败: ${(e as Error).message}`)
       throw e
     }
   })
 
-  /* 覆层渲染层就绪 → 下发整屏图(几 MB 的 dataUrl 走 ipc 消息) */
+  /* 覆层渲染层就绪 → 下发该屏整屏图(几 MB 的 dataUrl 走 ipc 消息) */
   ipcMain.on('screenshot:overlayReady', (e) => {
-    if (overlayWindow && !overlayWindow.isDestroyed() && e.sender === overlayWindow.webContents && captureMeta) {
-      e.sender.send('screenshot:data', { dataUrl: captureMeta.dataUrl, dpr: captureMeta.dpr })
+    const session = wcSessions.get(e.sender)
+    if (session && session.wcId === e.sender.id && sessions.includes(session)) {
+      e.sender.send('screenshot:data', { dataUrl: session.dataUrl, dpr: session.dpr })
     }
   })
 
-  /* 框选确认:裁剪(逻辑像素×dpr=物理像素) → 走导入管线 → 结束会话恢复主窗。
-   * source 可选:外部直传整屏 dataUrl(测试用);缺省用当前会话捕获的整屏图 */
+  /* 框选确认:裁剪(逻辑像素×dpr=物理像素) → 走导入管线 → 结束会话恢复主窗 */
   ipcMain.handle(
     'screenshot:commit',
     async (
-      _e,
+      e,
       rect: { x: number; y: number; width: number; height: number },
       dpr?: number,
       source?: string
     ): Promise<ImportResult> => {
-      const meta = captureMeta
-      const dataUrl = typeof source === 'string' && source.startsWith('data:image/') ? source : meta?.dataUrl
-      const scale = typeof dpr === 'number' && Number.isFinite(dpr) ? clamp(dpr, 0.5, 4) : (meta?.dpr ?? 1)
+      // 会话定位:覆层提交按 sender;主窗/测试提交回退到首个会话(主显示器)
+      const session = e && e.sender ? (wcSessions.get(e.sender) ?? null) : null
+      const active = source ? null : (session ?? sessions[0] ?? null)
+      const dataUrl = typeof source === 'string' && source.startsWith('data:image/') ? source : active?.dataUrl
+      const scale = typeof dpr === 'number' && Number.isFinite(dpr) ? clamp(dpr, 0.5, 4) : (active?.dpr ?? 1)
       if (!dataUrl) return EMPTY_RESULT
       try {
         const img = Buffer.from(dataUrl.replace(/^data:image\/\w+;base64,/, ''), 'base64')
@@ -164,13 +180,13 @@ export function registerScreenshotIpc(getMainWindow: () => BrowserWindow | null)
         logger.warn('[screenshot]', `裁剪导入失败: ${(err as Error).message}`)
         throw err
       } finally {
-        finishOverlay(getMainWindow)
+        if (!source) finishAll(getMainWindow)
       }
     }
   )
 
   /* Esc/右键取消 */
   ipcMain.handle('screenshot:cancel', () => {
-    finishOverlay(getMainWindow)
+    finishAll(getMainWindow)
   })
 }

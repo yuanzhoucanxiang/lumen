@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, statSync, watch, type FSWatcher } from 'fs'
-import { join } from 'path'
+import { join, sep } from 'path'
 import { loadConfig } from './library'
 import { collectFiles, importFiles } from './importer'
 import { logger } from './logger'
@@ -24,10 +24,13 @@ async function flush(): Promise<void> {
   pendingPaths.clear()
   try {
     const cfg = loadConfig()
-    // 过滤:已消失的/非文件的/落在素材库自身目录内的(防循环)/符号链接(目录 junction 指向
+    // 过滤:已消失的/非文件的/落在素材库自身目录内的(防循环,带分隔符防同级目录误伤——
+    // 如库为 EagleLike.library 时同名加后缀目录不应被排除)/符号链接(目录 junction 指向
     // 库外时会借监控导入把外部目录搬空,Windows 上建 junction 无需特权)
+    const libPrefix = cfg.current.endsWith(sep) ? cfg.current : cfg.current + sep
     const valid = paths.filter((p) => {
-      if (!existsSync(p) || !statSync(p).isFile() || p.startsWith(cfg.current)) return false
+      if (!existsSync(p) || !statSync(p).isFile()) return false
+      if (p === cfg.current || p.startsWith(libPrefix)) return false
       try {
         return !lstatSync(p).isSymbolicLink()
       } catch {

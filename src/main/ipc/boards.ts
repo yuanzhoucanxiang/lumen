@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { BrowserWindow, app, dialog, ipcMain } from 'electron'
 import { writeFileSync } from 'fs'
 import { addBoardItem, bringBoardItemToFront, createBoard, deleteBoard, deleteBoardItem, listBoardItems, listBoards, renameBoard, updateBoardAppearance, updateBoardGuides, updateBoardItem, updateBoardItems, updateBoardViewport } from '../repository'
 import { exportBoardToFile, importBoardFromFile } from '../boardFile'
@@ -55,8 +55,14 @@ export function registerBoardsIpc(getWindow: () => BrowserWindow | null): void {
   })
 
   /* ---------------- 白板文件（.lumenboard） ---------------- */
-  // 无对话框直写路径（供测试/脚本复用）；UI 走带对话框版本
-  ipcMain.handle('board:exportToPath', (_e, boardId: number, targetPath: string) => exportBoardToFile(boardId, targetPath))
+  // 无对话框直写路径（供测试/脚本复用；UI 走带对话框版本）。打包版禁用：
+  // 渲染层失陷时可借它向任意可写路径覆盖 ZIP（审计 M4/L2 收口）
+  ipcMain.handle('board:exportToPath', (_e, boardId: number, targetPath: string) => {
+    if (app.isPackaged && process.env.LUMEN_ALLOW_MULTI !== '1') {
+      throw new Error('board:exportToPath 仅开发/测试环境可用')
+    }
+    return exportBoardToFile(boardId, targetPath)
+  })
   ipcMain.handle('board:importFromPath', async (_e, filePath: string) => importBoardFromFile(filePath))
   ipcMain.handle('board:exportFile', async (_e, boardId: number) => {
     const win = getWindow()

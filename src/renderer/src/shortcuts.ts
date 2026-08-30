@@ -4,7 +4,7 @@
  */
 
 export interface ShortcutDef {
-  id: 'preview' | 'selectAll' | 'undoDelete'
+  id: 'preview' | 'selectAll' | 'undoDelete' | 'screenshot'
   label: string
   defaultKeys: string
 }
@@ -12,7 +12,8 @@ export interface ShortcutDef {
 export const SHORTCUT_DEFS: ShortcutDef[] = [
   { id: 'preview', label: '打开/关闭预览', defaultKeys: 'Space' },
   { id: 'selectAll', label: '全选素材', defaultKeys: 'Ctrl+A' },
-  { id: 'undoDelete', label: '撤销删除', defaultKeys: 'Ctrl+Z' }
+  { id: 'undoDelete', label: '撤销删除', defaultKeys: 'Ctrl+Z' },
+  { id: 'screenshot', label: '区域截图', defaultKeys: 'Shift+Ctrl+S' }
 ]
 
 const STORE_KEY = 'lumen.shortcuts'
