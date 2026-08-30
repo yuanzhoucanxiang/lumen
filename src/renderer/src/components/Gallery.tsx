@@ -415,6 +415,11 @@ export default function Gallery() {
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerW, setContainerW] = useState(0)
+  // 橡皮筋框选(对标 Eagle):空白处按下拖拽,命中布局矩形的素材全部选中;Ctrl/Shift 拖拽在原选中上追加
+  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
+  const marqueeSuppressClickRef = useRef(false)
+  const marqueeAdditiveRef = useRef(false)
+  const marqueeBaseRef = useRef<string[]>([])
   const [viewportH, setViewportH] = useState(0)
   const [scrollTop, setScrollTop] = useState(0)
 
@@ -644,13 +649,73 @@ export default function Gallery() {
         scrollMemory.set(viewKey, e.currentTarget.scrollTop)
         endHover()
       }}
+      onPointerDown={(e) => {
+        // 橡皮筋框选:仅左键、且起点不在素材卡片/按钮上(卡片自带点击语义)
+        if (e.button !== 0) return
+        const el = e.target as HTMLElement
+        if (el.closest('[role="button"]') || el.closest('button')) return
+        const rect = containerRef.current?.getBoundingClientRect()
+        const px = e.clientX - (rect?.left ?? 0)
+        const py = e.clientY - (rect?.top ?? 0) + (containerRef.current?.scrollTop ?? 0)
+        marqueeAdditiveRef.current = e.ctrlKey || e.metaKey || e.shiftKey
+        marqueeBaseRef.current = marqueeAdditiveRef.current ? [...selection] : []
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId)
+        } catch {
+          /* 合成事件(自动化测试)无有效 pointerId,忽略 */
+        }
+        setMarquee({ x0: px, y0: py, x1: px, y1: py })
+      }}
+      onPointerMove={(e) => {
+        if (!marquee) return
+        const rect = containerRef.current?.getBoundingClientRect()
+        const px = e.clientX - (rect?.left ?? 0)
+        const py = e.clientY - (rect?.top ?? 0) + (containerRef.current?.scrollTop ?? 0)
+        setMarquee((m) => (m ? { ...m, x1: px, y1: py } : m))
+      }}
+      onPointerUp={(e) => {
+        if (!marquee) return
+        const rect = containerRef.current?.getBoundingClientRect()
+        const px = e.clientX - (rect?.left ?? 0)
+        const py = e.clientY - (rect?.top ?? 0) + (containerRef.current?.scrollTop ?? 0)
+        const sel = {
+          x: Math.min(marquee.x0, px),
+          y: Math.min(marquee.y0, py),
+          w: Math.abs(px - marquee.x0),
+          h: Math.abs(py - marquee.y0)
+        }
+        setMarquee(null)
+        if (sel.w <= 3 && sel.h <= 3) return
+        // 拖拽过:随后的 click 事件不得清空本次框选结果
+        marqueeSuppressClickRef.current = true
+        const hits = layout
+          .filter((it) => it.x < sel.x + sel.w && it.x + it.w > sel.x && it.y < sel.y + sel.h && it.y + it.h > sel.y)
+          .map((it) => it.a.id)
+        setSelection(marqueeAdditiveRef.current ? [...new Set([...marqueeBaseRef.current, ...hits])] : hits)
+      }}
       onClick={() => {
+        if (marqueeSuppressClickRef.current) {
+          marqueeSuppressClickRef.current = false
+          return
+        }
         setSelection([])
         setMenu(null)
         endHover()
       }}
     >
       <div className="relative" style={{ height: totalH }}>
+        {marquee && (
+          <div
+            data-gallery-marquee
+            className="pointer-events-none absolute z-10 border border-[var(--accent)] bg-[var(--accent-soft)]"
+            style={{
+              left: Math.min(marquee.x0, marquee.x1),
+              top: Math.min(marquee.y0, marquee.y1),
+              width: Math.abs(marquee.x1 - marquee.x0),
+              height: Math.abs(marquee.y1 - marquee.y0)
+            }}
+          />
+        )}
         {visible.map((item) => {
           const handlers = {
             onClick: (e: React.MouseEvent) => {

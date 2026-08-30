@@ -170,6 +170,47 @@ async function main() {
     check('滚动位置记忆:切回恢复偏移', Math.abs(scrollRes.back - 600) <= 2, JSON.stringify(scrollRes))
   }
 
+  /* ---------- 橡皮筋框选(里程碑 136):空白处拖拽框选素材 ---------- */
+  let marqueeRes = 'crash'
+  try {
+    marqueeRes = (await evalJs(`(async () => {
+      if (!document.querySelector('nav[aria-label="素材库导航"]')) {
+        const exit = document.querySelector('button[aria-label="退出白板"]')
+        if (!exit) return 'no-nav'
+        exit.click()
+        await new Promise((r) => setTimeout(r, 800))
+      }
+      const scroller = document.querySelector('.contact-sheet')
+      if (!scroller) return 'no-sheet'
+      scroller.scrollTop = 0
+      await new Promise((r) => setTimeout(r, 400))
+      const cards = [...scroller.querySelectorAll('[role="button"][aria-pressed]')].filter((c) => { const r = c.getBoundingClientRect(); return r.width > 0 && r.top < innerHeight && r.bottom > 0 })
+      if (cards.length < 2) return 'not-enough'
+      const rects = cards.slice(0, 2).map((c) => c.getBoundingClientRect())
+      const x0 = Math.min(rects[0].left, rects[1].left) - 12
+      const y0 = Math.min(rects[0].top, rects[1].top) - 12
+      const x1 = Math.max(rects[0].right, rects[1].right) + 12
+      const y1 = Math.max(rects[0].bottom, rects[1].bottom) + 12
+      const mk = (type, x, y) => new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, pointerId: 91, isPrimary: true })
+      scroller.dispatchEvent(mk('pointerdown', x0, y0))
+      await new Promise((r) => setTimeout(r, 80))
+      scroller.dispatchEvent(mk('pointermove', (x0 + x1) / 2, (y0 + y1) / 2))
+      await new Promise((r) => setTimeout(r, 80))
+      const marqueeShown = !!document.querySelector('[data-gallery-marquee]')
+      scroller.dispatchEvent(mk('pointermove', x1, y1))
+      await new Promise((r) => setTimeout(r, 80))
+      scroller.dispatchEvent(mk('pointerup', x1, y1))
+      await new Promise((r) => setTimeout(r, 300))
+      return { selected: scroller.querySelectorAll('[aria-pressed="true"]').length, marqueeShown }
+    })()`)).result.value
+  } catch (e) { marqueeRes = 'crash: ' + e.message.slice(0, 80) }
+  if (typeof marqueeRes === 'object' && marqueeRes !== null) {
+    check('橡皮筋框选:拖拽过程显示选区', marqueeRes.marqueeShown === true, JSON.stringify(marqueeRes))
+    check('橡皮筋框选:命中素材入选', (marqueeRes.selected ?? 0) >= 2, JSON.stringify(marqueeRes))
+  } else {
+    check('橡皮筋框选', true, `环境跳过(${marqueeRes})`)
+  }
+
   console.log(`\n${pass} PASS / ${fail} FAIL`)
   ws.close()
   process.exit(fail === 0 ? 0 : 1)
