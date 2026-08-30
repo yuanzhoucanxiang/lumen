@@ -58,12 +58,21 @@ function decryptKey(v: string): string {
 
 /** 旧配置里的明文 Key 首次读取时立即回写为加密形态（只做一次，loadConfig 调用频繁不能反复写盘） */
 let keyMigrated = false
+/**
+ * 配置内存缓存(写透):单实例锁保证只有本进程写 config.json,读全部走缓存。
+ * loadConfig 此前每次调用都同步读盘+JSON.parse,而 asset:// 协议的每个缩略图请求
+ * 都经 assetPaths→getLibraryPath→loadConfig,是全应用最热的读路径之一。
+ * 缓存持有解密后的明文(磁盘上 Key 是密文);saveConfig 写盘后同步更新缓存。
+ */
+let cachedConfig: AppConfig | null = null
 
 export function defaultLibraryPath(): string {
   return join(app.getPath('documents'), 'EagleLike.library')
 }
 
 export function loadConfig(): AppConfig {
+  // 浅克隆:调用方对顶层字段的替换(replace 而非原地改)不影响缓存,直到其 saveConfig 写回
+  if (cachedConfig) return { ...cachedConfig }
   const p = configPath()
   let raw: Partial<AppConfig> & { libraryPath?: string } = {}
   if (existsSync(p)) {
@@ -128,6 +137,8 @@ export function saveConfig(cfg: AppConfig): void {
   // Key 只以密文落盘（safeStorage 不可用时退回明文，行为与旧版一致）；已是密文则不再二次加密
   if (out.aiApiKey && !out.aiApiKey.startsWith(ENC_PREFIX)) out.aiApiKey = encryptKey(out.aiApiKey)
   writeFileSync(configPath(), JSON.stringify(out, null, 2), 'utf-8')
+  // 写透:缓存持有调用方传入的明文形态,磁盘与内存同源
+  cachedConfig = cfg
 }
 
 export function ensureLibrary(libraryPath: string): string {

@@ -86,7 +86,13 @@ async function main() {
     check(`${theme} 主界面加载`, ready)
 
     await run(`document.querySelector('button[title="设置"]').click()`)
-    await sleep(180)
+    // 无头 CI 高负载下弹窗挂载可能慢于固定 sleep,轮询等待
+    // (修复冒烟「设置中心不越界 exists:false」时序 flake)
+    for (let i = 0; i < 50; i++) {
+      await sleep(150)
+      if (await run(`return !!document.querySelector('.settings-hub')`)) break
+    }
+    await sleep(120)
     const hub = await run(`return (() => {
       const el = document.querySelector('.settings-hub')
       const rect = el?.getBoundingClientRect()

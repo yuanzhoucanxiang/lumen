@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import FloatingBoard from './components/FloatingBoard'
 import ScreenCapture from './components/ScreenCapture'
+import ErrorBoundary from './components/ErrorBoundary'
 import { initializeTheme } from './theme'
 import './index.css'
 import './pixel-theme.css'
@@ -20,6 +21,8 @@ const isScreenshot = params.get('screenshot') === '1'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    {isFloating && floatingBoardId > 0 ? <FloatingBoard boardId={floatingBoardId} /> : isScreenshot ? <ScreenCapture /> : <App />}
+    <ErrorBoundary>
+      {isFloating && floatingBoardId > 0 ? <FloatingBoard boardId={floatingBoardId} /> : isScreenshot ? <ScreenCapture /> : <App />}
+    </ErrorBoundary>
   </React.StrictMode>
 )
