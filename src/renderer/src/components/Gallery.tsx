@@ -310,6 +310,9 @@ function AssetCard({
   )
 }
 
+/** 视图键 → 滚动偏移(模块级:进白板/预览致 Gallery 卸载重挂后仍可恢复,对标 Eagle 滚动记忆) */
+const scrollMemory = new Map<string, number>()
+
 export default function Gallery() {
   const assets = useLibraryStore((s) => s.assets)
   const loading = useLibraryStore((s) => s.loading)
@@ -326,6 +329,23 @@ export default function Gallery() {
   const clearAiSearch = useLibraryStore((s) => s.clearAiSearch)
   const view = useLibraryStore((s) => s.view)
   const folders = useLibraryStore((s) => s.folders)
+
+  // 滚动位置记忆:键=视图+相似源+AI 搜索态。切到未见过的视图复位顶部(此前旧偏移会落在
+  // 新视图列表中部,体验突兀);切回已看过的视图恢复原偏移(资产就绪、列表高度就位后再设)
+  const viewKey = useMemo(
+    () => `${JSON.stringify(view)}|${similarTo ?? ''}|${aiSearch ? 'ai' : ''}`,
+    [view, similarTo, aiSearch]
+  )
+  const lastRestoredKeyRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (loading) return
+    if (lastRestoredKeyRef.current === viewKey) return
+    lastRestoredKeyRef.current = viewKey
+    const el = containerRef.current
+    const saved = scrollMemory.get(viewKey) ?? 0
+    if (el) el.scrollTop = saved
+    setScrollTop(saved)
+  }, [viewKey, loading, assets])
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
   const [folderSubmenu, setFolderSubmenu] = useState({ open: false, left: false, up: false })
@@ -618,6 +638,7 @@ export default function Gallery() {
         className="contact-sheet modal-scroll flex-1 overflow-y-auto px-5 pb-8 pt-7"
       onScroll={(e) => {
         setScrollTop(e.currentTarget.scrollTop)
+        scrollMemory.set(viewKey, e.currentTarget.scrollTop)
         endHover()
       }}
       onClick={() => {
