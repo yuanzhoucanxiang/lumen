@@ -28,3 +28,4 @@ Thumbs.db
 
 # ZCode 工具本地文件
 .zcode/
+.ui-shot/.tmp-*

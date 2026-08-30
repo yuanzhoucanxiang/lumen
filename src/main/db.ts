@@ -1,11 +1,13 @@
 import Database from 'better-sqlite3'
-import { copyFileSync, existsSync, renameSync, rmSync } from 'fs'
+import { copyFileSync, existsSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { dialog } from 'electron'
 import { clearStmtCache } from './stmtCache'
 import { logger } from './logger'
 
 let db: Database.Database | null = null
+/** 当前打开库的 library.db 绝对路径(closeDb 写干净标记用) */
+let currentDbPath: string | null = null
 
 /** 打开并校验库;损坏时自动自愈(改名保留现场 -> 从 .bak 恢复 -> 无备份则建空库并明确告知) */
 export function openDb(libraryPath: string): Database.Database {
@@ -13,9 +15,17 @@ export function openDb(libraryPath: string): Database.Database {
   const dbPath = join(libraryPath, 'library.db')
   try {
     db = new Database(dbPath)
+    currentDbPath = dbPath
     db.pragma('journal_mode = WAL')
-    const check = db.pragma('quick_check', { simple: true }) as string
-    if (check !== 'ok') throw new Error(`quick_check 未通过: ${check}`)
+    // 干净关闭标记:closeDb 正常关库时写入。只有非干净关闭(崩溃/断电/标记缺失)才做
+    // 全库 quick_check,否则校验成本随库体积线性增长(策划案目标 1-2 万素材)
+    const marker = `${dbPath}.clean`
+    if (existsSync(marker)) {
+      rmSync(marker, { force: true })
+    } else {
+      const check = db.pragma('quick_check', { simple: true }) as string
+      if (check !== 'ok') throw new Error(`quick_check 未通过: ${check}`)
+    }
   } catch (e) {
     recoverCorruptDb(dbPath, e)
   }
@@ -35,6 +45,7 @@ export function openDb(libraryPath: string): Database.Database {
 function recoverCorruptDb(dbPath: string, cause: unknown): void {
   db?.close()
   db = null
+  currentDbPath = null
   const corrupt = `${dbPath}.corrupt-${Date.now()}`
   try {
     // 文件可能压根没生成(如父目录在打开瞬间缺失/首次创建失败):没有可保留的现场,
@@ -53,6 +64,7 @@ function recoverCorruptDb(dbPath: string, cause: unknown): void {
     if (existsSync(bak)) {
       copyFileSync(bak, dbPath)
       db = new Database(dbPath)
+      currentDbPath = dbPath
       db.pragma('journal_mode = WAL')
       const check = db.pragma('quick_check', { simple: true }) as string
       if (check !== 'ok') throw new Error(`备份库也损坏: ${check}`)
@@ -61,6 +73,7 @@ function recoverCorruptDb(dbPath: string, cause: unknown): void {
     }
     // 无备份:建空库是最后手段,必须让用户知道发生了什么
     db = new Database(dbPath)
+    currentDbPath = dbPath
     db.pragma('journal_mode = WAL')
     logger.error('[db]', `无备份可用,已重建空库(数据丢失);损坏文件保留在 ${corrupt}`)
     try {
@@ -84,8 +97,18 @@ export function closeDb(): void {
   // statement 绑定在具体 Database 实例上:先清语句缓存再关连接,
   // 否则切换素材库后会拿到指向已关闭旧实例的 statement(调用即抛错)
   clearStmtCache()
+  const closingPath = currentDbPath
   db?.close()
   db = null
+  currentDbPath = null
+  // 成功关库后写干净标记,供下次 openDb 跳过全库 quick_check(快速启动)
+  if (closingPath) {
+    try {
+      writeFileSync(`${closingPath}.clean`, 'ok')
+    } catch (e) {
+      logger.warn('[db]', `干净标记写入失败: ${(e as Error).message}`)
+    }
+  }
 }
 
 function migrate(d: Database.Database): void {

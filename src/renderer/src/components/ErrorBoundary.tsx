@@ -5,11 +5,13 @@ interface State {
 }
 
 /**
- * 顶层错误边界：任何渲染期异常降级为错误卡片而非整窗白屏
- * （此前 Inspector 的 exif JSON.parse 曾因库数据损坏导致整窗崩溃）。
- * 点击「重新加载」整页重载即恢复（数据都在 SQLite，无丢失风险）。
+ * 错误边界：默认整页错误卡片（根节点用）；传入 fallback 则以局部占位降级
+ * （面板级用，如 Inspector 崩溃不拖垮整个应用）。
  */
-export default class ErrorBoundary extends React.Component<{ children: React.ReactNode }, State> {
+export default class ErrorBoundary extends React.Component<
+  { children: React.ReactNode; fallback?: React.ReactNode },
+  State
+> {
   state: State = { error: null }
 
   static getDerivedStateFromError(error: Error): State {
@@ -22,6 +24,7 @@ export default class ErrorBoundary extends React.Component<{ children: React.Rea
 
   render(): React.ReactNode {
     if (!this.state.error) return this.props.children
+    if (this.props.fallback !== undefined) return this.props.fallback
     return (
       <div className="flex h-screen w-screen flex-col items-center justify-center gap-3 bg-[var(--bg-base)] p-6 text-[var(--text-main)]">
         <div className="text-[14px] font-medium">界面出现异常，素材数据不受影响</div>

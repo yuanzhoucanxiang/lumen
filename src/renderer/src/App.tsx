@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLibraryStore } from './stores/libraryStore'
+import ErrorBoundary from './components/ErrorBoundary'
 import Sidebar from './components/Sidebar'
 import Toolbar from './components/Toolbar'
 import Gallery from './components/Gallery'
@@ -272,8 +273,22 @@ export default function App() {
             </div>
           )}
         </main>
-        {/* 白板全屏时素材详情面板无意义(库里没有可见选中项),隐藏让画布更宽 */}
-        {boardViewMode !== 'board' && <Inspector />}
+        {/* 白板全屏时素材详情面板无意义(库里没有可见选中项),隐藏让画布更宽。
+            局部错误边界:详情面板异常只降级面板本身,不拖垮图库 */}
+        {boardViewMode !== 'board' && (
+          <ErrorBoundary
+            fallback={
+              <aside className="w-[300px] shrink-0 border-l border-[var(--border)] bg-[var(--bg-panel)] p-4 text-[12px] text-[var(--text-faint)]">
+                详情面板异常。
+                <button className="ml-2 underline" onClick={() => location.reload()}>
+                  重新加载
+                </button>
+              </aside>
+            }
+          >
+            <Inspector />
+          </ErrorBoundary>
+        )}
       </div>
 
       {previewId && <Preview />}
