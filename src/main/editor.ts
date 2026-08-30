@@ -46,6 +46,8 @@ async function extractColors(input: Buffer): Promise<number[][]> {
 export async function applyEdit(id: string, dataUrl: string): Promise<void> {
   const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/s)
   if (!m) throw new Error('invalid dataUrl')
+  // 解码后 100MB 上限:渲染层失陷时可推送超大 base64 一次性吃满内存
+  if (m[2].length > 134_000_000) throw new Error('编辑结果超过 100MB 上限')
   const mime = m[1]
   const buffer = Buffer.from(m[2], 'base64')
   const newExt = MIME_EXT[mime] ?? 'png'

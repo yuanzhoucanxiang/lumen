@@ -1,8 +1,8 @@
-import { app } from 'electron'
 import { createServer, IncomingMessage, ServerResponse } from 'http'
-import { rmSync } from 'fs'
-import { writeFile } from 'fs/promises'
+import { mkdtempSync, rmSync } from 'fs'
+import { writeFile, rm } from 'fs/promises'
 import { join } from 'path'
+import { tmpdir } from 'os'
 import { importFiles } from './importer'
 import { guardedFetch, readBodyCapped } from './netGuard'
 
@@ -96,10 +96,12 @@ async function saveClip(payload: ClipPayload): Promise<number> {
   const name =
     payload.filename?.replace(/[\\/:*?"<>|]/g, '_').slice(0, 120) ||
     `clip_${new Date().toISOString().replace(/[:.]/g, '-')}`
-  const tmpFile = join(app.getPath('temp'), `${name.replace(/\.[^.]+$/, '')}_${Date.now()}.${ext}`)
+  // 随机临时子目录:路径不可预测,且写入不会命中同目录下可能存在的符号链接
+  const tmpDir = mkdtempSync(join(tmpdir(), 'lumen-clip-'))
+  const tmpFile = join(tmpDir, `${name.replace(/\.[^.]+$/, '')}_${Date.now()}.${ext}`)
   await writeFile(tmpFile, buffer)
   const result = await importFiles([tmpFile], { sourceUrl: payload.pageUrl ?? payload.imageUrl })
-  rmSync(tmpFile, { force: true }) // 剪藏临时文件入库后清理
+  rm(tmpDir, { recursive: true, force: true }).catch(() => undefined) // 剪藏临时目录入库后清理
   return result.imported
 }
 

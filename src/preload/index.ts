@@ -40,8 +40,10 @@ const api = {
   /** URL 粘贴抓图:主进程并发下载图片直链后走导入管线,来源写入 assets.url */
   importFromUrls: (urls: string[]): Promise<ImportResult> =>
     ipcRenderer.invoke('import:urls', urls),
-  onImportProgress: (cb: (p: { phase: 'prepare' | 'commit'; done: number; total: number }) => void): void => {
-    ipcRenderer.on('import:progress', (_e, p) => cb(p))
+  onImportProgress: (cb: (p: { phase: 'prepare' | 'commit'; done: number; total: number }) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: { phase: 'prepare' | 'commit'; done: number; total: number }) => cb(p)
+    ipcRenderer.on('import:progress', h)
+    return () => ipcRenderer.removeListener('import:progress', h)
   },
 
   /* 素材 */
@@ -84,13 +86,17 @@ const api = {
     ipcRenderer.invoke('ai:resolveScope', scope),
   aiTestKey: (cfg: { baseUrl: string; apiKey: string; model: string }): Promise<{ ok: boolean; message: string }> =>
     ipcRenderer.invoke('ai:testKey', cfg),
-  onAiProgress: (cb: (p: { done: number; total: number; failed: number }) => void): void => {
-    ipcRenderer.on('ai:progress', (_e, p) => cb(p))
+  onAiProgress: (cb: (p: { done: number; total: number; failed: number }) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: { done: number; total: number; failed: number }) => cb(p)
+    ipcRenderer.on('ai:progress', h)
+    return () => ipcRenderer.removeListener('ai:progress', h)
   },
   /** AI 智能搜索：自然语言找图，返回匹配素材（按相关性排序） */
   aiSearch: (query: string): Promise<Asset[]> => ipcRenderer.invoke('ai:search', query),
-  onAiSearchProgress: (cb: (p: AiSearchProgress) => void): void => {
-    ipcRenderer.on('ai:searchProgress', (_e, p) => cb(p))
+  onAiSearchProgress: (cb: (p: AiSearchProgress) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: AiSearchProgress) => cb(p)
+    ipcRenderer.on('ai:searchProgress', h)
+    return () => ipcRenderer.removeListener('ai:searchProgress', h)
   },
 
   /* 标签 */
@@ -207,24 +213,54 @@ const api = {
   exportAssets: (ids: string[], mode: 'folder' | 'zip', opts?: ExportOptions): Promise<{ exported: number; target: string } | null> =>
     ipcRenderer.invoke('assets:export', ids, mode, opts),
 
+  /* 区域截图 */
+  /** 工具栏触发:隐藏主窗 → 捕获 → 打开全屏覆层(已开会话时返回 false) */
+  screenshotStart: (): Promise<boolean> => ipcRenderer.invoke('screenshot:start'),
+  /** 覆层渲染层就绪通知(主进程随后 send screenshot:data) */
+  screenshotOverlayReady: (): void => ipcRenderer.send('screenshot:overlayReady'),
+  onScreenshotData: (cb: (d: { dataUrl: string; dpr: number }) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, d: { dataUrl: string; dpr: number }) => cb(d)
+    ipcRenderer.on('screenshot:data', h)
+    return () => ipcRenderer.removeListener('screenshot:data', h)
+  },
+  /** 框选确认:rect 为覆层视口内的逻辑像素,主进程按 dpr 换算物理像素裁剪入库。
+   *  source 可选(测试直传整屏 dataUrl);缺省用当前会话捕获的整屏图 */
+  screenshotCommit: (
+    rect: { x: number; y: number; width: number; height: number },
+    dpr?: number,
+    source?: string
+  ): Promise<ImportResult> => ipcRenderer.invoke('screenshot:commit', rect, dpr, source),
+  screenshotCancel: (): Promise<void> => ipcRenderer.invoke('screenshot:cancel'),
+  onScreenshotImported: (cb: (count: number) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, count: number) => cb(count)
+    ipcRenderer.on('screenshot:imported', h)
+    return () => ipcRenderer.removeListener('screenshot:imported', h)
+  },
+
   /* URL 辅助 */
   thumbnailUrl: (id: string): string => `asset://${id}/file?t=t`,
   originalUrl: (id: string): string => `asset://${id}/file?t=o`,
   storyboardUrl: (id: string): string => `asset://${id}/file?t=s`,
 
   /* 剪藏通知 */
-  onClipImported: (cb: (count: number) => void): void => {
-    ipcRenderer.on('clip:imported', (_e, count: number) => cb(count))
+  onClipImported: (cb: (count: number) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, count: number) => cb(count)
+    ipcRenderer.on('clip:imported', h)
+    return () => ipcRenderer.removeListener('clip:imported', h)
   },
 
   /* 浮动白板窗：主进程复用窗口时通知切换白板 */
-  onBoardSwitch: (cb: (boardId: number) => void): void => {
-    ipcRenderer.on('board:switch', (_e, boardId: number) => cb(boardId))
+  onBoardSwitch: (cb: (boardId: number) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, boardId: number) => cb(boardId)
+    ipcRenderer.on('board:switch', h)
+    return () => ipcRenderer.removeListener('board:switch', h)
   },
 
   /* 浮动白板窗：主进程折叠/展开时同步状态（折叠后画布卸载） */
-  onBoardMinimized: (cb: (minimized: boolean) => void): void => {
-    ipcRenderer.on('board:minimized', (_e, minimized: boolean) => cb(minimized))
+  onBoardMinimized: (cb: (minimized: boolean) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, minimized: boolean) => cb(minimized)
+    ipcRenderer.on('board:minimized', h)
+    return () => ipcRenderer.removeListener('board:minimized', h)
   },
 
   /* 自动更新 */
@@ -232,8 +268,10 @@ const api = {
   checkUpdate: (): Promise<UpdateStatus> => ipcRenderer.invoke('update:check'),
   downloadUpdate: (): Promise<void> => ipcRenderer.invoke('update:download'),
   installUpdate: (): Promise<void> => ipcRenderer.invoke('update:install'),
-  onUpdateStatus: (cb: (s: UpdateStatus) => void): void => {
-    ipcRenderer.on('update:event', (_e, s: UpdateStatus) => cb(s))
+  onUpdateStatus: (cb: (s: UpdateStatus) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, s: UpdateStatus) => cb(s)
+    ipcRenderer.on('update:event', h)
+    return () => ipcRenderer.removeListener('update:event', h)
   }
 }
 

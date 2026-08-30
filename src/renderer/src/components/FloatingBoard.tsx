@@ -22,14 +22,10 @@ export default function FloatingBoard({ boardId }: { boardId: number }) {
   const onViewportChange = useCallback((s: number) => setZoom(s), [])
 
   // 主进程复用已开的浮动窗时会发 board:switch 通知切换白板
-  useEffect(() => {
-    window.api.onBoardSwitch((id) => setCurrentBoardId(id))
-  }, [])
+  useEffect(() => window.api.onBoardSwitch((id) => setCurrentBoardId(id)), [])
 
   // 主进程折叠/展开后同步 UI 状态（窗口高度变化由主进程负责）
-  useEffect(() => {
-    window.api.onBoardMinimized((m) => setMinimized(m))
-  }, [])
+  useEffect(() => window.api.onBoardMinimized((m) => setMinimized(m)), [])
 
   // 初始化 store：激活该白板并加载元素/白板列表。
   // boardViewMode 置 'board'：浮动窗无素材库,画布快捷键应始终生效

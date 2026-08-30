@@ -86,12 +86,11 @@ export default function AiDialog({
     void window.api.aiCountCandidates(scope).then((n) => setCount(n))
   }, [scopeType, selectionIds, phase])
 
-  // 处理进度推送(挂载时注册一次)
-  useEffect(() => {
-    window.api.onAiProgress((p) => {
-      setProgress(p)
-    })
-  }, [])
+  // 处理进度推送(挂载时注册一次,卸载时退订)
+  useEffect(
+    () => window.api.onAiProgress((p) => setProgress(p)),
+    []
+  )
 
   const start = async () => {
     setPhase('processing')

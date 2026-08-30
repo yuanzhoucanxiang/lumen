@@ -1,4 +1,4 @@
-import { existsSync, statSync, watch, type FSWatcher } from 'fs'
+import { existsSync, lstatSync, statSync, watch, type FSWatcher } from 'fs'
 import { join } from 'path'
 import { loadConfig } from './library'
 import { collectFiles, importFiles } from './importer'
@@ -24,10 +24,16 @@ async function flush(): Promise<void> {
   pendingPaths.clear()
   try {
     const cfg = loadConfig()
-    // 过滤:已消失的/非文件的/落在素材库自身目录内的(防循环)
-    const valid = paths.filter(
-      (p) => existsSync(p) && statSync(p).isFile() && !p.startsWith(cfg.current)
-    )
+    // 过滤:已消失的/非文件的/落在素材库自身目录内的(防循环)/符号链接(目录 junction 指向
+    // 库外时会借监控导入把外部目录搬空,Windows 上建 junction 无需特权)
+    const valid = paths.filter((p) => {
+      if (!existsSync(p) || !statSync(p).isFile() || p.startsWith(cfg.current)) return false
+      try {
+        return !lstatSync(p).isSymbolicLink()
+      } catch {
+        return false
+      }
+    })
     if (valid.length === 0) return
     const result = await importFiles(valid, { move: cfg.importMode === 'move', checkTombstone: true })
     if (result.imported > 0) notify(result.imported)

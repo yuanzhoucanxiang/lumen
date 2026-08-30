@@ -145,12 +145,14 @@ export default function Toolbar() {
   const [aiProgressText, setAiProgressText] = useState('')
   const aiSearchInputRef = useRef<HTMLInputElement>(null)
 
-  // 订阅搜索进度推送
-  useEffect(() => {
-    window.api.onAiSearchProgress((p) => {
-      setAiProgressText(p.total > 1 ? `${p.phase} ${p.done}/${p.total}` : p.phase)
-    })
-  }, [])
+  // 订阅搜索进度推送(卸载时退订)
+  useEffect(
+    () =>
+      window.api.onAiSearchProgress((p) => {
+        setAiProgressText(p.total > 1 ? `${p.phase} ${p.done}/${p.total}` : p.phase)
+      }),
+    []
+  )
 
   /** 执行 AI 搜索 */
   const runAiSearch = async () => {
@@ -225,6 +227,19 @@ export default function Toolbar() {
       <button className="btn-primary flex items-center gap-1.5 whitespace-nowrap" onClick={() => void importDialog()}>
         <Icon name="import" size={14} strokeWidth={2.2} />
         导入
+      </button>
+
+      {/* 区域截图(对标 Eagle):隐藏主窗后框选屏幕任意区域入库 */}
+      <button
+        className="btn-ghost flex items-center gap-1.5 whitespace-nowrap px-2.5"
+        aria-label="区域截图"
+        title="区域截图：框选屏幕任意区域导入素材库"
+        onClick={() =>
+          void window.api.screenshotStart().catch(() => useLibraryStore.getState().showToast('截图启动失败'))
+        }
+      >
+        <Icon name="crop" size={15} strokeWidth={1.9} />
+        截图
       </button>
 
       {/* 搜索 / AI 智能搜索 */}

@@ -97,16 +97,20 @@ export function queryAssets(q: AssetQuery): Asset[] {
   else where.push('deleted_at IS NULL')
 
   if (q.keyword) {
+    // LIKE 通配符转义:用户搜「100%」应按字面匹配,否则 % 会被当作通配符命中全库
+    const esc = q.keyword.replace(/[\\%_]/g, (c) => `\\${c}`)
     // 拼音/模糊搜索(对标 Eagle):关键词含字母时,额外匹配全拼与首字母串
     // (去空格/连字符再 LIKE,如「人物造型」首字母 rwzx 可命中;中文关键词不加拼音分支避免无效 LIKE)
     if (/[a-z]/i.test(q.keyword)) {
-      where.push(`(name LIKE ? OR comment LIKE ? OR (name_pinyin != '' AND (name_pinyin LIKE ? OR name_pinyin_init LIKE ?)))`)
-      const kw = `%${q.keyword}%`
+      where.push(
+        `(name LIKE ? ESCAPE '\\' OR comment LIKE ? ESCAPE '\\' OR (name_pinyin != '' AND (name_pinyin LIKE ? ESCAPE '\\' OR name_pinyin_init LIKE ? ESCAPE '\\')))`
+      )
+      const kw = `%${esc}%`
       const py = `%${q.keyword.replace(/[^a-z0-9]+/gi, '')}%`
       params.push(kw, kw, py, py)
     } else {
-      where.push('(name LIKE ? OR comment LIKE ?)')
-      const kw = `%${q.keyword}%`
+      where.push(`(name LIKE ? ESCAPE '\\' OR comment LIKE ? ESCAPE '\\')`)
+      const kw = `%${esc}%`
       params.push(kw, kw)
     }
   }
@@ -221,15 +225,19 @@ export function searchAssets(anyTagIds: number[], keywords: string[], limit = 50
   }
   for (const kw of keywords) {
     if (!kw.trim()) continue
+    // LIKE 通配符转义(与 queryAssets 同口径)
+    const esc = kw.trim().replace(/[\\%_]/g, (c) => `\\${c}`)
     // 拼音检索与 queryAssets 同口径:含字母的关键词额外匹配全拼/首字母
     if (/[a-z]/i.test(kw)) {
-      where.push(`(name LIKE ? OR comment LIKE ? OR (name_pinyin != '' AND (name_pinyin LIKE ? OR name_pinyin_init LIKE ?)))`)
-      const like = `%${kw.trim()}%`
+      where.push(
+        `(name LIKE ? ESCAPE '\\' OR comment LIKE ? ESCAPE '\\' OR (name_pinyin != '' AND (name_pinyin LIKE ? ESCAPE '\\' OR name_pinyin_init LIKE ? ESCAPE '\\')))`
+      )
+      const like = `%${esc}%`
       const py = `%${kw.trim().replace(/[^a-z0-9]+/gi, '')}%`
       params.push(like, like, py, py)
     } else {
-      where.push('(name LIKE ? OR comment LIKE ?)')
-      const like = `%${kw.trim()}%`
+      where.push(`(name LIKE ? ESCAPE '\\' OR comment LIKE ? ESCAPE '\\')`)
+      const like = `%${esc}%`
       params.push(like, like)
     }
   }

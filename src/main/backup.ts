@@ -55,8 +55,10 @@ export async function backupDatabase(): Promise<string> {
 
 /** 异步递归收集目录下所有文件，返回相对库根目录的路径(fs/promises,不阻塞主进程) */
 async function collectFiles(dir: string, base: string, acc: { rel: string; abs: string }[]): Promise<void> {
-  for (const name of await readdir(dir)) {
-    const abs = join(dir, name)
+  for (const e of await readdir(dir, { withFileTypes: true })) {
+    // 跳过符号链接/junction:库目录内的联接会把库外文件打进备份 ZIP
+    if (e.isSymbolicLink()) continue
+    const abs = join(dir, e.name)
     const st = await stat(abs)
     if (st.isDirectory()) {
       await collectFiles(abs, base, acc)

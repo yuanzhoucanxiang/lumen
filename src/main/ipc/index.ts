@@ -12,6 +12,7 @@ import { registerTagsIpc } from './tags'
 import { registerFoldersIpc } from './folders'
 import { registerBoardsIpc } from './boards'
 import { registerSystemIpc } from './system'
+import { registerScreenshotIpc } from '../screenshot'
 
 export function registerIpc(getWindow: () => BrowserWindow | null): void {
   registerLibraryIpc(getWindow)
@@ -23,6 +24,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   registerFoldersIpc(getWindow)
   registerBoardsIpc(getWindow)
   registerSystemIpc(getWindow)
+  registerScreenshotIpc(getWindow)
 }
 
 export { resolveAssetFile } from './assets'

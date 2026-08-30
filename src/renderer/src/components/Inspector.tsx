@@ -442,7 +442,7 @@ export default function Inspector() {
                 {new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(asset.importedAt)}
               </dd>
             </div>
-            {asset.url && (
+            {asset.url && /^https?:\/\//i.test(asset.url) && (
               <div className="pt-1">
                 <dt className="mb-0.5">来源</dt>
                 <dd>

@@ -44,8 +44,6 @@ function BoardResizer() {
   )
 }
 
-let clipListenerRegistered = false
-
 export default function App() {
   const refreshAll = useLibraryStore((s) => s.refreshAll)
   const importFiles = useLibraryStore((s) => s.importFiles)
@@ -82,15 +80,12 @@ export default function App() {
   useEffect(() => {
     void refreshAll()
     // 浏览器剪藏导入后自动刷新
-    if (!clipListenerRegistered) {
-      clipListenerRegistered = true
-      window.api.onClipImported((count) => {
-        useLibraryStore.getState().showToast(`剪藏成功：已导入 ${count} 张图片`)
-        void useLibraryStore.getState().refreshAll()
-      })
-    }
+    const offClip = window.api.onClipImported((count) => {
+      useLibraryStore.getState().showToast(`剪藏成功：已导入 ${count} 张图片`)
+      void useLibraryStore.getState().refreshAll()
+    })
     // 自动更新状态
-    window.api.onUpdateStatus((s) => {
+    const offUpd = window.api.onUpdateStatus((s) => {
       setUpd(s)
       if (s.state === 'available') setUpdDismissed(false)
       if (s.state === 'none') useLibraryStore.getState().showToast('已是最新版本')
@@ -102,7 +97,7 @@ export default function App() {
       }
     })
     // AI 处理进度推送
-    window.api.onAiProgress((p) => {
+    const offAi = window.api.onAiProgress((p) => {
       setAiProgress(p)
       if (p.done >= p.total) {
         // 处理完成,2 秒后自动隐藏进度卡片
@@ -110,13 +105,25 @@ export default function App() {
       }
     })
     // 导入进度推送
-    window.api.onImportProgress((p) => {
+    const offImp = window.api.onImportProgress((p) => {
       setImportProgress(p)
       if (p.done >= p.total && p.phase === 'commit') {
         // 导入完成,2 秒后自动隐藏进度卡片
         setTimeout(() => setImportProgress(null), 2000)
       }
     })
+    // 区域截图入库通知
+    const offShot = window.api.onScreenshotImported((count) => {
+      useLibraryStore.getState().showToast(`截图已导入 ${count} 个素材`)
+      void useLibraryStore.getState().refreshAll()
+    })
+    return () => {
+      offClip()
+      offUpd()
+      offAi()
+      offImp()
+      offShot()
+    }
   }, [refreshAll])
 
   // 键盘快捷键：Delete 删除、Ctrl+Z 撤销、Ctrl+A 全选、空格预览、1-5 评分、方向键移动

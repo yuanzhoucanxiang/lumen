@@ -25,9 +25,16 @@ function rotateIfNeeded(): void {
   }
 }
 
+/** 日志脱敏:Bearer 凭证 / api key / token 形态的键值打码,防敏感信息落盘 */
+function scrub(msg: string): string {
+  return msg
+    .replace(/(Bearer\s+)[^\s'",}]+/gi, '$1***')
+    .replace(/((?:api[_-]?key|access[_-]?token|authorization)["'=:\s]+)[^\s'",}]+/gi, '$1***')
+}
+
 function write(level: string, ctx: string, msg: string): void {
   if (!inited) return
-  const line = `[${timestamp()}] ${level} ${ctx} ${msg}\n`
+  const line = `[${timestamp()}] ${level} ${ctx} ${scrub(msg)}\n`
   try {
     rotateIfNeeded()
     appendFileSync(logFile, line, 'utf-8')

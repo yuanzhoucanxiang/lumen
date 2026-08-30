@@ -64,6 +64,8 @@ export async function collectFiles(paths: string[], acc: string[] = []): Promise
     }
     if (st.isDirectory()) {
       for (const e of await readdir(p, { withFileTypes: true })) {
+        // 跳过符号链接/junction:目录联接可指向库外,递归会把外部目录整棵搬进库(Windows 建 junction 无需特权)
+        if (e.isSymbolicLink()) continue
         await collectFiles([join(p, e.name)], acc)
       }
     } else {
