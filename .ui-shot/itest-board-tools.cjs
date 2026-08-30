@@ -433,6 +433,69 @@ async function main() {
   check('文字字号与颜色随 .lumenboard 往返', shapeRound.textSize === 28 && shapeRound.textColor === '#ffd9a0', JSON.stringify(shapeRound))
   await run(`await window.api.deleteBoard(${imp.boardId})`)
 
+  /* ---------- 12.5 素材翻转（对标 PureRef,右键菜单 + DB + 渲染变换 + .lumenboard 往返） ---------- */
+  const flipAssetId = await run(`return (async () => {
+    const a = (await window.api.queryAssets({ limit: 20 })).find((x) => ['jpg','jpeg','png','gif','webp'].includes(x.ext))
+    return a ? a.id : null
+  })()`)
+  if (flipAssetId) {
+    // 放到画布可见区(其他小节的元素在 120~420 范围内均可见)。
+    // 直接 IPC 加料不触发应用刷新,重载后进白板让画布从 DB 重建元素
+    await run(`return window.api.addBoardItem(${boardId}, { type: 'asset', assetId: ${JSON.stringify(flipAssetId)}, x: 250, y: 180, width: 160, height: 120 })`)
+    await run(`setTimeout(() => location.reload(), 0)`)
+    await sleep(1500)
+    let flipReady = false
+    for (let i = 0; i < 40; i++) {
+      await sleep(500)
+      flipReady = await run(`return !!document.querySelector('nav[aria-label="素材库导航"]')`).catch(() => false)
+      if (flipReady) break
+    }
+    await run(`(() => {
+      document.querySelector('nav[aria-label="素材库导航"] button[aria-label="白板"]').click()
+    })()`)
+    await sleep(500)
+    await run(switchBoard)
+    await sleep(600)
+    const flipItem = await run(`return (async () => {
+      const items = await window.api.listBoardItems(${boardId})
+      return items.find((i) => i.assetId === ${JSON.stringify(flipAssetId)}) ?? null
+    })()`)
+    check('素材元素默认未翻转', !!flipItem && flipItem.flipX === false && flipItem.flipY === false, JSON.stringify({ flipX: flipItem?.flipX, flipY: flipItem?.flipY }))
+    /** 右键元素 → 点击指定菜单项 → 返回 {db 态, DOM transform} */
+    const flipViaMenu = (label) => run(`return (async () => {
+      const el = document.querySelector('[data-board-item="${flipItem.id}"]')
+      const b = el.getBoundingClientRect()
+      el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: b.left + 40, clientY: b.top + 40, button: 2 }))
+      await new Promise((r) => setTimeout(r, 300))
+      const btn = [...document.querySelectorAll('.menu button')].find((x) => x.textContent.includes('${label}'))
+      if (!btn) return { db: null, transform: 'menu-missing' }
+      btn.click()
+      await new Promise((r) => setTimeout(r, 500))
+      const item = (await window.api.listBoardItems(${boardId})).find((i) => i.id === '${flipItem.id}')
+      const img = document.querySelector('[data-board-item="${flipItem.id}"] img')
+      return { db: item ? { fx: item.flipX, fy: item.flipY } : null, transform: img?.style.transform ?? '' }
+    })()`)
+    const fx = await flipViaMenu('水平翻转')
+    check('右键水平翻转:落库且渲染镜像', fx.db?.fx === true && fx.transform.includes('scale(-1, 1)'), JSON.stringify(fx))
+    const fy = await flipViaMenu('垂直翻转')
+    check('右键垂直翻转叠加(scale(-1,-1))', fy.db?.fx === true && fy.db?.fy === true && fy.transform.includes('scale(-1, -1)'), JSON.stringify(fy))
+    // .lumenboard 往返还原翻转态
+    const flipRoundPath = path.join(os.tmpdir(), `lumen-flip-${Date.now()}.lumenboard`)
+    const flipExp = await run(`return window.api.exportBoardToPath(${boardId}, '${flipRoundPath.replace(/\\/g, '\\\\')}')`)
+    const flipImp = flipExp && (await run(`return window.api.importBoardFromPath('${flipRoundPath.replace(/\\/g, '\\\\')}')`))
+    const flipRound = flipImp
+      ? await run(`return (async () => {
+          const items = await window.api.listBoardItems(${flipImp.boardId})
+          const f = items.find((i) => i.assetId === ${JSON.stringify(flipAssetId)})
+          await window.api.deleteBoard(${flipImp.boardId})
+          return f ? { fx: f.flipX, fy: f.flipY } : null
+        })()`)
+      : null
+    check('翻转态随 .lumenboard 往返还原', flipRound && flipRound.fx === true && flipRound.fy === true, JSON.stringify(flipRound))
+  } else {
+    check('素材元素默认未翻转', false, '库内无可解码图片,跳过')
+  }
+
   /* ---------- 13. 清理：删除测试白板 ---------- */
   await run(`await window.api.deleteBoard(${boardId})`)
   await sleep(300)

@@ -107,6 +107,10 @@ export interface BoardItem {
   noteFontSize: number
   /** 元素透明度 0-100（100=不透明,对标 PureRef 参考图透明度对比） */
   opacity: number
+  /** 水平翻转（镜像,对标 PureRef 画师对照检查形准） */
+  flipX: boolean
+  /** 垂直翻转 */
+  flipY: boolean
   /** shape 类型的规格 JSON（ShapeSpec） */
   shape: string | null
   createdAt: number
@@ -305,7 +309,7 @@ export interface UpdateStatus {
 
 /** 白板元素可更新字段（主进程/预加载/渲染层共用签名,防止误传 id/boardId 等） */
 export type BoardItemPatch = Partial<
-  Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'noteFontSize' | 'opacity' | 'shape'>
+  Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'noteFontSize' | 'opacity' | 'shape' | 'flipX' | 'flipY'>
 >
 
 /** 视频扩展名集合（主进程导出/故事板与渲染层缩略图 URL 共用,避免两处漂移） */

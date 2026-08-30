@@ -112,6 +112,8 @@ interface ManifestItem {
   noteFontSize: number
   opacity: number
   shape: string | null
+  flipX?: boolean
+  flipY?: boolean
 }
 
 interface Manifest {
@@ -234,7 +236,7 @@ export async function importBoardFromFile(filePath: string): Promise<{ boardId: 
           text: ''
         })
         if (row) {
-          await updateBoardItem(row.id, { z: it.z, opacity: it.opacity })
+          await updateBoardItem(row.id, { z: it.z, opacity: it.opacity, flipX: !!it.flipX, flipY: !!it.flipY })
           imported++
         }
       } else if (it.type === 'note') {

@@ -213,7 +213,9 @@ function migrate(d: Database.Database): void {
     note_color: "TEXT NOT NULL DEFAULT ''",
     note_font_size: 'INTEGER NOT NULL DEFAULT 16',
     opacity: 'INTEGER NOT NULL DEFAULT 100',
-    shape: 'TEXT'
+    shape: 'TEXT',
+    flip_x: 'INTEGER NOT NULL DEFAULT 0',
+    flip_y: 'INTEGER NOT NULL DEFAULT 0'
   })
   ensureColumns(d, 'boards', {
     guides: "TEXT NOT NULL DEFAULT '[]'",

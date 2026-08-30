@@ -45,6 +45,8 @@ interface BoardItemRow {
   note_font_size: number
   opacity: number
   shape: string | null
+  flip_x: number
+  flip_y: number
   created_at: number
 }
 
@@ -65,6 +67,8 @@ function rowToBoardItem(r: BoardItemRow): BoardItem {
     noteFontSize: r.note_font_size ?? 16,
     opacity: r.opacity ?? 100,
     shape: r.shape ?? null,
+    flipX: !!r.flip_x,
+    flipY: !!r.flip_y,
     createdAt: r.created_at
   }
 }
@@ -72,7 +76,7 @@ function rowToBoardItem(r: BoardItemRow): BoardItem {
 export function listBoardItems(boardId: number): BoardItem[] {
   const rows = stmt(
     getDb(),
-    `SELECT id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, note_font_size, opacity, shape, created_at
+    `SELECT id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, note_font_size, opacity, shape, flip_x, flip_y, created_at
        FROM board_items WHERE board_id = ? ORDER BY z ASC`
   ).all(boardId) as BoardItemRow[]
   return rows.map(rowToBoardItem)
@@ -94,6 +98,8 @@ export function addBoardItem(
     noteFont?: string
     noteColor?: string
     noteFontSize?: number
+    flipX?: boolean
+    flipY?: boolean
   }
 ): BoardItem {
   const db = getDb()
@@ -102,8 +108,8 @@ export function addBoardItem(
   const createdAt = Date.now()
   stmt(
     db,
-    `INSERT INTO board_items (id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, note_font_size, opacity, shape, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO board_items (id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, note_font_size, opacity, shape, flip_x, flip_y, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     boardId,
@@ -120,6 +126,8 @@ export function addBoardItem(
     item.noteFontSize ?? 16,
     item.opacity ?? 100,
     item.shape ?? null,
+    item.flipX ? 1 : 0,
+    item.flipY ? 1 : 0,
     createdAt
   )
   stmt(db, 'UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), boardId)
@@ -139,14 +147,16 @@ export function addBoardItem(
     noteFontSize: item.noteFontSize ?? 16,
     opacity: item.opacity ?? 100,
     shape: item.shape ?? null,
+    flipX: !!item.flipX,
+    flipY: !!item.flipY,
     createdAt
   }
 }
 
-/** 更新白板元素（动态 SET，x/y/width/height/z/text/noteFont/noteColor/opacity/shape 可部分更新） */
+/** 更新白板元素（动态 SET，x/y/width/height/z/text/noteFont/noteColor/opacity/shape/flipX/flipY 可部分更新） */
 export function updateBoardItem(
   id: string,
-  patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'noteFontSize' | 'opacity' | 'shape'>>
+  patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'noteFontSize' | 'opacity' | 'shape' | 'flipX' | 'flipY'>>
 ): void {
   const db = getDb()
   const sets: string[] = []
@@ -162,13 +172,16 @@ export function updateBoardItem(
     noteColor: 'note_color',
     noteFontSize: 'note_font_size',
     opacity: 'opacity',
-    shape: 'shape'
+    shape: 'shape',
+    flipX: 'flip_x',
+    flipY: 'flip_y'
   }
   for (const key of Object.keys(colMap) as (keyof typeof colMap)[]) {
     const v = patch[key as keyof typeof patch]
     if (v !== undefined) {
       sets.push(`${colMap[key]} = ?`)
-      params.push(v)
+      // better-sqlite3 不接受 boolean 绑定,统一转 0/1
+      params.push(typeof v === 'boolean' ? (v ? 1 : 0) : v)
     }
   }
   if (sets.length === 0) return
@@ -180,7 +193,7 @@ export function updateBoardItem(
 
 /** 批量更新白板元素（组移动/组缩放等一次性落库，事务原子） */
 export function updateBoardItems(
-  items: { id: string; patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'noteFontSize' | 'opacity' | 'shape'>> }[]
+  items: { id: string; patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'noteFontSize' | 'opacity' | 'shape' | 'flipX' | 'flipY'>> }[]
 ): void {
   if (items.length === 0) return
   const db = getDb()
@@ -195,7 +208,9 @@ export function updateBoardItems(
     noteColor: 'note_color',
     noteFontSize: 'note_font_size',
     opacity: 'opacity',
-    shape: 'shape'
+    shape: 'shape',
+    flipX: 'flip_x',
+    flipY: 'flip_y'
   }
   const run = db.transaction(() => {
     const touched = new Set<number>()
@@ -209,7 +224,7 @@ export function updateBoardItems(
         const v = patch[key as keyof typeof patch]
         if (v !== undefined) {
           sets.push(`${colMap[key]} = ?`)
-          params.push(v)
+          params.push(typeof v === 'boolean' ? (v ? 1 : 0) : v)
         }
       }
       if (sets.length === 0) continue

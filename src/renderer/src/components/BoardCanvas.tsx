@@ -977,7 +977,14 @@ export default function BoardCanvas({
         const dataUrl = thumb ? await fetchToDataUrl(thumb) : ''
         const ih = it.height > 0 ? it.height : it.width * (aspectCacheRef.current[it.assetId] ?? 0.75)
         if (dataUrl) {
-          parts.push(`<image href="${dataUrl}" x="${ex}" y="${ey}" width="${it.width}" height="${ih}" opacity="${op}" preserveAspectRatio="none"/>`)
+          // 翻转:以元素自身为中心镜像(translate 到对角再反向缩放)
+          const flipT =
+            it.flipX || it.flipY
+              ? ` transform="translate(${it.flipX ? ex + it.width : ex}, ${it.flipY ? ey + ih : ey}) scale(${it.flipX ? -1 : 1}, ${it.flipY ? -1 : 1})"`
+              : ''
+          parts.push(
+            `<image href="${dataUrl}"${flipT} x="${it.flipX || it.flipY ? 0 : ex}" y="${it.flipX || it.flipY ? 0 : ey}" width="${it.width}" height="${ih}" opacity="${op}" preserveAspectRatio="none"/>`
+          )
         } else {
           parts.push(`<rect x="${ex}" y="${ey}" width="${it.width}" height="${ih}" fill="none" stroke="#888" stroke-dasharray="4 3"/>`)
         }
@@ -2019,6 +2026,17 @@ export default function BoardCanvas({
     if (boardId != null) await refreshBoardItems(boardId)
     setCtxMenu(null)
   }
+  /** 翻转素材（对标 PureRef 画师对照）:以右键元素的当前态取反,多选时统一应用 */
+  const flipCtx = async (axis: 'flipX' | 'flipY') => {
+    const targets = ctxTarget()
+    if (targets.length === 0) return
+    pushHistory()
+    const next = !(targets[0][axis] ?? false)
+    const updates = targets.map((it) => ({ id: it.id, patch: { [axis]: next } as BoardItemPatch }))
+    await window.api.updateBoardItems(updates)
+    if (boardId != null) await refreshBoardItems(boardId)
+    setCtxMenu(null)
+  }
   const setActiveNoteStyle = async (patch: NoteStylePatch) => {
     setNoteDefaults((current) => ({ ...current, ...patch }))
     const id = selectedIdsRef.current.length === 1 ? selectedIdsRef.current[0] : null
@@ -2430,6 +2448,24 @@ export default function BoardCanvas({
                 <Icon name="copy" size={12} />
                 {multiSelected ? `复制（${selectedIds.length} 项）` : '复制'}
               </button>
+              {ctxItem?.type === 'asset' && (
+                <>
+                  <button
+                    className="flex w-full cursor-pointer items-center gap-1.5 px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                    onClick={() => void flipCtx('flipX')}
+                  >
+                    <Icon name="rotate" size={12} />
+                    水平翻转{ctxItem.flipX ? ' ✓' : ''}
+                  </button>
+                  <button
+                    className="flex w-full cursor-pointer items-center gap-1.5 px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                    onClick={() => void flipCtx('flipY')}
+                  >
+                    <Icon name="rotate" size={12} className="-scale-y-100" />
+                    垂直翻转{ctxItem.flipY ? ' ✓' : ''}
+                  </button>
+                </>
+              )}
               <div className="my-1 border-t border-[var(--border)]" />
               {ctxIsNote && (
                 <div className="border-t border-[var(--border)] px-3 py-2">
@@ -2713,6 +2749,11 @@ const BoardItemView = memo(function BoardItemView({
   alt
 }: BoardItemViewProps) {
   const a = api.current
+  // 素材翻转（对标 PureRef 画师对照）:镜像缩略图/原图/占位块,外框与选中态不镜像
+  const flipTransform =
+    item.type === 'asset' && (item.flipX || item.flipY)
+      ? `scale(${item.flipX ? -1 : 1}, ${item.flipY ? -1 : 1})`
+      : undefined
   return (
     <div
       ref={(el) => {
@@ -2760,7 +2801,7 @@ const BoardItemView = memo(function BoardItemView({
       {item.type === 'asset' && thumbSrc !== '' ? (
         degraded ? (
           /* 降级:主色色块占位(无解码/绘制开销;透明度与元素一致) */
-          <div data-degraded className="h-full w-full" style={{ background: placeholderColor, opacity: (item.opacity ?? 100) / 100 }} />
+          <div data-degraded className="h-full w-full" style={{ background: placeholderColor, opacity: (item.opacity ?? 100) / 100, transform: flipTransform }} />
         ) : (
           <>
             {/* 视频也用 <img> 显示故事板四宫格(assetThumbUrl 对视频返回故事板 URL):
@@ -2768,7 +2809,7 @@ const BoardItemView = memo(function BoardItemView({
             <img
               src={thumbSrc}
               className="pointer-events-none h-full w-full object-cover"
-              style={{ opacity: (item.opacity ?? 100) / 100 }}
+              style={{ opacity: (item.opacity ?? 100) / 100, transform: flipTransform }}
               alt={alt}
               draggable={false}
               onLoad={(e) => a.onImgLoad(item, e)}
@@ -2780,7 +2821,8 @@ const BoardItemView = memo(function BoardItemView({
                 className="pointer-events-none absolute inset-0 h-full w-full object-cover"
                 style={{
                   opacity: origLoaded ? (item.opacity ?? 100) / 100 : 0,
-                  transition: 'opacity 150ms ease'
+                  transition: 'opacity 150ms ease',
+                  transform: flipTransform
                 }}
                 alt=""
                 draggable={false}
