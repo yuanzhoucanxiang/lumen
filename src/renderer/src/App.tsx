@@ -55,6 +55,24 @@ const galleryFallback = (
   </div>
 )
 
+/** 面板级错误边界:按区域名降级,避免任一面板异常拖垮整个应用 */
+function PanelBoundary({ name, children }: { name: string; children: React.ReactNode }) {
+  return (
+    <ErrorBoundary
+      fallback={
+        <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center p-4 text-center text-[12px] text-[var(--text-faint)]">
+          {name}异常。
+          <button className="ml-2 underline" onClick={() => location.reload()}>
+            重新加载
+          </button>
+        </div>
+      }
+    >
+      {children}
+    </ErrorBoundary>
+  )
+}
+
 export default function App() {
   const refreshAll = useLibraryStore((s) => s.refreshAll)
   const importFiles = useLibraryStore((s) => s.importFiles)
@@ -279,26 +297,36 @@ export default function App() {
         <main className="archive-workspace flex min-h-0 min-w-0 flex-1 flex-col" style={{ background: 'var(--bg-base)' }}>
           {boardViewMode === 'board' ? (
             <div className="board-workspace flex min-h-0 min-w-0 flex-1">
-              <BoardReferencePanel />
-              <BoardPanel />
+              <PanelBoundary name="参考架">
+                <BoardReferencePanel />
+              </PanelBoundary>
+              <PanelBoundary name="白板面板">
+                <BoardPanel />
+              </PanelBoundary>
             </div>
           ) : boardViewMode === 'split' ? (
             <div className="flex min-h-0 flex-1">
               <div className="flex min-w-0 flex-1 flex-col">
                 <ArchiveHeader />
-                <Toolbar />
+                <PanelBoundary name="工具栏">
+                  <Toolbar />
+                </PanelBoundary>
                 <ErrorBoundary fallback={galleryFallback}>
                   <Gallery />
                 </ErrorBoundary>
               </div>
               <BoardResizer />
-              <BoardPanel />
+              <PanelBoundary name="白板面板">
+                <BoardPanel />
+              </PanelBoundary>
             </div>
           ) : (
             // 纯素材库：白板关闭时不渲染分屏与白板面板
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <ArchiveHeader />
-              <Toolbar />
+              <PanelBoundary name="工具栏">
+                <Toolbar />
+              </PanelBoundary>
               <ErrorBoundary fallback={galleryFallback}>
                 <Gallery />
               </ErrorBoundary>
@@ -323,8 +351,16 @@ export default function App() {
         )}
       </div>
 
-      {previewId && <Preview />}
-      {editorId && <Editor />}
+      {previewId && (
+        <PanelBoundary name="预览">
+          <Preview />
+        </PanelBoundary>
+      )}
+      {editorId && (
+        <PanelBoundary name="编辑器">
+          <Editor />
+        </PanelBoundary>
+      )}
       {aiDialogOpen && (
         <AiDialog
           selectionIds={selection}
