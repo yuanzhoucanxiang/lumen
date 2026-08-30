@@ -78,8 +78,11 @@ async function main() {
   check('findDuplicates', Array.isArray(dupes), `${Array.isArray(dupes) ? dupes.length : '?'} 组`)
 
   if (Array.isArray(assets) && assets.length > 0) {
-    // 选一个浏览器可解码的图片素材来测 asset: 协议（视频/音频不能被 <img> 加载）
+    // 选一个浏览器可解码的图片素材来测 asset: 协议（视频/音频不能被 <img> 加载）。
+    // 用宽查询(前 100 条)而非首页 5 条:默认排序的首页可能全是视频/字体,曾致三个用例长期环境性跳过
     const imgAsset = assets.find(
+      (a) => ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'tiff', 'tif'].includes(a.ext)
+    ) || (await evalJs(`window.api.queryAssets({ limit: 100 })`)).result.value?.find(
       (a) => ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'tiff', 'tif'].includes(a.ext)
     )
     if (imgAsset) {

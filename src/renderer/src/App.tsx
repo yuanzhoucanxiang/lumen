@@ -264,7 +264,18 @@ export default function App() {
       }}
     >
       <div className="flex min-h-0 flex-1">
-        <Sidebar />
+        <ErrorBoundary
+          fallback={
+            <div className="w-[232px] shrink-0 border-r border-[var(--border)] bg-[var(--bg-panel)] p-4 text-[12px] text-[var(--text-faint)]">
+              导航栏异常。
+              <button className="ml-2 underline" onClick={() => location.reload()}>
+                重新加载
+              </button>
+            </div>
+          }
+        >
+          <Sidebar />
+        </ErrorBoundary>
         <main className="archive-workspace flex min-h-0 min-w-0 flex-1 flex-col" style={{ background: 'var(--bg-base)' }}>
           {boardViewMode === 'board' ? (
             <div className="board-workspace flex min-h-0 min-w-0 flex-1">
