@@ -85,7 +85,20 @@ export async function backupLibraryToZip(zipPath: string): Promise<number> {
   const files: { rel: string; abs: string }[] = []
   await collectFiles(libPath, libPath, files)
 
-  const entries: ZipStreamEntry[] = files.map((f) => ({ name: f.rel, filePath: f.abs }))
+  // 排除易变旁路文件:.clean 是 openDb 快速启动标记(恢复出的库应当重新过一次 quick_check),
+  // -wal/-shm 由上面的 checkpoint 保证完整,.corrupt/.pre-restore/.restore-check 是会话现场;
+  // library.db.bak 系列是真实备份,保留
+  const isSidecar = (rel: string): boolean =>
+    rel === 'library.db-wal' ||
+    rel === 'library.db-shm' ||
+    rel === 'library.db.clean' ||
+    /^library\.db\.corrupt-/.test(rel) ||
+    /^library\.db\.pre-restore-/.test(rel) ||
+    rel.endsWith('.bak.restore-check')
+
+  const entries: ZipStreamEntry[] = files
+    .filter((f) => !isSidecar(f.rel))
+    .map((f) => ({ name: f.rel, filePath: f.abs }))
   const count = await zipStoreStreamToFile(entries, zipPath)
   logger.info('[backup]', `完整库已备份到 ${zipPath}（${count} 个文件）`)
   return count

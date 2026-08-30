@@ -61,6 +61,13 @@ function watchDir(dir: string): void {
         handleFile(join(dir, filename))
       }
     })
+    // 目录被删除/重命名后 fs.watch 会进入 error 态:必须清掉登记,否则死 watcher 永久占位,
+    // 目录重建后 syncWatchers 因 has(dir) 直接跳过,监控再也不会恢复
+    w.on('error', (err) => {
+      logger.warn('[watcher]', `监控出错已解除(${dir}): ${(err as Error).message}`)
+      watchers.delete(dir)
+      w.close()
+    })
     watchers.set(dir, w)
   } catch (e) {
     logger.warn('[watcher]', `监控目录失败 ${dir}: ${(e as Error).message}`)
