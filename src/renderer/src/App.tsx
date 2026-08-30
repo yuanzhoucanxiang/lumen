@@ -180,6 +180,13 @@ export default function App() {
       } else if (matchesShortcut(e, sc.screenshot)) {
         e.preventDefault()
         void window.api.screenshotStart().catch(() => useLibraryStore.getState().showToast('截图启动失败'))
+      } else if (matchesShortcut(e, sc.focusSearch)) {
+        e.preventDefault()
+        const input = document.querySelector<HTMLInputElement>('input[aria-label="搜索素材"], input[aria-label="AI 智能搜索"]')
+        if (input) {
+          input.focus()
+          input.select()
+        }
       } else if (/^[1-5]$/.test(e.key) && !e.ctrlKey && !e.metaKey) {
         if (inInput) return
         const id = s.selection[0]

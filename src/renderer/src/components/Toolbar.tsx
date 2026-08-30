@@ -254,7 +254,7 @@ export default function Toolbar() {
         <input
           ref={aiSearchInputRef}
           aria-label={aiMode ? 'AI 智能搜索' : '搜索素材'}
-          className={`min-w-0 flex-1 field-input ${aiMode ? 'border-[var(--accent)] pl-8 pr-2' : 'pl-8 pr-2'}`}
+          className={`min-w-0 flex-1 field-input pl-8 ${(aiMode ? aiQuery : keyword) ? 'pr-6' : 'pr-2'} ${aiMode ? 'border-[var(--accent)]' : ''}`}
           placeholder={aiMode ? '描述画面，如「暗黑城堡带雾」…' : '搜索名称或注释…'}
           value={aiMode ? aiQuery : keyword}
           onChange={(e) => (aiMode ? setAiQuery(e.target.value) : setKeyword(e.target.value))}
@@ -263,6 +263,21 @@ export default function Toolbar() {
             if (aiMode && e.key === 'Escape') toggleAiMode()
           }}
         />
+        {/* 清空按钮:有输入时显示,一键清空并保持焦点 */}
+        {(aiMode ? aiQuery : keyword) !== '' && (
+          <button
+            aria-label={aiMode ? '清空 AI 搜索词' : '清空搜索'}
+            title="清空"
+            className="pointer-events-auto absolute right-[34px] top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--bg-hover)] text-[var(--text-faint)] transition-colors duration-100 hover:text-[var(--text-main)]"
+            onClick={() => {
+              if (aiMode) setAiQuery('')
+              else setKeyword('')
+              aiSearchInputRef.current?.focus()
+            }}
+          >
+            <Icon name="close" size={9} />
+          </button>
+        )}
         <button
           aria-label={aiMode ? '退出 AI 搜索' : 'AI 智能搜索'}
           aria-pressed={aiMode}
