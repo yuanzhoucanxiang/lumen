@@ -122,6 +122,8 @@ interface LibraryState {
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null
+/** 关键词搜索防抖定时器(输入每字符全库查询是浪费,停顿 250ms 后统一查一次) */
+let keywordDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
 /** 导入后自动 AI 处理：若设置页开启了「导入后自动 AI」且有 key，对新导入的素材跑 AI */
 async function autoAiAfterImport(importedCount: number): Promise<void> {
@@ -290,7 +292,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
   setKeyword: (keyword) => {
     set({ keyword })
-    void get().refreshAssets()
+    // 250ms 防抖:每敲一个字符都全库查询是浪费(输入「人物造型」触发 4 次全量 SQL);
+    // 最终态以停顿后的这次 refreshAssets 为准,行为与逐键查询一致
+    if (keywordDebounceTimer) clearTimeout(keywordDebounceTimer)
+    keywordDebounceTimer = setTimeout(() => void get().refreshAssets(), 250)
   },
   toggleExtFilter: (ext) => {
     const cur = get().extFilters

@@ -6,6 +6,7 @@ import PixelArt from './PixelArt'
 import ScrambleText from './ScrambleText'
 import ConfirmDialog from './ConfirmDialog'
 import ExportDialog from './ExportDialog'
+import BatchRenameDialog from './BatchRenameDialog'
 import type { IconName } from './Icon'
 import type { Asset } from '@shared/types'
 
@@ -351,6 +352,8 @@ export default function Gallery() {
   const [folderSubmenu, setFolderSubmenu] = useState({ open: false, left: false, up: false })
   /** 导出对话框的素材范围 */
   const [exportIds, setExportIds] = useState<string[] | null>(null)
+  /** 批量重命名的素材集（保持图库当前顺序,供 {序号} 编号） */
+  const [renameAssets, setRenameAssets] = useState<Asset[] | null>(null)
   const [hoverPv, setHoverPv] = useState<{ a: Asset; x: number; y: number } | null>(null)
   const [revertId, setRevertId] = useState<string | null>(null)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -797,6 +800,19 @@ export default function Gallery() {
               批注 / 裁剪
             </button>
           )}
+          {selection.length >= 2 && selection.includes(contextAsset.id) && (
+            <button
+              role="menuitem"
+              className="block w-full cursor-pointer px-4 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+              onClick={() => {
+                const ids = new Set(selection)
+                setRenameAssets(assets.filter((a) => ids.has(a.id)))
+                setMenu(null)
+              }}
+            >
+              批量重命名…
+            </button>
+          )}
           {contextAsset.edited === 1 && (
             <button
               role="menuitem"
@@ -956,6 +972,9 @@ export default function Gallery() {
       {exportIds !== null && createPortal(
         <ExportDialog ids={exportIds} onClose={() => setExportIds(null)} />,
         document.body
+      )}
+      {renameAssets !== null && (
+        <BatchRenameDialog assets={renameAssets} onClose={() => setRenameAssets(null)} />
       )}
       </div>
     </div>
