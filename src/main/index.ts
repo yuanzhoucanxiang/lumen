@@ -45,12 +45,15 @@ const MIME_BY_EXT: Record<string, string> = {
 let mainWindow: BrowserWindow | null = null
 
 /** asset: 响应公共头。sandbox+禁脚本防库内 SVG（恶意 .lumenboard/导入文件）以文档方式打开时执行脚本；
- *  对 <img>/<video>/<audio> 子资源加载无影响（CSP 不作用于非文档子资源） */
+ *  对 <img>/<video>/<audio> 子资源加载无影响（CSP 不作用于非文档子资源）。
+ *  ACAO 必需：渲染层 fetch(asset://)（导出 SVG/PNG 嵌图）走 CORS 模式,无此头会 Failed to fetch
+ *  （<img> 为 no-cors 不受影响——此前缺该头导致 SVG 导出嵌图静默降级为占位框） */
 function ASSET_RESPONSE_HEADERS(mime: string, contentRange?: string, length?: string): Record<string, string> {
   const h: Record<string, string> = {
     'Content-Type': mime,
     'Accept-Ranges': 'bytes',
     'X-Content-Type-Options': 'nosniff',
+    'Access-Control-Allow-Origin': '*',
     'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox"
   }
   if (contentRange) h['Content-Range'] = contentRange
@@ -75,11 +78,13 @@ app.on('second-instance', () => {
 })
 
 // asset: 协议必须声明为 privileged scheme（stream: true），否则 <video>/<audio> 无法播放该协议内容。
+// corsEnabled: true 使渲染层 fetch(asset://) 可用——SVG/PNG 导出的嵌图依赖它;
+// 缺失时 fetch 恒 Failed to fetch（<img> 为 no-cors 不受影响,故此前仅导出场景静默失败）。
 // 必须在 app ready 之前调用。
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'asset',
-    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true }
   }
 ])
 

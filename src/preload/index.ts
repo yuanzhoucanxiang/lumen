@@ -183,6 +183,12 @@ const api = {
     ipcRenderer.invoke('board:setViewport', boardId, viewportJson),
   exportBoardSvg: (boardId: number, svg: string): Promise<{ target: string } | null> =>
     ipcRenderer.invoke('board:exportSvg', boardId, svg),
+  /** 白板导出 PNG:渲染层光栅化成 dataUrl 后由主进程落盘(save 对话框) */
+  saveBoardPng: (boardId: number, dataUrl: string): Promise<{ target: string } | null> =>
+    ipcRenderer.invoke('board:savePng', boardId, dataUrl),
+  /** 测试通道(打包版禁用):免对话框写 PNG */
+  saveBoardPngToPath: (dataUrl: string, targetPath: string): Promise<{ target: string }> =>
+    ipcRenderer.invoke('board:savePngToPath', dataUrl, targetPath),
 
   /* 白板浮动置顶窗口 */
   openFloatingBoard: (boardId: number): Promise<void> =>

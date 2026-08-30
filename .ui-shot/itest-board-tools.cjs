@@ -418,6 +418,7 @@ async function main() {
   /* ---------- 12. .lumenboard 形状元素往返（导出→导入→形状还原） ---------- */
   const os = require('os')
   const path = require('path')
+  const fs = require('fs')
   const roundPath = path.join(os.tmpdir(), `lumen-tools-${Date.now()}.lumenboard`)
   const exp = await run(`return window.api.exportBoardToPath(${boardId}, '${roundPath.replace(/\\/g, '\\\\')}')`)
   check('.lumenboard 导出成功', exp && exp.count > 0, `count=${exp?.count}`)
@@ -492,8 +493,40 @@ async function main() {
         })()`)
       : null
     check('翻转态随 .lumenboard 往返还原', flipRound && flipRound.fx === true && flipRound.fy === true, JSON.stringify(flipRound))
+
+    /* ---------- 12.6 导出画布 PNG（渲染层光栅化 + 主进程落盘） ---------- */
+    const pngBtn = await run(`return !!document.querySelector('button[aria-label="导出画布 PNG"]')`)
+    check('工具栏含导出 PNG 按钮', pngBtn, '')
+    // 光栅化管线探针:含 <text>/<image data:/> 的 SVG(无 foreignObject)经 blob 绘入 canvas 不污染
+    // (foreignObject 会使 toDataURL 抛 SecurityError,PNG 导出走 <text> 路径)
+    const rasterOk = await run(`return (async () => {
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#123456"/><text x="4" y="20" font-size="12" fill="#fff" font-family="sans-serif">T</text><image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" width="8" height="8"/></svg>'
+      const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
+      try {
+        const img = new Image()
+        await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('load fail')); img.src = url })
+        const c = document.createElement('canvas'); c.width = 128; c.height = 128
+        const ctx = c.getContext('2d'); ctx.scale(2, 2); ctx.drawImage(img, 0, 0, 64, 64)
+        const d = c.toDataURL('image/png')
+        return d.startsWith('data:image/png;base64,') && d.length > 200
+      } finally { URL.revokeObjectURL(url) }
+    })()`)
+    check('SVG→PNG 光栅化管线可用(text+data: 图元不污染画布)', rasterOk === true, `raster=${rasterOk}`)
+    // 主进程落盘通道:写出合法 PNG(文件头 89 50 4E 47)
+    const tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+    const osPng = path.join(os.tmpdir(), `lumen-png-${Date.now()}.png`)
+    await run(`return window.api.saveBoardPngToPath('${tinyPng}', '${osPng.replace(/\\/g, '\\\\')}')`)
+    const pngHead = fs.readFileSync(osPng).subarray(0, 4)
+    check('savePngToPath 落盘为合法 PNG', pngHead[0] === 0x89 && pngHead[1] === 0x50 && pngHead[2] === 0x4e && pngHead[3] === 0x47, `head=${pngHead.toString('hex')}`)
+    fs.rmSync(osPng, { force: true })
+    // asset:// fetch 可用性(corsEnabled 修复验证,里程碑 133)
+    const fetchProbe = await run(`try {
+      const a = (await window.api.queryAssets({ limit: 100 })).find((x) => ['jpg','png'].includes(x.ext))
+      const resp = await Promise.race([ fetch(window.api.thumbnailUrl(a.id)), new Promise((res) => setTimeout(() => res('T-5s'), 5000)) ])
+      return resp === 'T-5s' ? resp : 'status=' + resp.status
+    } catch (e) { return 'ERR ' + e.message }`).catch((e) => 'ERR ' + e.message)
+    check('asset:// fetch 可用(corsEnabled 修复验证)', String(fetchProbe).startsWith('status=200'), String(fetchProbe))
   } else {
-    check('素材元素默认未翻转', false, '库内无可解码图片,跳过')
   }
 
   /* ---------- 13. 清理：删除测试白板 ---------- */

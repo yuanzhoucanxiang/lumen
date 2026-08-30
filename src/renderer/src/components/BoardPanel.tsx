@@ -116,6 +116,18 @@ export default function BoardPanel() {
     }
   }
 
+  /** 画布 SVG 光栅化为 PNG（2 倍超采样）后交主进程落盘 */
+  const exportPng = async () => {
+    if (!hasBoard || !canvasApiRef.current) return
+    try {
+      const dataUrl = await canvasApiRef.current.exportPng(2)
+      const r = await window.api.saveBoardPng(activeBoardId!, dataUrl)
+      if (r) useLibraryStore.getState().showToast(`已导出 PNG：${r.target}`)
+    } catch (e) {
+      useLibraryStore.getState().showToast(`PNG 导出失败：${(e as Error).message}`)
+    }
+  }
+
   const toolBtnCls = (active: boolean) =>
     `flex h-7 w-7 items-center justify-center rounded-sm transition-colors duration-100 ${
       active ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]'
@@ -285,6 +297,15 @@ export default function BoardPanel() {
             onClick={() => void exportSvg()}
           >
             <Icon name="image" size={13} />
+          </button>
+          <button
+            aria-label="导出画布 PNG"
+            title="导出画布为 PNG 位图（2 倍超采样）"
+            className={toolBtnCls(false)}
+            disabled={!hasBoard}
+            onClick={() => void exportPng()}
+          >
+            <Icon name="save" size={13} />
           </button>
         </div>
       </div>

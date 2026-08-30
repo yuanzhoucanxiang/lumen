@@ -54,6 +54,36 @@ export function registerBoardsIpc(getWindow: () => BrowserWindow | null): void {
     return { target: r.filePath }
   })
 
+  // 渲染层把画布 SVG 光栅化成 PNG 后交主进程落盘(save 对话框在主进程)
+  ipcMain.handle('board:savePng', async (_e, boardId: number, dataUrl: string) => {
+    const win = getWindow()
+    if (!win) return null
+    const m = typeof dataUrl === 'string' ? dataUrl.match(/^data:image\/png;base64,(.+)$/s) : null
+    if (!m) throw new Error('invalid png dataUrl')
+    const buf = Buffer.from(m[1], 'base64')
+    if (buf.length > 100 * 1024 * 1024) throw new Error('PNG 超过 100MB 上限')
+    const board = listBoards().find((b) => b.id === boardId)
+    const r = await dialog.showSaveDialog(win, {
+      title: '导出白板为 PNG',
+      defaultPath: `${(board?.name ?? '白板').replace(/[\\/:*?"<>|]/g, '_')}.png`,
+      filters: [{ name: 'PNG 位图', extensions: ['png'] }]
+    })
+    if (r.canceled || !r.filePath) return null
+    writeFileSync(r.filePath, buf)
+    return { target: r.filePath }
+  })
+
+  // 测试通道(打包版禁用,同 board:exportToPath):免对话框写 PNG,供 itest 断言渲染产物
+  ipcMain.handle('board:savePngToPath', (_e, dataUrl: string, targetPath: string) => {
+    if (app.isPackaged && process.env.LUMEN_ALLOW_MULTI !== '1') {
+      throw new Error('board:savePngToPath 仅开发/测试环境可用')
+    }
+    const m = typeof dataUrl === 'string' ? dataUrl.match(/^data:image\/png;base64,(.+)$/s) : null
+    if (!m) throw new Error('invalid png dataUrl')
+    writeFileSync(targetPath, Buffer.from(m[1], 'base64'))
+    return { target: targetPath }
+  })
+
   /* ---------------- 白板文件（.lumenboard） ---------------- */
   // 无对话框直写路径（供测试/脚本复用；UI 走带对话框版本）。打包版禁用：
   // 渲染层失陷时可借它向任意可写路径覆盖 ZIP（审计 M4/L2 收口）

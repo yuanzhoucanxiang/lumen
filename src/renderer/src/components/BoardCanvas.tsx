@@ -94,6 +94,9 @@ function toFiniteNum(v: unknown, fallback: number): number {
   return Number.isFinite(n) ? n : fallback
 }
 
+/** PNG 导出笔记 clipPath 的自增序号（同屏多次导出防 id 冲突） */
+let clipSeq = 0
+
 /** 画布背景白名单：仅预设键或 #hex，其余回退 dark（bg 源于可导入的 .lumenboard） */
 function resolveBgColor(bg: string): string {
   if (APPEARANCE_PRESETS[bg]) return APPEARANCE_PRESETS[bg]
@@ -165,6 +168,8 @@ export interface BoardCanvasApi {
   fitContent: () => void
   /** 生成画布场景 SVG（图片内嵌 base64） */
   exportSvg: () => Promise<string>
+  /** SVG → PNG dataUrl（scale 倍超采样，默认 2） */
+  exportPng: (scale?: number) => Promise<string>
   /** 当前工具（工具栏切换时同步） */
   setTool: (t: BoardTool) => void
   undo: () => Promise<void>
@@ -904,6 +909,33 @@ export default function BoardCanvas({
       },
       fitContent: () => fitContent(),
       exportSvg: () => buildBoardSvg(),
+      /** SVG → PNG(默认 2 倍超采样)。pngMode 下笔记走 <text>——含 foreignObject 的 SVG 绘入 canvas 会污染画布(实测探针确认) */
+      exportPng: async (scale = 2): Promise<string> => {
+        const svg = await buildBoardSvg(true)
+        const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        try {
+          const img = new Image()
+          await new Promise<void>((resolve, reject) => {
+            img.onload = () => resolve()
+            img.onerror = () => reject(new Error('SVG 渲染失败'))
+            img.src = url
+          })
+          const m = /^<svg[^>]*width="(\d+)" height="(\d+)"/.exec(svg)
+          const w = m ? Number(m[1]) : img.naturalWidth || 1200
+          const h = m ? Number(m[2]) : img.naturalHeight || 800
+          const canvas = document.createElement('canvas')
+          canvas.width = Math.max(1, Math.round(w * scale))
+          canvas.height = Math.max(1, Math.round(h * scale))
+          const ctx = canvas.getContext('2d')
+          if (!ctx) throw new Error('canvas 不可用')
+          ctx.scale(scale, scale)
+          ctx.drawImage(img, 0, 0, w, h)
+          return canvas.toDataURL('image/png')
+        } finally {
+          URL.revokeObjectURL(url)
+        }
+      },
       setTool: () => {
         /* tool 由 prop 驱动 */
       },
@@ -931,8 +963,12 @@ export default function BoardCanvas({
     }
   }
 
-  /** 生成画布场景 SVG（背景/参考线/图片/文字/形状全量导出,图片内嵌 base64） */
-  const buildBoardSvg = async (): Promise<string> => {
+  /**
+   * 生成画布场景 SVG（背景/参考线/图片/文字/形状全量导出,图片内嵌 base64）。
+   * pngMode=true 时笔记用 SVG <text> 渲染而非 foreignObject——Chromium 下
+   * 含 foreignObject 的 SVG 绘入 canvas 会污染画布,无法 toDataURL(实测探针确认)。
+   */
+  const buildBoardSvg = async (pngMode = false): Promise<string> => {
     const bbox = itemsBBox() ?? { x: 0, y: 0, w: 1200, h: 800 }
     const pad = 60
     const w = Math.max(800, Math.ceil(bbox.w + pad * 2))
@@ -993,10 +1029,23 @@ export default function BoardCanvas({
         const rawColor = it.noteColor || '#e8eef7'
         const color = /^#[0-9a-f]{3,8}$/i.test(rawColor) ? rawColor : '#e8eef7'
         const font = (it.noteFont || 'sans-serif').replace(/[^a-zA-Z0-9 _.-]/g, '') || 'sans-serif'
-        const text = xmlEscape(it.text).replace(/\n/g, '<br/>')
-        parts.push(
-          `<foreignObject x="${ex}" y="${ey}" width="${it.width}" height="${it.height}" opacity="${op}"><div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;color:${color};font-family:${font};font-size:${it.noteFontSize}px;line-height:1.35;padding:4px;box-sizing:border-box;overflow:hidden;white-space:pre-wrap">${text}</div></foreignObject>`
-        )
+        if (pngMode) {
+          // PNG 路径:foreignObject 会污染画布,笔记降级为 <text> 逐行渲染(clipPath 裁剪溢出)
+          const clipId = `nc-${clipSeq++}`
+          const lines = String(it.text ?? '').split('\n').slice(0, 500)
+          const tspans = lines
+            .map((l, li) => `<tspan x="${ex + 4}" dy="${li === 0 ? 0 : Math.round(it.noteFontSize * 1.35)}">${xmlEscape(l)}</tspan>`)
+            .join('')
+          parts.push(
+            `<clipPath id="${clipId}"><rect x="${ex}" y="${ey}" width="${it.width}" height="${it.height}"/></clipPath>` +
+              `<g clip-path="url(#${clipId})" opacity="${op}"><text x="${ex + 4}" y="${ey + 4 + it.noteFontSize}" font-size="${it.noteFontSize}" font-family="${font}" fill="${color}" xml:space="preserve">${tspans}</text></g>`
+          )
+        } else {
+          const text = xmlEscape(it.text).replace(/\n/g, '<br/>')
+          parts.push(
+            `<foreignObject x="${ex}" y="${ey}" width="${it.width}" height="${it.height}" opacity="${op}"><div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;color:${color};font-family:${font};font-size:${it.noteFontSize}px;line-height:1.35;padding:4px;box-sizing:border-box;overflow:hidden;white-space:pre-wrap">${text}</div></foreignObject>`
+          )
+        }
       } else if (it.type === 'shape' && it.shape) {
         let shape: ShapeSpec
         try {
