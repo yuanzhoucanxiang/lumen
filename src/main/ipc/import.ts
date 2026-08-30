@@ -66,19 +66,26 @@ export function registerImportIpc(getWindow: () => BrowserWindow | null): void {
           const buf = await readBodyCapped(resp, URL_MAX_BYTES)
           if (buf.length === 0) throw new Error('空内容')
 
-          // 文件名:URL 尾段优先 → 非法字符清洗;无扩展名/扩展名异常时按 content-type 补全;同名加序号
+          // 文件名:URL 尾段优先 → 非法字符/控制字符清洗、去尾点尾空格(Windows 写盘约束);
+          // 无扩展名/扩展名异常时按 content-type 补全;同名加序号
           let base = ''
           try {
             base = decodeURIComponent(new URL(url).pathname.split('/').pop() ?? '')
           } catch {
             /* 解析失败保持空,走默认名 */
           }
-          base = base.replace(/[\\/:*?"<>|]/g, '_').slice(0, 120)
+          base = base
+            .replace(/[\u0000-\u001f\u007f]/g, '')
+            .replace(/[\\/:*?"<>|]/g, '_')
+            .replace(/[. ]+$/g, '')
+            .slice(0, 120)
           const dot = base.lastIndexOf('.')
           let ext = dot > 0 ? base.slice(dot + 1).toLowerCase() : ''
           if (!ext || ext.length > 5) ext = MIME_EXT[contentType] ?? 'jpg'
           if (dot > 0) base = base.slice(0, dot)
           if (!base) base = `url_${Date.now()}`
+          // Windows 保留设备名(CON/NUL/COM1…)不能做文件名主干
+          if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i.test(base)) base = `_${base}`
           let name = `${base}.${ext}`
           for (let i = 2; usedNames.has(name.toLowerCase()); i++) name = `${base}_${i}.${ext}`
           usedNames.add(name.toLowerCase())

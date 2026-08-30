@@ -94,8 +94,10 @@ async function saveClip(payload: ClipPayload): Promise<number> {
   if (!buffer || buffer.length === 0) throw new Error('empty image')
 
   const name =
-    payload.filename?.replace(/[\\/:*?"<>|]/g, '_').slice(0, 120) ||
-    `clip_${new Date().toISOString().replace(/[:.]/g, '-')}`
+    payload.filename
+      ?.replace(/[\u0000-\u001f\u007f]/g, '')
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .slice(0, 120) || `clip_${new Date().toISOString().replace(/[:.]/g, '-')}`
   // 随机临时子目录:路径不可预测,且写入不会命中同目录下可能存在的符号链接
   const tmpDir = mkdtempSync(join(tmpdir(), 'lumen-clip-'))
   const tmpFile = join(tmpDir, `${name.replace(/\.[^.]+$/, '')}_${Date.now()}.${ext}`)
