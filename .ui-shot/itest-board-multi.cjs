@@ -75,12 +75,27 @@ async function main() {
     if (ready) break
   }
   check('应用重载后就绪', ready, `boardId=${boardId}`)
-  // 进入白板模式（viewMode 默认 off,白板面板不可见）
+  // 进入白板模式（viewMode 默认 off,白板面板不可见）。
+  // 逐级轮询:nav 容器就绪≠「白板」按钮已挂载(此前曾 null click 崩溃,全量连跑高负载下必现)
+  let boardBtn = false
+  for (let i = 0; i < 40; i++) {
+    await sleep(250)
+    boardBtn = await run(`return !!document.querySelector('nav[aria-label="素材库导航"] button[aria-label="白板"]')`).catch(() => false)
+    if (boardBtn) break
+  }
+  check('白板入口按钮就绪', boardBtn, '')
   await run(`(() => {
     const btn = document.querySelector('nav[aria-label="素材库导航"] button[aria-label="白板"]')
     btn.click()
   })()`)
-  await sleep(500)
+  // 等切换下拉挂载后再触发选择(同理逐级轮询)
+  let boardSel = false
+  for (let i = 0; i < 40; i++) {
+    await sleep(250)
+    boardSel = await run(`return !!document.querySelector('select[aria-label="切换白板"]')`).catch(() => false)
+    if (boardSel) break
+  }
+  check('白板切换下拉就绪', boardSel, '')
   // 通过切换下拉触发 store 刷新（openBoard 会 refreshBoardItems + 重置视口）
   await run(`(() => {
     const sel = document.querySelector('select[aria-label="切换白板"]')
