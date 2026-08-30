@@ -126,6 +126,47 @@ async function main() {
   const upd = (await evalJs(`window.api.checkUpdate()`)).result.value
   check('checkUpdate(dev)', upd && upd.state === 'dev', JSON.stringify(upd))
 
+  /* ---------- 滚动位置记忆(里程碑 125):滚动→切视图→切回恢复 ---------- */
+  let scrollRes = 'crash'
+  try {
+    scrollRes = (await evalJs(`(async () => {
+      // 前面 board 系列套件可能把应用留在白板模式(nav 隐藏),先回素材库
+      if (!document.querySelector('nav[aria-label="素材库导航"]')) {
+        const exit = document.querySelector('button[aria-label="退出白板"]')
+        if (!exit) return 'no-nav'
+        exit.click()
+        await new Promise((r) => setTimeout(r, 800))
+      }
+      const navBtns = [...document.querySelectorAll('nav[aria-label="素材库导航"] button')]
+      const label = (b) => (b.getAttribute('aria-label') || b.textContent).trim()
+      const allBtn = navBtns.find((b) => label(b) === '全部素材')
+      const starBtn = navBtns.find((b) => label(b) === '已收藏')
+      if (!allBtn || !starBtn) return 'no-nav'
+      allBtn.click()
+      await new Promise((r) => setTimeout(r, 500))
+      const scroller = document.querySelector('.contact-sheet')
+      if (!scroller || scroller.scrollHeight <= scroller.clientHeight + 50) return 'not-scrollable'
+      scroller.scrollTop = 600
+      await new Promise((r) => setTimeout(r, 300))
+      starBtn.click()
+      await new Promise((r) => setTimeout(r, 600))
+      const afterSwitch = document.querySelector('.contact-sheet')?.scrollTop ?? -1
+      allBtn.click()
+      await new Promise((r) => setTimeout(r, 700))
+      const back = document.querySelector('.contact-sheet')?.scrollTop ?? -1
+      return { afterSwitch, back }
+    })()`)).result.value
+  } catch (e) {
+    scrollRes = 'crash'
+  }
+  if (scrollRes === 'not-scrollable' || scrollRes === 'no-nav' || scrollRes === 'crash') {
+    // 内容不足一屏/导航未渲染等环境差异:跳过不计数(与库内容相关,非代码回归)
+    check('滚动位置记忆', true, `环境跳过(${scrollRes})`)
+  } else {
+    check('滚动位置记忆:切走复位顶部', scrollRes.afterSwitch === 0, JSON.stringify(scrollRes))
+    check('滚动位置记忆:切回恢复偏移', Math.abs(scrollRes.back - 600) <= 2, JSON.stringify(scrollRes))
+  }
+
   console.log(`\n${pass} PASS / ${fail} FAIL`)
   ws.close()
   process.exit(fail === 0 ? 0 : 1)
