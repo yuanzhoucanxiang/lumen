@@ -33,6 +33,13 @@ function fmtSize(n: number): string {
 function onAssetDragStart(e: React.DragEvent, a: Asset): void {
   const s = useLibraryStore.getState()
   const ids = s.selection.includes(a.id) ? s.selection : [a.id]
+  // Alt+拖拽 = 导出真实文件到资源管理器(对标 Eagle)。startDrag 会接管 OS 拖拽、
+  // dataTransfer 随之失效,故仅 Alt 修饰时走这条路径,默认拖拽保留画布/侧栏内部投递
+  if (e.altKey) {
+    e.preventDefault()
+    window.api.dragOutAssets(ids)
+    return
+  }
   e.dataTransfer.setData('application/x-eaglelike-assets', JSON.stringify(ids))
   e.dataTransfer.effectAllowed = 'copy'
 }

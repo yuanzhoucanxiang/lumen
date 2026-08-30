@@ -49,6 +49,8 @@ const api = {
   /* 素材 */
   queryAssets: (q: AssetQuery): Promise<Asset[]> => ipcRenderer.invoke('assets:query', q),
   getAsset: (id: string): Promise<Asset | null> => ipcRenderer.invoke('assets:get', id),
+  /** Alt+拖拽导出:在 dragstart 内同步发 send 通道,主进程 startDrag 接管 OS 拖拽 */
+  dragOutAssets: (ids: string[]): void => ipcRenderer.send('asset:dragOut', ids),
   updateAsset: (
     id: string,
     fields: Partial<Pick<Asset, 'name' | 'star' | 'comment' | 'url'>>
