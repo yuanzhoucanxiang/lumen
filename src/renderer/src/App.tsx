@@ -45,6 +45,16 @@ function BoardResizer() {
   )
 }
 
+/** 图库局部错误边界的降级占位（分屏/纯库两个挂载点共用） */
+const galleryFallback = (
+  <div className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-2 text-[12px] text-[var(--text-faint)]">
+    图库出现异常。
+    <button className="underline" onClick={() => location.reload()}>
+      重新加载
+    </button>
+  </div>
+)
+
 export default function App() {
   const refreshAll = useLibraryStore((s) => s.refreshAll)
   const importFiles = useLibraryStore((s) => s.importFiles)
@@ -259,7 +269,9 @@ export default function App() {
               <div className="flex min-w-0 flex-1 flex-col">
                 <ArchiveHeader />
                 <Toolbar />
-                <Gallery />
+                <ErrorBoundary fallback={galleryFallback}>
+                  <Gallery />
+                </ErrorBoundary>
               </div>
               <BoardResizer />
               <BoardPanel />
@@ -269,7 +281,9 @@ export default function App() {
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <ArchiveHeader />
               <Toolbar />
-              <Gallery />
+              <ErrorBoundary fallback={galleryFallback}>
+                <Gallery />
+              </ErrorBoundary>
             </div>
           )}
         </main>

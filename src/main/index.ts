@@ -1,5 +1,6 @@
 import { app, BrowserWindow, protocol, shell } from 'electron'
-import { createReadStream, statSync } from 'fs'
+import { createReadStream } from 'fs'
+import { stat } from 'fs/promises'
 import { extname, join } from 'path'
 import { Readable } from 'stream'
 import { ensureLibrary, loadConfig } from './library'
@@ -140,7 +141,7 @@ app.whenReady().then(() => {
   // 手动构造响应：视频/音频播放需要正确的 Content-Type 与 Range/206 支持（net.fetch(file://) 不具备），
   // 否则 <video>/<audio> 报 MEDIA_ERR_SRC_NOT_SUPPORTED。
   // 注意：protocol.handle 的 Response body 必须是 Web ReadableStream，Node stream 需用 Readable.toWeb 转换。
-  protocol.handle('asset', (request) => {
+  protocol.handle('asset', async (request) => {
     const url = new URL(request.url)
     const id = url.hostname
     const t = url.searchParams.get('t')
@@ -155,7 +156,15 @@ app.whenReady().then(() => {
     }
 
     const mime = MIME_BY_EXT[extname(file).slice(1).toLowerCase()] ?? 'application/octet-stream'
-    const size = statSync(file).size
+    // stat 异步化:图库滚动时每个缩略图请求都会走到这里,同步 IO 会累积阻塞主进程;
+    // 文件在解析与 stat 之间消失(编辑回退/清理竞态)返回 404 而非抛未捕获异常
+    let size: number
+    try {
+      size = (await stat(file)).size
+    } catch {
+      logger.debug('[asset]', `404 (文件已消失) ${url.pathname}`)
+      return new Response(null, { status: 404 })
+    }
     const range = request.headers.get('Range')
     logger.debug('[asset]', `${url.searchParams.get('t')} ${id} range=${range ?? 'none'} mime=${mime} size=${size}`)
 

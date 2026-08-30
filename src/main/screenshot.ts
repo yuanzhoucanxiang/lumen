@@ -27,6 +27,8 @@ let overlays: BrowserWindow[] = []
 let sessions: CaptureSession[] = []
 /** 覆层 webContents → 所属会话(ready/commit 时定位是哪一屏) */
 const wcSessions = new WeakMap<Electron.WebContents, CaptureSession>()
+/** 启动互斥:captureDisplay 有 260ms 等待,期间 handle 可重入,须同步标志挡住二次触发 */
+let starting = false
 
 const EMPTY_RESULT: ImportResult = { imported: 0, skipped: 0, failed: 0 }
 
@@ -76,9 +78,10 @@ function finishAll(getMainWindow: () => BrowserWindow | null): void {
 export function registerScreenshotIpc(getMainWindow: () => BrowserWindow | null): void {
   /* 工具栏/快捷键触发:隐藏主窗 → 逐屏捕获 → 每屏一个覆层 */
   ipcMain.handle('screenshot:start', async (): Promise<boolean> => {
-    if (sessions.length > 0) return false
+    if (starting || sessions.length > 0) return false
     const main = getMainWindow()
     if (!main || main.isDestroyed()) return false
+    starting = true
     main.hide()
     try {
       // 等待窗口隐藏后的合成器重绘,否则主窗会出现在截屏里
@@ -121,8 +124,10 @@ export function registerScreenshotIpc(getMainWindow: () => BrowserWindow | null)
         overlays.push(overlay)
         loadOverlayPage(overlay)
       }
+      starting = false
       return true
     } catch (e) {
+      starting = false
       finishAll(getMainWindow)
       logger.warn('[screenshot]', `启动失败: ${(e as Error).message}`)
       throw e
