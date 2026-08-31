@@ -260,7 +260,14 @@ export default function Toolbar() {
           onChange={(e) => (aiMode ? setAiQuery(e.target.value) : setKeyword(e.target.value))}
           onKeyDown={(e) => {
             if (aiMode && e.key === 'Enter') void runAiSearch()
-            if (aiMode && e.key === 'Escape') toggleAiMode()
+            if (e.key === 'Escape') {
+              // 搜索框聚焦时的 Esc 应作用于搜索本身:AI 退出 AI 模式;普通搜索清空关键词;
+              // 无输入时失焦——不冒泡到 App 层(那里 Esc 是清选择/关预览,与搜索语境冲突)
+              e.stopPropagation()
+              if (aiMode) toggleAiMode()
+              else if (keyword) setKeyword('')
+              else aiSearchInputRef.current?.blur()
+            }
           }}
         />
         {/* 清空按钮:有输入时显示,一键清空并保持焦点 */}

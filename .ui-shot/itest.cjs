@@ -207,6 +207,32 @@ async function main() {
   if (typeof marqueeRes === 'object' && marqueeRes !== null) {
     check('橡皮筋框选:拖拽过程显示选区', marqueeRes.marqueeShown === true, JSON.stringify(marqueeRes))
     check('橡皮筋框选:命中素材入选', (marqueeRes.selected ?? 0) >= 2, JSON.stringify(marqueeRes))
+    // 边缘自动滚动:拖到容器底缘悬停 900ms,scrollTop 应持续增长(里程碑 137)
+    const autoRes = (await evalJs(`(async () => {
+      const scroller2 = document.querySelector('.contact-sheet')
+      if (!scroller2) return 'no-sheet'
+      scroller2.scrollTop = 0
+      await new Promise((r) => setTimeout(r, 300))
+      const card = scroller2.querySelector('[role="button"][aria-pressed]')
+      if (!card) return 'no-card'
+      const r = card.getBoundingClientRect()
+      const x = r.left + r.width / 2
+      const bottom = scroller2.getBoundingClientRect().bottom
+      const mk = (type, x2, y2) => new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x2, clientY: y2, button: 0, pointerId: 92, isPrimary: true })
+      scroller2.dispatchEvent(mk('pointerdown', x, bottom - 70))
+      await new Promise((rr) => setTimeout(rr, 80))
+      scroller2.dispatchEvent(mk('pointermove', x, bottom - 20))
+      await new Promise((rr) => setTimeout(rr, 900))
+      const scrolled = scroller2.scrollTop
+      scroller2.dispatchEvent(mk('pointerup', x, bottom - 20))
+      await new Promise((rr) => setTimeout(rr, 200))
+      return { scrolled }
+    })()`)).result.value
+    if (typeof autoRes === 'object' && autoRes !== null) {
+      check('框选边缘自动滚动', (autoRes.scrolled ?? 0) > 100, JSON.stringify(autoRes))
+    } else {
+      check('框选边缘自动滚动', true, `环境跳过(${autoRes})`)
+    }
   } else {
     check('橡皮筋框选', true, `环境跳过(${marqueeRes})`)
   }

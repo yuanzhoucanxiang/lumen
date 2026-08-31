@@ -420,6 +420,18 @@ export default function Gallery() {
   const marqueeSuppressClickRef = useRef(false)
   const marqueeAdditiveRef = useRef(false)
   const marqueeBaseRef = useRef<string[]>([])
+  const marqueeLastClientRef = useRef({ x: 0, y: 0 })
+  const marqueeEdgeRef = useRef(0)
+  const marqueeScrollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  /** 停止框选的边缘自动滚动(pointerup/新框选开始时) */
+  const stopMarqueeAutoScroll = () => {
+    if (marqueeScrollTimerRef.current) {
+      clearInterval(marqueeScrollTimerRef.current)
+      marqueeScrollTimerRef.current = null
+    }
+    marqueeEdgeRef.current = 0
+  }
   const [viewportH, setViewportH] = useState(0)
   const [scrollTop, setScrollTop] = useState(0)
 
@@ -659,6 +671,7 @@ export default function Gallery() {
         const py = e.clientY - (rect?.top ?? 0) + (containerRef.current?.scrollTop ?? 0)
         marqueeAdditiveRef.current = e.ctrlKey || e.metaKey || e.shiftKey
         marqueeBaseRef.current = marqueeAdditiveRef.current ? [...selection] : []
+        stopMarqueeAutoScroll()
         try {
           e.currentTarget.setPointerCapture(e.pointerId)
         } catch {
@@ -668,13 +681,36 @@ export default function Gallery() {
       }}
       onPointerMove={(e) => {
         if (!marquee) return
+        marqueeLastClientRef.current = { x: e.clientX, y: e.clientY }
         const rect = containerRef.current?.getBoundingClientRect()
         const px = e.clientX - (rect?.left ?? 0)
         const py = e.clientY - (rect?.top ?? 0) + (containerRef.current?.scrollTop ?? 0)
         setMarquee((m) => (m ? { ...m, x1: px, y1: py } : m))
+        // 边缘自动滚动:拖到容器上下缘 48px 内时持续滚动,选区随内容坐标系跟随指针
+        const rectB = containerRef.current?.getBoundingClientRect()
+        if (rectB) {
+          marqueeEdgeRef.current = e.clientY < rectB.top + 48 ? -1 : e.clientY > rectB.bottom - 48 ? 1 : 0
+          if (marqueeEdgeRef.current !== 0 && !marqueeScrollTimerRef.current) {
+            marqueeScrollTimerRef.current = setInterval(() => {
+              const el = containerRef.current
+              if (!el) return
+              el.scrollTop += marqueeEdgeRef.current * 14
+              const r2 = el.getBoundingClientRect()
+              const p2 = {
+                x: marqueeLastClientRef.current.x - r2.left,
+                y: marqueeLastClientRef.current.y - r2.top + el.scrollTop
+              }
+              setMarquee((m) => (m ? { ...m, x1: p2.x, y1: p2.y } : m))
+            }, 16)
+          } else if (marqueeEdgeRef.current === 0 && marqueeScrollTimerRef.current) {
+            clearInterval(marqueeScrollTimerRef.current)
+            marqueeScrollTimerRef.current = null
+          }
+        }
       }}
       onPointerUp={(e) => {
         if (!marquee) return
+        stopMarqueeAutoScroll()
         const rect = containerRef.current?.getBoundingClientRect()
         const px = e.clientX - (rect?.left ?? 0)
         const py = e.clientY - (rect?.top ?? 0) + (containerRef.current?.scrollTop ?? 0)
