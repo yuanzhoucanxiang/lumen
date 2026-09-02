@@ -65,6 +65,8 @@ interface LayoutItem {
   y: number
   w: number
   h: number
+  /** 显影错峰值：按列编号从 0 开始；列表模式恒为 0（不延迟）。 */
+  dev?: number
 }
 
 interface ItemProps {
@@ -217,6 +219,7 @@ function AssetCard({
             ? 'border-[var(--accent)]'
             : 'border-[var(--border)] group-hover:border-[var(--border-strong)]'
         }`}
+        style={{ '--dev-i': Math.min(item.dev ?? 0, 14) } as React.CSSProperties}
       >
         {selected && <span aria-hidden="true" className="ticks" />}
 
@@ -263,11 +266,11 @@ function AssetCard({
             <Icon name={boardSent ? 'check' : 'import'} size={10} strokeWidth={2.5} />
           </button>
 
-          {/* 选中角标：青色方块 */}
+          {/* 选中角标：暗房红方块，压印式弹入 */}
           {selected && (
             <span
               aria-hidden="true"
-              className="pixel-corners-sm absolute right-1.5 top-1.5 flex h-[18px] w-[18px] items-center justify-center bg-[var(--accent)] text-[var(--on-accent)]"
+              className="pixel-corners-sm anim-check-pop absolute right-1.5 top-1.5 flex h-[18px] w-[18px] items-center justify-center bg-[var(--accent)] text-[var(--on-accent)]"
             >
               <Icon name="check" size={11} strokeWidth={3} />
             </span>
@@ -284,7 +287,7 @@ function AssetCard({
               <button
                 key={n}
                 aria-label={`评分 ${n} 星`}
-                className={`text-[10px] leading-none transition-colors duration-100 ${
+                className={`text-[10px] leading-none transition-[color,transform] duration-100 hover:scale-110 ${
                   n <= a.star ? 'text-[var(--amber)]' : 'text-white/25 hover:text-white/80'
                 }`}
                 onClick={() => void setStar(n === a.star ? 0 : n)}
@@ -455,7 +458,7 @@ export default function Gallery() {
     const targetW = zoomToWidth(zoom)
 
     if (layoutMode === 'list') {
-      return assets.map((a, i) => ({ a, x: 0, y: i * LIST_ROW_H, w: containerW, h: LIST_ROW_H }))
+      return assets.map((a, i) => ({ a, x: 0, y: i * LIST_ROW_H, w: containerW, h: LIST_ROW_H, dev: 0 }))
     }
 
     const cols = Math.max(1, Math.floor((containerW + GAP) / (targetW + GAP)))
@@ -466,7 +469,7 @@ export default function Gallery() {
       return assets.map((a, i) => {
         const col = i % cols
         const row = Math.floor(i / cols)
-        return { a, x: col * (colW + GAP), y: row * (cellH + GAP), w: colW, h: cellH }
+        return { a, x: col * (colW + GAP), y: row * (cellH + GAP), w: colW, h: cellH, dev: col }
       })
     }
 
@@ -487,7 +490,8 @@ export default function Gallery() {
         x: col * (colW + GAP),
         y: colHeights[col],
         w: colW,
-        h
+        h,
+        dev: col
       })
       colHeights[col] += h + GAP
     }
@@ -795,7 +799,7 @@ export default function Gallery() {
         <div
           aria-hidden="true"
           data-hover-preview
-          className="anim-fade pointer-events-none fixed z-[180] w-72 border border-[var(--border-strong)] bg-[var(--bg-raised)] shadow-[var(--shadow-menu)]"
+          className="anim-hover-in pointer-events-none fixed z-[180] w-72 border border-[var(--border-strong)] bg-[var(--bg-raised)] shadow-[var(--shadow-menu)]"
           style={{ left: hoverPv.x, top: hoverPv.y }}
         >
           <div className="flex max-h-60 items-center justify-center overflow-hidden bg-[#0d0f12]">

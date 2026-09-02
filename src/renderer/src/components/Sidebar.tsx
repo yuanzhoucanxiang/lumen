@@ -119,9 +119,9 @@ function SectionHeader({
         onClick={onToggle}
       >
         <Icon
-          name={collapsed ? 'chevronRight' : 'chevronDown'}
+          name="chevronDown"
           size={10}
-          className="shrink-0 text-[var(--text-faint)]"
+          className={`shrink-0 text-[var(--text-faint)] transition-transform duration-150 ${collapsed ? '-rotate-90' : ''}`}
         />
         <h3 className="section-title truncate">
           <span aria-hidden="true" className="pixel-dot" />
@@ -481,7 +481,11 @@ export default function Sidebar() {
                 toggleCollapse(node.id)
               }}
             >
-              <Icon name={isCollapsed ? 'chevronRight' : 'chevronDown'} size={10} />
+              <Icon
+                name="chevronDown"
+                size={10}
+                className={`block transition-transform duration-150 ${isCollapsed ? '-rotate-90' : ''}`}
+              />
             </button>
           ) : (
             <span aria-hidden="true" className="w-4 shrink-0" />
@@ -824,7 +828,11 @@ export default function Sidebar() {
                   className="flex h-4 w-4 shrink-0 items-center justify-center text-[var(--text-faint)] transition-colors duration-100 hover:text-[var(--text-main)]"
                   onClick={() => toggleGroupCollapse(group.id)}
                 >
-                  <Icon name={collapsedGroups.has(group.id) ? 'chevronRight' : 'chevronDown'} size={10} />
+                  <Icon
+                    name="chevronDown"
+                    size={10}
+                    className={`block transition-transform duration-150 ${collapsedGroups.has(group.id) ? '-rotate-90' : ''}`}
+                  />
                 </button>
                 {renaming?.kind === 'group' && renaming.id === group.id ? (
                   <input
