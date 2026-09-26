@@ -1,9 +1,9 @@
 import { BrowserWindow, app, dialog, ipcMain } from 'electron'
 import { writeFileSync } from 'fs'
-import { addBoardItem, bringBoardItemToFront, createBoard, deleteBoard, deleteBoardItem, listBoardItems, listBoards, renameBoard, updateBoardAppearance, updateBoardGuides, updateBoardItem, updateBoardItems, updateBoardViewport } from '../repository'
+import { addBoardItem, addBoardItems, bringBoardItemToFront, createBoard, deleteBoard, deleteBoardItem, deleteBoardItems, listBoardItems, listBoards, renameBoard, updateBoardAppearance, updateBoardGuides, updateBoardItem, updateBoardItems, updateBoardViewport } from '../repository'
 import { exportBoardToFile, importBoardFromFile } from '../boardFile'
 import { closeFloatingBoardIfBoard } from '../floatingBoard'
-import type { BoardItem } from '../../shared/types'
+import type { BoardItem, NewBoardItem } from '../../shared/types'
 
 export function registerBoardsIpc(getWindow: () => BrowserWindow | null): void {
   /* ---------------- 白板 ---------------- */
@@ -16,25 +16,11 @@ export function registerBoardsIpc(getWindow: () => BrowserWindow | null): void {
     closeFloatingBoardIfBoard(id)
   })
   ipcMain.handle('board:items', (_e, boardId: number) => listBoardItems(boardId))
-  ipcMain.handle(
-    'board:addItem',
-    (_e, boardId: number, item: {
-      assetId?: string | null
-      type: 'asset' | 'note' | 'shape'
-      x: number
-      y: number
-      width: number
-      height: number
-      text?: string
-      shape?: string
-      opacity?: number
-      noteFont?: string
-      noteColor?: string
-      noteFontSize?: number
-    }) => addBoardItem(boardId, item)
-  )
+  ipcMain.handle('board:addItem', (_e, boardId: number, item: NewBoardItem) => addBoardItem(boardId, item))
   ipcMain.handle('board:updateItem', (_e, id: string, patch: Partial<BoardItem>) => updateBoardItem(id, patch))
   ipcMain.handle('board:updateItems', (_e, items: { id: string; patch: Partial<BoardItem> }[]) => updateBoardItems(items))
+  ipcMain.handle('board:addItems', (_e, boardId: number, items: NewBoardItem[]) => addBoardItems(boardId, items))
+  ipcMain.handle('board:deleteItems', (_e, ids: string[]) => deleteBoardItems(ids))
   ipcMain.handle('board:deleteItem', (_e, id: string) => deleteBoardItem(id))
   ipcMain.handle('board:front', (_e, id: string, boardId: number) => bringBoardItemToFront(id, boardId))
   ipcMain.handle('board:setGuides', (_e, boardId: number, guidesJson: string) => updateBoardGuides(boardId, guidesJson))

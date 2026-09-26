@@ -238,6 +238,55 @@ export default function Sidebar() {
     collapsed ? 'mt-4 shrink-0 px-2' : 'mt-4 flex min-h-0 flex-1 flex-col px-2'
 
   const ASSET_MIME = 'application/x-eaglelike-assets'
+  /** 文件夹拖拽改层级用的独立类型：与素材拖入（copy 语义）区分，避免两套 drop 逻辑互相误判 */
+  const FOLDER_MIME = 'application/x-eaglelike-folder'
+  const [draggingFolder, setDraggingFolder] = useState<number | null>(null)
+  const [rootDropActive, setRootDropActive] = useState(false)
+
+  /** id 是否位于 ancestorId 的子树内（含自身）——拖拽前先本地判环，环目标直接不给放置反馈 */
+  const isInSubtree = (id: number, ancestorId: number): boolean => {
+    const parentOf = new Map(folders.map((f) => [f.id, f.parentId]))
+    const seen = new Set<number>()
+    let cur: number | null | undefined = ancestorId
+    while (cur != null && !seen.has(cur)) {
+      if (cur === id) return true
+      seen.add(cur)
+      cur = parentOf.get(cur) ?? null
+    }
+    return false
+  }
+
+  /** 执行文件夹移动（targetParentId=null 即移到顶层），失败把主进程的判定原因回给用户 */
+  const applyFolderMove = async (
+    id: number,
+    targetParentId: number | null,
+    targetName: string
+  ): Promise<void> => {
+    const name = folders.find((f) => f.id === id)?.name ?? '文件夹'
+    try {
+      await window.api.moveFolder(id, targetParentId)
+      await useLibraryStore.getState().refreshFolders()
+      useLibraryStore.getState().showToast(
+        targetParentId == null ? `已将「${name}」移到顶层` : `已将「${name}」移入「${targetName}」`
+      )
+    } catch (e) {
+      useLibraryStore.getState().showToast(e instanceof Error ? e.message : '移动失败')
+    }
+  }
+
+  /** 文件夹拖到文件夹 = 成为其子级；素材拖到文件夹 = 加入该文件夹 */
+  const onFolderRowDrop = async (e: React.DragEvent, node: FolderNode): Promise<void> => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDropTargetFolder(null)
+    setRootDropActive(false)
+    const movedId = e.dataTransfer.getData(FOLDER_MIME)
+    if (movedId) {
+      await applyFolderMove(Number(movedId), node.id, node.name)
+      return
+    }
+    await dropOnFolder(e, node.id, node.name)
+  }
 
   /** 拖拽素材放入文件夹 */
   const dropOnFolder = async (e: React.DragEvent, folderId: number, folderName: string) => {
@@ -460,17 +509,36 @@ export default function Sidebar() {
               : ''
           }`}
           style={{ paddingLeft: depth * 14 }}
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData(FOLDER_MIME, String(node.id))
+            e.dataTransfer.effectAllowed = 'move'
+            setDraggingFolder(node.id)
+          }}
+          onDragEnd={() => {
+            setDraggingFolder(null)
+            setDropTargetFolder(null)
+            setRootDropActive(false)
+          }}
           onDragOver={(e) => {
+            const moving = draggingFolder != null && e.dataTransfer.types.includes(FOLDER_MIME)
+            // 不能移入自己或自己的子树，否则 parent_id 成环、递归 CTE 子树查询会把素材查丢
+            const legal = moving && draggingFolder != null && !isInSubtree(draggingFolder, node.id)
             if (e.dataTransfer.types.includes(ASSET_MIME)) {
               e.preventDefault()
               e.dataTransfer.dropEffect = 'copy'
-              if (dropTargetFolder !== node.id) setDropTargetFolder(node.id)
+            } else if (legal) {
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'move'
+            } else {
+              return
             }
+            if (dropTargetFolder !== node.id) setDropTargetFolder(node.id)
           }}
           onDragLeave={() => {
             if (dropTargetFolder === node.id) setDropTargetFolder(null)
           }}
-          onDrop={(e) => void dropOnFolder(e, node.id, node.name)}
+          onDrop={(e) => void onFolderRowDrop(e, node)}
         >
           {hasKids ? (
             <button
@@ -670,6 +738,35 @@ export default function Sidebar() {
           {folderTree.length === 0 && !addingFolder && (
             <p className="px-2.5 py-1.5 text-[12px] text-[var(--text-faint)]">暂无文件夹</p>
           )}
+          </div>
+        )}
+        {/* 拖文件夹时出现在列表下方的固定槽位（放在滚动区外，长列表滚到哪儿都看得见）*/}
+        {!sectionFold.folders && draggingFolder != null && (
+          <div
+            role="button"
+            aria-label="拖到此处移到顶层"
+            className={`mt-0.5 shrink-0 rounded-[4px] border border-dashed px-2.5 py-1.5 text-[11px] transition-colors duration-100 ${
+              rootDropActive
+                ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--text-main)]'
+                : 'border-[var(--border)] text-[var(--text-faint)]'
+            }`}
+            onDragOver={(e) => {
+              if (!e.dataTransfer.types.includes(FOLDER_MIME)) return
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'move'
+              if (!rootDropActive) setRootDropActive(true)
+            }}
+            onDragLeave={() => setRootDropActive(false)}
+            onDrop={async (e) => {
+              e.preventDefault()
+              const movedId = e.dataTransfer.getData(FOLDER_MIME)
+              setRootDropActive(false)
+              setDraggingFolder(null)
+              if (!movedId) return
+              await applyFolderMove(Number(movedId), null, '顶层')
+            }}
+          >
+            拖到此处移出为顶层
           </div>
         )}
       </section>

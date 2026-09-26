@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { Asset, AssetQuery, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSearchProgress, AiSuggestionItem, AppSettings, Board, BoardItem, BoardItemPatch, DbBackupInfo, DupeGroup, ExportOptions, Folder, ImportResult, LibraryInfo, Tag, TagGroup, UpdateStatus, ZipBackupInfo } from '../shared/types'
+import type { Asset, AssetQuery, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSearchProgress, AiSuggestionItem, AppSettings, Board, BoardItem, BoardItemPatch, DbBackupInfo, DupeGroup, ExportOptions, Folder, ImportResult, LibraryInfo, NewBoardItem, Tag, TagGroup, UpdateStatus, ZipBackupInfo } from '../shared/types'
 
 const api = {
   /* 库管理 */
@@ -138,6 +138,8 @@ const api = {
     ipcRenderer.invoke('folders:updateSmart', id, name, conditions),
   renameFolder: (id: number, name: string): Promise<void> =>
     ipcRenderer.invoke('folders:rename', id, name),
+  moveFolder: (id: number, targetParentId: number | null): Promise<void> =>
+    ipcRenderer.invoke('folders:move', id, targetParentId),
   deleteFolder: (id: number): Promise<void> => ipcRenderer.invoke('folders:delete', id),
   addAssetsToFolder: (assetIds: string[], folderId: number): Promise<void> =>
     ipcRenderer.invoke('folders:addAssets', assetIds, folderId),
@@ -150,28 +152,18 @@ const api = {
   renameBoard: (id: number, name: string): Promise<void> => ipcRenderer.invoke('boards:rename', id, name),
   deleteBoard: (id: number): Promise<void> => ipcRenderer.invoke('boards:delete', id),
   listBoardItems: (boardId: number): Promise<BoardItem[]> => ipcRenderer.invoke('board:items', boardId),
-  addBoardItem: (
-    boardId: number,
-    item: {
-      assetId?: string | null
-      type: 'asset' | 'note' | 'shape'
-      x: number
-      y: number
-      width: number
-      height: number
-      text?: string
-      shape?: string
-      opacity?: number
-      noteFont?: string
-      noteColor?: string
-      noteFontSize?: number
-    }
-  ): Promise<BoardItem> => ipcRenderer.invoke('board:addItem', boardId, item),
+  addBoardItem: (boardId: number, item: NewBoardItem): Promise<BoardItem> =>
+    ipcRenderer.invoke('board:addItem', boardId, item),
+  /** 批量新建（撤销恢复/粘贴用，一次 IPC 一趟事务） */
+  addBoardItems: (boardId: number, items: NewBoardItem[]): Promise<BoardItem[]> =>
+    ipcRenderer.invoke('board:addItems', boardId, items),
   updateBoardItem: (id: string, patch: BoardItemPatch): Promise<void> =>
     ipcRenderer.invoke('board:updateItem', id, patch),
   updateBoardItems: (items: { id: string; patch: BoardItemPatch }[]): Promise<void> =>
     ipcRenderer.invoke('board:updateItems', items),
   deleteBoardItem: (id: string): Promise<void> => ipcRenderer.invoke('board:deleteItem', id),
+  /** 批量删除（一次 IPC 一趟事务，取代循环里逐条 await） */
+  deleteBoardItems: (ids: string[]): Promise<void> => ipcRenderer.invoke('board:deleteItems', ids),
   bringBoardItemToFront: (id: string, boardId: number): Promise<void> =>
     ipcRenderer.invoke('board:front', id, boardId),
   setBoardGuides: (boardId: number, guidesJson: string): Promise<void> =>

@@ -208,7 +208,9 @@ function migrate(d: Database.Database): void {
       text TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_board_items_board ON board_items(board_id);
+    CREATE INDEX IF NOT EXISTS idx_board_items_board_z ON board_items(board_id, z);
+    -- (board_id, z) 的最左前缀已覆盖单列 board_id 查询，旧的单列索引只多一份写开销
+    DROP INDEX IF EXISTS idx_board_items_board;
   `)
   // 增量迁移：为旧库补充新字段
   ensureColumns(d, 'assets', {
@@ -238,7 +240,9 @@ function migrate(d: Database.Database): void {
     opacity: 'INTEGER NOT NULL DEFAULT 100',
     shape: 'TEXT',
     flip_x: 'INTEGER NOT NULL DEFAULT 0',
-    flip_y: 'INTEGER NOT NULL DEFAULT 0'
+    flip_y: 'INTEGER NOT NULL DEFAULT 0',
+    locked: 'INTEGER NOT NULL DEFAULT 0',
+    group_id: "TEXT NOT NULL DEFAULT ''"
   })
   ensureColumns(d, 'boards', {
     guides: "TEXT NOT NULL DEFAULT '[]'",

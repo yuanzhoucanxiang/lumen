@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { assetEditable, assetStoryboardUrl, assetThumbUrl, useLibraryStore, zoomToWidth } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
@@ -22,6 +22,15 @@ const CONTEXT_MENU_MARGIN = 8
 const CONTEXT_MENU_ANIM_SAFE_Y = 8
 const FOLDER_SUBMENU_W = 176
 const FOLDER_SUBMENU_ROW_H = 31
+/** 瀑布流图像区高度区间（相对列宽）：区间内按原比例铺开，区间外才裁切 */
+const MIN_IMG_H_RATIO = 0.3
+const MAX_IMG_H_RATIO = 3.2
+/** 虚拟滚动缓冲带：视口上下各多渲染这些像素，滚动时不露白 */
+const OVERSCAN = 600
+/** 可见区间分桶高度（像素）：见 buckets 注释 */
+const BUCKET_H = 512
+/** 距内容底部多少像素就开始续借下一页 */
+const LOAD_MORE_AHEAD = 1400
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi', 'wmv', 'm4v'])
 
 function fmtSize(n: number): string {
@@ -67,18 +76,20 @@ interface LayoutItem {
   h: number
   /** 显影错峰值：按列编号从 0 开始；列表模式恒为 0（不延迟）。 */
   dev?: number
+  /** 长图被高度上限裁切：缩略图顶对齐，保住截图开头的信息 */
+  cropTop?: boolean
 }
 
 interface ItemProps {
   item: LayoutItem
   selected: boolean
-  onClick: (e: React.MouseEvent) => void
-  onDoubleClick: () => void
-  onContextMenu: (e: React.MouseEvent) => void
+  onClick: (id: string, e: React.MouseEvent) => void
+  onDoubleClick: (id: string) => void
+  onContextMenu: (id: string, e: React.MouseEvent) => void
 }
 
-/** 列表模式行 */
-function ListRow({ item, selected, onClick, onDoubleClick, onContextMenu }: ItemProps) {
+/** 列表模式行（memo：回调与 item 引用稳定，滚动/选中时只重渲染真正变化的行） */
+const ListRow = memo(function ListRow({ item, selected, onClick, onDoubleClick, onContextMenu }: ItemProps) {
   const { a } = item
   const thumb = assetThumbUrl(a)
   return (
@@ -93,14 +104,14 @@ function ListRow({ item, selected, onClick, onDoubleClick, onContextMenu }: Item
       style={{ left: item.x, top: item.y, width: item.w, height: item.h }}
       draggable
       onDragStart={(e) => onAssetDragStart(e, a)}
-      onClick={onClick}
-      onDoubleClick={onDoubleClick}
-      onContextMenu={onContextMenu}
+      onClick={(e) => onClick(a.id, e)}
+      onDoubleClick={() => onDoubleClick(a.id)}
+      onContextMenu={(e) => onContextMenu(a.id, e)}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') onDoubleClick()
+        if (e.key === 'Enter') onDoubleClick(a.id)
         if (e.key === ' ') {
           e.preventDefault()
-          onClick(e as unknown as React.MouseEvent)
+          onClick(a.id, e as unknown as React.MouseEvent)
         }
       }}
     >
@@ -131,11 +142,12 @@ function ListRow({ item, selected, onClick, onDoubleClick, onContextMenu }: Item
       </span>
     </div>
   )
-}
+})
 
-function AssetCard({
+const AssetCard = memo(function AssetCard({
   item,
   selected,
+  boardSent,
   onClick,
   onDoubleClick,
   onContextMenu,
@@ -144,9 +156,11 @@ function AssetCard({
 }: {
   item: LayoutItem
   selected: boolean
-  onClick: (e: React.MouseEvent) => void
-  onDoubleClick: () => void
-  onContextMenu: (e: React.MouseEvent) => void
+  /** 该素材是否已在当前白板（由 Gallery 用 Set 统一算出，此前每张卡各自 some 一遍是 O(n²)） */
+  boardSent: boolean
+  onClick: (id: string, e: React.MouseEvent) => void
+  onDoubleClick: (id: string) => void
+  onContextMenu: (id: string, e: React.MouseEvent) => void
   onHoverStart: (a: Asset, el: HTMLElement) => void
   onHoverEnd: () => void
 }) {
@@ -169,7 +183,6 @@ function AssetCard({
     useLibraryStore.getState().updateAssetLocal(a.id, { star })
   }
   // 发送到白板（照抄 MOTZ send-chip）：已发送显示 ✓,点击提示已在并选中画布元素
-  const boardSent = useLibraryStore((s) => s.boardItems.some((i) => i.assetId === a.id))
   const sendToBoard = async () => {
     const st = useLibraryStore.getState()
     if (st.activeBoardId == null) {
@@ -199,17 +212,17 @@ function AssetCard({
       style={{ left: item.x, top: item.y, width: item.w, height: item.h }}
       draggable
       onDragStart={(e) => onAssetDragStart(e, a)}
-      onClick={onClick}
-      onDoubleClick={onDoubleClick}
-      onContextMenu={onContextMenu}
+      onClick={(e) => onClick(a.id, e)}
+      onDoubleClick={() => onDoubleClick(a.id)}
+      onContextMenu={(e) => onContextMenu(a.id, e)}
       onMouseEnter={(e) => onHoverStart(a, e.currentTarget)}
       onMouseLeave={onHoverEnd}
       onDragStartCapture={onHoverEnd}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') onDoubleClick()
+        if (e.key === 'Enter') onDoubleClick(a.id)
         if (e.key === ' ') {
           e.preventDefault()
-          onClick(e as unknown as React.MouseEvent)
+          onClick(a.id, e as unknown as React.MouseEvent)
         }
       }}
     >
@@ -235,6 +248,7 @@ function AssetCard({
               loading="lazy"
               draggable={false}
               className="glitch-once h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.02]"
+              style={item.cropTop ? { objectPosition: 'top center' } : undefined}
               alt={a.name}
               onError={() => {
                 // 视频故事板不存在(短视频)时回退到首帧缩略图
@@ -312,7 +326,7 @@ function AssetCard({
       </div>
     </div>
   )
-}
+})
 
 /** 视图键 → 滚动偏移(模块级:进白板/预览致 Gallery 卸载重挂后仍可恢复,对标 Eagle 滚动记忆) */
 const scrollMemory = new Map<string, number>()
@@ -322,8 +336,6 @@ export default function Gallery() {
   const loading = useLibraryStore((s) => s.loading)
   const zoom = useLibraryStore((s) => s.zoom)
   const selection = useLibraryStore((s) => s.selection)
-  const toggleSelect = useLibraryStore((s) => s.toggleSelect)
-  const selectRange = useLibraryStore((s) => s.selectRange)
   const setSelection = useLibraryStore((s) => s.setSelection)
   const openPreview = useLibraryStore((s) => s.openPreview)
   const layoutMode = useLibraryStore((s) => s.layout)
@@ -333,6 +345,10 @@ export default function Gallery() {
   const clearAiSearch = useLibraryStore((s) => s.clearAiSearch)
   const view = useLibraryStore((s) => s.view)
   const folders = useLibraryStore((s) => s.folders)
+  const assetsHasMore = useLibraryStore((s) => s.assetsHasMore)
+  const loadingMore = useLibraryStore((s) => s.loadingMore)
+  const loadMoreAssets = useLibraryStore((s) => s.loadMoreAssets)
+  const boardItems = useLibraryStore((s) => s.boardItems)
 
   // 滚动位置记忆:键=视图+相似源+AI 搜索态。切到未见过的视图复位顶部(此前旧偏移会落在
   // 新视图列表中部,体验突兀);切回已看过的视图恢复原偏移(资产就绪、列表高度就位后再设)
@@ -362,7 +378,7 @@ export default function Gallery() {
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   /** 悬停放大预览：只在素材墙可视区内定位，并自动选择卡片左右侧。 */
-  const startHover = (a: Asset, el: HTMLElement) => {
+  const startHover = useCallback((a: Asset, el: HTMLElement) => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
     const rect = el.getBoundingClientRect()
     hoverTimer.current = setTimeout(() => {
@@ -407,14 +423,40 @@ export default function Gallery() {
       )
       setHoverPv({ a, x, y })
     }, HOVER_PREVIEW_DELAY)
-  }
-  const endHover = () => {
+  }, [])
+  const endHover = useCallback(() => {
     if (hoverTimer.current) {
       clearTimeout(hoverTimer.current)
       hoverTimer.current = null
     }
+    // 传同一 null 时 React 直接跳过重渲染(滚动每帧都会调它,不能再每帧挂一次渲染)
     setHoverPv(null)
-  }
+  }, [])
+
+  /* 卡片交互回调全部保持引用稳定：每次渲染新建函数会让 memo 卡片整体失效，虚拟化就白做了 */
+  const onItemClick = useCallback((id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const st = useLibraryStore.getState()
+    if (e.shiftKey) st.selectRange(id)
+    else st.toggleSelect(id, e.ctrlKey || e.metaKey)
+    setMenu(null)
+    endHover()
+  }, [endHover])
+  const onItemDoubleClick = useCallback((id: string) => openPreview(id), [openPreview])
+  const onItemContextMenu = useCallback(
+    (id: string, e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      endHover()
+      const st = useLibraryStore.getState()
+      if (!st.selection.includes(id)) st.setSelection([id])
+      setFolderSubmenu({ open: false, left: false, up: false })
+      setMenu({ x: e.clientX, y: e.clientY, id })
+    },
+    [endHover]
+  )
+  const selectionSet = useMemo(() => new Set(selection), [selection])
+  const boardSentIds = useMemo(() => new Set(boardItems.map((i) => i.assetId)), [boardItems])
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerW, setContainerW] = useState(0)
@@ -437,6 +479,14 @@ export default function Gallery() {
   }
   const [viewportH, setViewportH] = useState(0)
   const [scrollTop, setScrollTop] = useState(0)
+  /** 滚动 setState 合帧用的 rAF 句柄 */
+  const scrollRafRef = useRef(0)
+  useEffect(
+    () => () => {
+      if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current)
+    },
+    []
+  )
 
   // 监听容器尺寸（依赖 assets.length：空态分支不挂载容器，加载完成后需重新绑定）
   useLayoutEffect(() => {
@@ -478,7 +528,11 @@ export default function Gallery() {
     for (const a of assets) {
       const ratio = a.width > 0 && a.height > 0 ? a.width / a.height : 1
       let imgH = colW / ratio
-      imgH = Math.min(Math.max(imgH, colW * 0.35), colW * 1.8)
+      // 钳制只在极端比例生效：区间内按原图比例完整铺开（cover 不裁切）。
+      // 撞到上限的长图改为顶对齐裁切——此前居中会把开头裁掉、留下中段，
+      // 而长截图的信息密度恰恰集中在最上方。
+      const cropped = imgH > colW * MAX_IMG_H_RATIO
+      imgH = Math.min(Math.max(imgH, colW * MIN_IMG_H_RATIO), colW * MAX_IMG_H_RATIO)
       const h = imgH + LABEL_H
       // 找最短列
       let col = 0
@@ -491,25 +545,57 @@ export default function Gallery() {
         y: colHeights[col],
         w: colW,
         h,
-        dev: col
+        dev: col,
+        cropTop: cropped
       })
       colHeights[col] += h + GAP
     }
     return items
   }, [assets, containerW, zoom, layoutMode])
 
+  // 虚拟滚动：只渲染视口附近的项
   const totalH = useMemo(() => {
     let max = 0
     for (const it of layout) max = Math.max(max, it.y + it.h)
     return max
   }, [layout])
 
-  // 虚拟滚动：只渲染视口附近的项
+  /**
+   * 可见区间索引：布局项按它占用的桶登记，查询只扫与视口相交的桶。
+   * 此前每帧对全布局做线性 filter，万级素材时光标滚动就把主线程吃满。
+   */
+  const buckets = useMemo(() => {
+    const n = totalH > 0 ? Math.floor(totalH / BUCKET_H) + 1 : 0
+    const b: LayoutItem[][] = Array.from({ length: n }, () => [])
+    for (const it of layout) {
+      const from = Math.max(0, Math.floor(it.y / BUCKET_H))
+      const to = Math.min(n - 1, Math.floor((it.y + it.h) / BUCKET_H))
+      for (let k = from; k <= to; k++) b[k].push(it)
+    }
+    return b
+  }, [layout, totalH])
+
   const visible = useMemo(() => {
-    const top = scrollTop - 600
-    const bottom = scrollTop + viewportH + 600
-    return layout.filter((it) => it.y + it.h > top && it.y < bottom)
-  }, [layout, scrollTop, viewportH])
+    const from = Math.max(0, Math.floor((scrollTop - OVERSCAN) / BUCKET_H))
+    const to = Math.min(buckets.length - 1, Math.floor((scrollTop + viewportH + OVERSCAN) / BUCKET_H))
+    const out: LayoutItem[] = []
+    const taken = new Set<LayoutItem>() // 跨桶项在相邻桶都登了记，这里去重
+    for (let k = from; k <= to; k++) {
+      for (const it of buckets[k]) {
+        if (taken.has(it)) continue
+        taken.add(it)
+        if (it.y + it.h > scrollTop - OVERSCAN && it.y < scrollTop + viewportH + OVERSCAN) out.push(it)
+      }
+    }
+    return out
+  }, [buckets, scrollTop, viewportH])
+
+  /** 触底续借：距内容底部不足一页缓冲就把下一页拉进来 */
+  useEffect(() => {
+    // totalH=0 是容器尚未测高的首帧，此时判定「已触底」会白拉一页
+    if (!assetsHasMore || totalH === 0) return
+    if (scrollTop + viewportH + LOAD_MORE_AHEAD >= totalH) void loadMoreAssets()
+  }, [assetsHasMore, scrollTop, viewportH, totalH, loadMoreAssets])
 
   const contextAsset = useMemo(
     () => (menu ? assets.find((a) => a.id === menu.id) : null),
@@ -661,9 +747,16 @@ export default function Gallery() {
         ref={containerRef}
         className="contact-sheet modal-scroll flex-1 overflow-y-auto px-5 pb-8 pt-7"
       onScroll={(e) => {
-        setScrollTop(e.currentTarget.scrollTop)
-        scrollMemory.set(viewKey, e.currentTarget.scrollTop)
+        // 按帧合并:scroll 事件一秒能到上百次,每事件一次 setState 会让整棵虚拟列表
+        // 在同一帧里重渲染好几遍(万级素材时表现为滚动掉帧)
+        const el = e.currentTarget
+        scrollMemory.set(viewKey, el.scrollTop)
         endHover()
+        if (scrollRafRef.current) return
+        scrollRafRef.current = requestAnimationFrame(() => {
+          scrollRafRef.current = 0
+          setScrollTop(containerRef.current?.scrollTop ?? 0)
+        })
       }}
       onPointerDown={(e) => {
         // 橡皮筋框选:仅左键、且起点不在素材卡片/按钮上(卡片自带点击语义)
@@ -756,43 +849,37 @@ export default function Gallery() {
             }}
           />
         )}
-        {visible.map((item) => {
-          const handlers = {
-            onClick: (e: React.MouseEvent) => {
-              e.stopPropagation()
-              if (e.shiftKey) selectRange(item.a.id)
-              else toggleSelect(item.a.id, e.ctrlKey || e.metaKey)
-              setMenu(null)
-              endHover()
-            },
-            onDoubleClick: () => openPreview(item.a.id),
-            onContextMenu: (e: React.MouseEvent) => {
-              e.preventDefault()
-              e.stopPropagation()
-              endHover()
-              if (!selection.includes(item.a.id)) setSelection([item.a.id])
-              setFolderSubmenu({ open: false, left: false, up: false })
-              setMenu({
-                x: e.clientX,
-                y: e.clientY,
-                id: item.a.id
-              })
-            }
-          }
-          return layoutMode === 'list' ? (
-            <ListRow key={item.a.id} item={item} selected={selection.includes(item.a.id)} {...handlers} />
+        {visible.map((item) =>
+          layoutMode === 'list' ? (
+            <ListRow
+              key={item.a.id}
+              item={item}
+              selected={selectionSet.has(item.a.id)}
+              onClick={onItemClick}
+              onDoubleClick={onItemDoubleClick}
+              onContextMenu={onItemContextMenu}
+            />
           ) : (
             <AssetCard
               key={item.a.id}
               item={item}
-              selected={selection.includes(item.a.id)}
-              {...handlers}
+              selected={selectionSet.has(item.a.id)}
+              boardSent={boardSentIds.has(item.a.id)}
+              onClick={onItemClick}
+              onDoubleClick={onItemDoubleClick}
+              onContextMenu={onItemContextMenu}
               onHoverStart={startHover}
               onHoverEnd={endHover}
             />
           )
-        })}
+        )}
       </div>
+      {/* 分页状态：还有下一页时在内容尾部给出续借反馈(此前静默停在第 1000 条，滚到底什么也没有) */}
+      {assetsHasMore && (
+        <div className="mono relative py-2 text-center text-[11px] text-[var(--text-faint)]">
+          {loadingMore ? '载入中…' : `已显示 ${assets.length} 个，继续滚动加载`}
+        </div>
+      )}
 
       {/* 悬停放大预览（Eagle 式，不拦截鼠标；GIF/视频/音频自动播放） */}
       {hoverPv && createPortal(

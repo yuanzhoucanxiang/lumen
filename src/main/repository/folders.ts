@@ -47,6 +47,34 @@ export function renameFolder(id: number, name: string): void {
   getDb().prepare('UPDATE folders SET name = ? WHERE id = ?').run(name, id)
 }
 
+/**
+ * 移动文件夹改变层级（targetParentId = null 表示移到顶层）。
+ * 主进程做唯一权威判定：环一旦形成，queryAssets 的子树递归 CTE 会把素材查丢；
+ * 智能文件夹不在侧栏文件夹树里渲染，收为子级等于把整棵子树藏进看不见的位置。
+ */
+export function moveFolder(id: number, targetParentId: number | null): void {
+  const db = getDb()
+  if (targetParentId === id) return
+  if (targetParentId != null) {
+    const target = stmt(db, 'SELECT is_smart FROM folders WHERE id = ?').get(targetParentId) as
+      | { is_smart: number }
+      | undefined
+    if (!target) throw new Error('目标文件夹不存在')
+    if (target.is_smart) throw new Error('不能把文件夹移入智能文件夹')
+    // 后代集合（含自身）里出现目标 => 移过去会成环。用 UNION 去重，脏数据里已有的环也不会死循环
+    const cyclic = stmt(
+      db,
+      `WITH RECURSIVE down(id) AS (
+         SELECT ?
+         UNION
+         SELECT f.id FROM folders f JOIN down d ON f.parent_id = d.id
+       ) SELECT 1 FROM down WHERE id = ? LIMIT 1`
+    ).get(id, targetParentId)
+    if (cyclic) throw new Error('不能把文件夹移入自己的子文件夹')
+  }
+  stmt(db, 'UPDATE folders SET parent_id = ? WHERE id = ?').run(targetParentId, id)
+}
+
 export function deleteFolder(id: number): void {
   const db = getDb()
   // 子文件夹上移到被删文件夹的父级，避免成为孤儿

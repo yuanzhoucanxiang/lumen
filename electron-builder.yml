@@ -20,6 +20,16 @@ files:
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
   - '!.ui-shot/**'
+  # 打包瘦身：node_modules 里的「构建现场」没有运行时价值，却随生产依赖整包进了
+  # app.asar.unpacked。实测 better-sqlite3 目录 72MB 中真正被加载的只有
+  # build/Release/better_sqlite3.node(1.9MB)，其余是 sqlite3 源码 amalgamation 与
+  # MSVC 中间产物(.iobj/.ipdb/.pdb/.obj/.lib/.exp)；ag-psd 的 .v8-cache 同理。
+  - '!**/node_modules/better-sqlite3/{deps,bin}/**'
+  - '!**/node_modules/better-sqlite3/build/**/obj/**'
+  - '!**/node_modules/better-sqlite3/build/**/*.{iobj,ipdb,pdb,obj,exp,lib,tlog,vcxproj,rc,make}'
+  - '!**/node_modules/**/.v8-cache/**'
+  - '!**/node_modules/**/{test,tests,example,examples,doc,docs,man,__mocks__}/**'
+  - '!**/node_modules/**/*.{map,ts,tsx,flow,scss,less}'
 win:
   executableName: ShiGuangMaterials
   icon: build/icon.ico
@@ -50,6 +60,9 @@ nsis:
   perMachine: false
   allowToChangeInstallationDirectory: true
   allowElevation: true
+# 体积实测(里程碑 142 剔除构建垃圾后):安装包 143.2MB → 135.4MB，装后占用 676MB → 483MB。
+# 剩余大头是 ffmpeg.exe(82.8MB，占安装包六成，视频封面唯一依赖)与 mupdf.wasm(10.8MB，
+# AI 缩略图能力)；NSIS 本就是 LZMA 固实压缩，compression 档位实测无收益，不再配。
 npmRebuild: true
 # 自动更新源：GitHub Releases（yuanzhoucanxiang/shiguang-materials，仅发布安装包）
 publish:

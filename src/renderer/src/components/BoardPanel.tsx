@@ -271,6 +271,14 @@ export default function BoardPanel() {
         </div>
         <div className="archive-board-viewset ml-auto flex shrink-0 items-center gap-1" data-channel="VIEW">
           <button
+            aria-label="回到实际大小"
+            title="回到实际大小 1:1（快捷键 0）"
+            className={`${toolBtnCls(false)} mono px-1.5 text-[11px]`}
+            onClick={() => canvasApiRef.current?.resetView()}
+          >
+            1:1
+          </button>
+          <button
             aria-label="适配全部内容"
             title="适配全部内容（F / 双击空白）"
             className={toolBtnCls(false)}

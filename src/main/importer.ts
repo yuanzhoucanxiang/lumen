@@ -11,6 +11,7 @@ import { readPsd, initializeCanvas } from 'ag-psd'
 import * as fontkit from 'fontkit'
 import { getDb } from './db'
 import { getLibraryPath } from './library'
+import { renderAiThumb } from './aiThumb'
 import { stmt } from './stmtCache'
 import { logger } from './logger'
 import { parseExif } from './exif'
@@ -300,6 +301,31 @@ async function renderFontThumb(
   }
 }
 
+/**
+ * 给 sharp 喂图：先按文件路径（零拷贝、可流式），失败再把整张读成 buffer 重试一次。
+ * 需要兜底的原因：libvips 的 heif 输入只登记了 .avif 后缀，.heic/.heif 走文件路径会被
+ * 按后缀分流直接拒掉；从 buffer 输入则让 libvips 自己嗅 ftyp 容器识别。
+ */
+async function withSharp<T>(path: string, fn: (input: string | Buffer) => Promise<T>): Promise<T> {
+  try {
+    return await fn(path)
+  } catch (e) {
+    logger.debug('[importer]', `按路径解码失败，改从 buffer 重试 ${basename(path)}: ${(e as Error).message}`)
+    return await fn(await readFile(path))
+  }
+}
+
+/** 512px 内的缩略图 JPEG（依据 EXIF 方向旋转，与尺寸/主色/哈希同源） */
+function jpegThumb(path: string): Promise<Buffer> {
+  return withSharp(path, (input) =>
+    sharp(input)
+      .rotate()
+      .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 82 })
+      .toBuffer()
+  )
+}
+
 /** ffmpeg 路径（打包后位于 asar.unpacked） */
 function ffmpegBin(): string | null {
   if (!ffmpegPath) return null
@@ -407,19 +433,21 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
 
     // 图片:从源文件预算缩略图 + 哈希(与已存储哈希同源:512 缩略图 -> dHash),
     // 用 hash 做二次查重(AI 改名/已删除都能命中)。算出的 thumbBuf 复用写入磁盘。
+    // psd 走 ag-psd 不经过 sharp,不预算;ai 走 mupdf,预算结果连渲染产物一起复用。
     let preThumbBuf: Buffer | null = null
     let preHash = ''
+    let preAi: Awaited<ReturnType<typeof renderAiThumb>> = null
     if (kind === 'image' && ext !== 'svg' && ext !== 'psd') {
       try {
-        const meta = await sharp(filePath).metadata()
-        preThumbBuf = await sharp(filePath)
-          .rotate() // 依据 EXIF 方向,与正式导入一致
-          .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
-          .jpeg({ quality: 82 })
-          .toBuffer()
-        preHash = await computeDHash(preThumbBuf)
+        if (ext === 'ai') {
+          preAi = await renderAiThumb(filePath)
+          preThumbBuf = preAi?.jpeg ?? null
+        } else {
+          preThumbBuf = await jpegThumb(filePath)
+        }
+        if (preThumbBuf) preHash = await computeDHash(preThumbBuf)
       } catch (e) {
-        /* 预算失败(部分 HEIC/AI 图)留空,后续正式流程再降级处理 */
+        /* 预算失败(损坏图/缺解码器的 exotic 格式)留空,后续正式流程再降级处理 */
         logger.debug('[importer]', `预算缩略图失败 ${name}: ${(e as Error).message}`)
       }
     }
@@ -446,30 +474,38 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
 
     if (kind === 'image' && ext !== 'svg') {
       try {
-        let base: ReturnType<typeof sharp>
+        let thumbBuf: Buffer | null = preThumbBuf
         if (ext === 'psd') {
           // PSD:源文件无法直接 sharp,从已复制的 targetPath 取合成图(ag-psd)
           const raw = await psdToRaw(targetPath)
           if (!raw) throw new Error('psd: no composite image')
           width = raw.width
           height = raw.height
-          base = sharp(raw.data, { raw: { width: raw.width, height: raw.height, channels: 4 } })
+          thumbBuf = await sharp(raw.data, { raw: { width: raw.width, height: raw.height, channels: 4 } })
+            .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: 82 })
+            .toBuffer()
+        } else if (ext === 'ai') {
+          // AI:勾选过「最大兼容性」的文件本体是 PDF,sharp 解不了,交给 mupdf 渲染首页
+          const r = preAi ?? (await renderAiThumb(targetPath))
+          if (!r) throw new Error('ai: 文件无 PDF 兼容层(保存时未勾选最大兼容性)')
+          width = r.width
+          height = r.height
+          thumbBuf = r.jpeg
         } else {
-          const meta = await sharp(targetPath).metadata()
+          const meta = await withSharp(targetPath, (input) => sharp(input).metadata())
           width = meta.width ?? 0
           height = meta.height ?? 0
-          base = sharp(targetPath).rotate() // 依据 EXIF 方向
-          // 读取 EXIF 元数据（相机型号/拍摄时间/光圈/快门/ISO/焦距）
           const exifInfo = parseExif(meta.exif)
           if (exifInfo) exifJson = JSON.stringify(exifInfo)
+          // 复用预算的 thumbBuf,否则现算(预算失败过的图走同一条兜底管线)
+          thumbBuf = thumbBuf ?? (await jpegThumb(targetPath))
         }
-        // 复用预算的 thumbBuf(非 PSD),否则现算
-        const thumbBuf = preThumbBuf ?? (await base.resize(512, 512, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer())
         await writeFile(join(absDir, 'thumbnail.jpg'), thumbBuf)
         colors = await extractColors(thumbBuf)
-        if (!hash) hash = await computeDHash(thumbBuf) // PSD 或预算失败时补算
+        if (!hash) hash = await computeDHash(thumbBuf) // PSD/AI 或预算失败时补算
       } catch (e) {
-        /* 缩略图失败不阻断导入（如 PSD 无合成图/AI/HEIC 部分格式） */
+        /* 缩略图失败不阻断导入（如 PSD 无合成图/未开最大兼容性的 AI/损坏图） */
         logger.warn('[importer]', `缩略图生成失败 ${name}: ${(e as Error).message}`)
       }
     } else if (kind === 'video') {

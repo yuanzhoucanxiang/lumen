@@ -242,6 +242,70 @@ const PATHS = {
   ),
   /* 白板浮动窗：最小化（折叠为标题条窄条） */
   minimize: <path d="M5 12h14" />,
+  /* 白板元素：锁定（不可拖动/缩放/删除） */
+  lock: (
+    <>
+      <rect x="5.5" y="10.5" width="13" height="9" rx="1.8" />
+      <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" />
+    </>
+  ),
+  /* 白板元素：解锁（开着的锁梁） */
+  unlock: (
+    <>
+      <rect x="5.5" y="10.5" width="13" height="9" rx="1.8" />
+      <path d="M8.5 10.5V8a3.5 3.5 0 0 1 6.8-1.2" />
+    </>
+  ),
+  /* 白板成组：两个错开的方框 */
+  group: (
+    <>
+      <rect x="3.5" y="3.5" width="10" height="10" rx="1.5" />
+      <path d="M10.5 20.5h8a2 2 0 0 0 2-2v-8" />
+    </>
+  ),
+  /* 白板对齐六向：一条基准线 + 两个被对齐的块 */
+  alignLeft: (
+    <>
+      <path d="M4 4v16" />
+      <rect x="7" y="6" width="12" height="4" rx="1" />
+      <rect x="7" y="14" width="8" height="4" rx="1" />
+    </>
+  ),
+  alignCenterH: (
+    <>
+      <path d="M12 3.5v17" />
+      <rect x="5" y="6" width="14" height="4" rx="1" />
+      <rect x="7.5" y="14" width="9" height="4" rx="1" />
+    </>
+  ),
+  alignRight: (
+    <>
+      <path d="M20 4v16" />
+      <rect x="5" y="6" width="12" height="4" rx="1" />
+      <rect x="9" y="14" width="8" height="4" rx="1" />
+    </>
+  ),
+  alignTop: (
+    <>
+      <path d="M4 4h16" />
+      <rect x="6" y="7" width="4" height="12" rx="1" />
+      <rect x="14" y="7" width="4" height="8" rx="1" />
+    </>
+  ),
+  alignMiddle: (
+    <>
+      <path d="M3.5 12h17" />
+      <rect x="6" y="5" width="4" height="14" rx="1" />
+      <rect x="14" y="7.5" width="4" height="9" rx="1" />
+    </>
+  ),
+  alignBottom: (
+    <>
+      <path d="M4 20h16" />
+      <rect x="6" y="5" width="4" height="12" rx="1" />
+      <rect x="14" y="9" width="4" height="8" rx="1" />
+    </>
+  ),
   /* 白板浮动窗：展开（折叠态还原） */
   restoreDown: (
     <>

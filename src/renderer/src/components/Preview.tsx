@@ -34,6 +34,9 @@ export default function Preview() {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'ArrowLeft' && index > 0) openPreview(assets[index - 1].id)
       if (e.key === 'ArrowRight' && index < assets.length - 1) openPreview(assets[index + 1].id)
+      // 图库分页后预览列表只是「已加载」那部分：走到末尾就续借下一页，←→ 不会断在页边界
+      else if (e.key === 'ArrowRight' && useLibraryStore.getState().assetsHasMore)
+        void useLibraryStore.getState().loadMoreAssets()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)

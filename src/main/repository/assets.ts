@@ -127,7 +127,8 @@ export function queryAssets(q: AssetQuery): Asset[] {
     params.push(q.minW)
   }
   if (q.maxW && q.maxW > 0) {
-    where.push('width <= ?')
+    // width > 0：解码失败的素材尺寸记为 0，不加这条会命中所有「宽度 ≤ N」的筛选
+    where.push('width > 0 AND width <= ?')
     params.push(q.maxW)
   }
   if (q.minSizeKB && q.minSizeKB > 0) {
@@ -192,10 +193,12 @@ export function queryAssets(q: AssetQuery): Asset[] {
   const dir = q.sortDesc === false ? 'ASC' : 'DESC'
 
   const limit = q.color ? 20000 : q.limit ?? 1000
+  // 分页：ORDER BY 补 id 作次级键，同一毫秒批量导入的素材才不会在翻页时错位/重复；
+  // 色筛分支的偏移量在内存过滤之后切，SQL 侧必须 OFFSET 0
   const rows = stmt(
     db,
-    `SELECT * FROM assets WHERE ${where.join(' AND ')} ORDER BY ${sortCol} ${dir} LIMIT ?`
-  ).all(...params, limit) as AssetRow[]
+    `SELECT * FROM assets WHERE ${where.join(' AND ')} ORDER BY ${sortCol} ${dir}, id LIMIT ? OFFSET ?`
+  ).all(...params, limit, q.color ? 0 : q.offset ?? 0) as AssetRow[]
 
   let assets = rows.map(rowToAsset)
 
@@ -410,15 +413,17 @@ function hammingBytes(a: number[], b: number[], max: number): number {
  */
 export async function findDuplicates(maxDistance = 6): Promise<DupeGroup[]> {
   const db = getDb()
-  // 为旧导入的图片补算哈希
+  // 为旧导入的图片补算哈希（与 maintenance 同源：从 512 缩略图算，缩略图都没有的行直接跳过，
+  // 否则每次打开查重都会把解不动的 AI/HEIC 原图重解一遍）
   const missing = db
     .prepare("SELECT id, ext, rel_dir FROM assets WHERE hash = '' AND deleted_at IS NULL")
     .all() as { id: string; ext: string; rel_dir: string }[]
   const upd = db.prepare('UPDATE assets SET hash = ? WHERE id = ?')
   for (const row of missing) {
     if (assetKindOf(row.ext) !== 'image' || row.ext === 'svg') continue
-    const filePath = join(getLibraryPath(), row.rel_dir, `${row.id}.${row.ext}`)
-    const h = await computeDHash(filePath)
+    const thumbPath = join(getLibraryPath(), row.rel_dir, 'thumbnail.jpg')
+    if (!existsSync(thumbPath)) continue
+    const h = await computeDHash(thumbPath)
     if (h) upd.run(h, row.id)
   }
   const rows = db

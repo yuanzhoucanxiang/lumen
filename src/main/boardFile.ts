@@ -12,7 +12,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
-  addBoardItem,
+  addBoardItems,
   assetPaths,
   createBoard,
   listBoardItems,
@@ -20,9 +20,9 @@ import {
   queryAssets,
   updateAsset,
   updateBoardAppearance,
-  updateBoardGuides,
-  updateBoardItem
+  updateBoardGuides
 } from './repository'
+import type { NewBoardItem } from '../shared/types'
 import { getDb } from './db'
 import { importFiles } from './importer'
 import { logger } from './logger'
@@ -114,6 +114,8 @@ interface ManifestItem {
   shape: string | null
   flipX?: boolean
   flipY?: boolean
+  locked?: boolean
+  groupId?: string
 }
 
 interface Manifest {
@@ -208,7 +210,7 @@ export async function importBoardFromFile(filePath: string): Promise<{ boardId: 
 
     // 5. 重建元素（保持 z 顺序；asset 映射失败的丢弃）
     // 几何/样式字段来自外部文件，统一收敛为有限数值，防止垃圾数据进库影响画布与 SVG 导出
-    let imported = 0
+    const restored: NewBoardItem[] = []
     for (const it0 of manifest.items ?? []) {
       const it = {
         ...it0,
@@ -220,59 +222,38 @@ export async function importBoardFromFile(filePath: string): Promise<{ boardId: 
         opacity: Math.min(100, Math.max(0, toFinite(it0.opacity, 100))),
         noteFontSize: Math.min(200, Math.max(8, toFinite(it0.noteFontSize, 16)))
       }
-      if (it.type === 'asset' && it.assetId) {
-        const mappedId = idMap.get(it.assetId)
-        if (!mappedId) {
-          logger.warn('[boardFile]', `丢弃无图片元素: ${it.id}`)
-          continue
-        }
-        const row = await addItemSafe(board.id, {
-          assetId: mappedId,
-          type: 'asset',
-          x: it.x,
-          y: it.y,
-          width: it.width,
-          height: it.height,
-          text: ''
-        })
-        if (row) {
-          await updateBoardItem(row.id, { z: it.z, opacity: it.opacity, flipX: !!it.flipX, flipY: !!it.flipY })
-          imported++
-        }
-      } else if (it.type === 'note') {
-        const row = await addItemSafe(board.id, {
-          type: 'note',
-          x: it.x,
-          y: it.y,
-          width: it.width,
-          height: it.height,
-          text: it.text ?? ''
-        })
-        if (row) {
-          await updateBoardItem(row.id, {
-            z: it.z,
-            opacity: it.opacity,
-            noteFont: it.noteFont ?? '',
-            noteColor: it.noteColor ?? '',
-            noteFontSize: it.noteFontSize
-          })
-          imported++
-        }
-      } else if (it.type === 'shape' && it.shape) {
-        const row = await addItemSafe(board.id, {
-          type: 'shape',
-          x: it.x,
-          y: it.y,
-          width: it.width,
-          height: it.height,
-          shape: it.shape
-        })
-        if (row) {
-          await updateBoardItem(row.id, { z: it.z, opacity: it.opacity })
-          imported++
-        }
+      const type = it.type === 'asset' || it.type === 'note' || it.type === 'shape' ? it.type : null
+      if (!type) continue
+      if (type === 'asset' && !it.assetId) continue
+      const mappedId = type === 'asset' ? idMap.get(it.assetId as string) : undefined
+      if (type === 'asset' && !mappedId) {
+        logger.warn('[boardFile]', `丢弃无图片元素: ${it.id}`)
+        continue
       }
+      restored.push({
+        type,
+        assetId: mappedId ?? null,
+        x: it.x,
+        y: it.y,
+        width: it.width,
+        height: it.height,
+        // z 显式带上：批量插入不再自增到顶层，层级按文件原样还原
+        z: it.z,
+        opacity: it.opacity,
+        text: type === 'note' ? (it.text ?? '') : '',
+        shape: type === 'shape' ? it.shape : null,
+        noteFont: it.noteFont ?? '',
+        noteColor: it.noteColor ?? '',
+        noteFontSize: it.noteFontSize,
+        flipX: !!it.flipX,
+        flipY: !!it.flipY,
+        locked: !!it.locked,
+        // 组 id 是随机串,跨板不冲突,原样带上即可还原成组关系
+        groupId: typeof it.groupId === 'string' ? it.groupId : ''
+      })
     }
+    // 一趟事务建完（此前逐条 add + 逐条 update 回写 z，一个元素两笔写）
+    const imported = addBoardItems(board.id, restored).length
     logger.info('[boardFile]', `导入完成: 白板「${name}」${imported} 个元素`)
     return { boardId: board.id, name, imported }
   } finally {
@@ -291,15 +272,3 @@ export async function importBoardFromFile(filePath: string): Promise<{ boardId: 
   }
 }
 
-/** 与 addBoardItem 同签名但类型收窄（错误不抛出,记日志返回 null） */
-async function addItemSafe(
-  boardId: number,
-  item: { assetId?: string | null; type: 'asset' | 'note' | 'shape'; x: number; y: number; width: number; height: number; text?: string; shape?: string }
-): Promise<BoardItem | null> {
-  try {
-    return addBoardItem(boardId, item)
-  } catch (e) {
-    logger.warn('[boardFile]', `元素创建失败: ${(e as Error).message}`)
-    return null
-  }
-}

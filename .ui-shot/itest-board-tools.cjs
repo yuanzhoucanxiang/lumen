@@ -402,7 +402,8 @@ async function main() {
   await run(`(() => {
     const el = document.querySelector('[data-board-item="' + '${note.id}' + '"]')
     const b = el.getBoundingClientRect()
-    const mk = (type, x, y) => new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, pointerId: 32, isPrimary: true })
+    // Alt 关闭智能吸附：本用例断言的是「精确位移」，吸附会把元素吸到邻近边线上(实测差 1px)
+    const mk = (type, x, y) => new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, pointerId: 32, isPrimary: true, altKey: true })
     el.dispatchEvent(mk('pointerdown', b.left + 40, b.top + 20))
     el.dispatchEvent(mk('pointermove', b.left + 90, b.top + 50))
     el.dispatchEvent(mk('pointerup', b.left + 90, b.top + 50))

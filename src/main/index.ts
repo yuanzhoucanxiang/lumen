@@ -54,7 +54,10 @@ function ASSET_RESPONSE_HEADERS(mime: string, contentRange?: string, length?: st
     'Accept-Ranges': 'bytes',
     'X-Content-Type-Options': 'nosniff',
     'Access-Control-Allow-Origin': '*',
-    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    // 库内文件按 id 不可变（编辑过会换 URL 上的 e= 版本号），可安全缓存。
+    // 白板/图库元素滚出视口会被卸载，没有这条每次滚回都要重走协议 + existsSync + 读盘解码
+    'Cache-Control': 'max-age=86400, immutable'
   }
   if (contentRange) h['Content-Range'] = contentRange
   if (length) h['Content-Length'] = length

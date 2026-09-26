@@ -153,11 +153,12 @@ async function main() {
   const moved = await run(`
     const el = document.querySelector('[data-board-item]') // 元素顺序 = A 先
     const rect = el.getBoundingClientRect()
+    // Alt 关闭智能吸附：本用例断言精确位移，不能靠「吸附目标刚好等于原位」碰巧通过
     const down = new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: rect.left + 40, clientY: rect.top + 40, button: 0, pointerId: 2, isPrimary: true })
     el.dispatchEvent(down)
-    const move = new PointerEvent('pointermove', { bubbles: true, cancelable: true, clientX: rect.left + 100, clientY: rect.top + 80, button: 0, pointerId: 2, isPrimary: true })
+    const move = new PointerEvent('pointermove', { bubbles: true, cancelable: true, clientX: rect.left + 100, clientY: rect.top + 80, button: 0, pointerId: 2, isPrimary: true, altKey: true })
     el.dispatchEvent(move)
-    const up = new PointerEvent('pointerup', { bubbles: true, cancelable: true, clientX: rect.left + 100, clientY: rect.top + 80, button: 0, pointerId: 2, isPrimary: true })
+    const up = new PointerEvent('pointerup', { bubbles: true, cancelable: true, clientX: rect.left + 100, clientY: rect.top + 80, button: 0, pointerId: 2, isPrimary: true, altKey: true })
     el.dispatchEvent(up)
     await new Promise((r) => setTimeout(r, 300))
     return window.api.listBoardItems(${boardId})

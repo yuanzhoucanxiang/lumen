@@ -13,6 +13,16 @@ const RETRY_DELAYS = [8000, 30_000, 120_000, 600_000, 1_800_000]
 let autoRetryIndex = 0
 let autoRetryTimer: ReturnType<typeof setTimeout> | null = null
 
+/**
+ * 长跑进程的新版本发现：重试链在首个成功结果处终止，此前应用不重启就再也查不到新版本。
+ * 补两条静默通道——每 6h 一次，以及窗口获焦（距上次检查满 1h 才真的发请求，避免频繁切窗口打爆网络）。
+ * 两条通道都只在「没在下载、没已就绪」时工作，且不发「已是最新版本」提示。
+ */
+const PERIODIC_INTERVAL = 6 * 3600_000
+const CHECK_MIN_GAP = 3600_000
+/** 最近一次发起静默检查的时刻（周期/获焦/重试链共用，用于遵守 CHECK_MIN_GAP） */
+let lastCheckAt = 0
+
 /** UpdateInfo.releaseNotes 可能是字符串或数组，统一成纯文本 */
 function releaseNotesOf(info: { releaseNotes?: unknown }): string | undefined {
   const rn = info.releaseNotes
@@ -61,31 +71,46 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     }
   }
 
+  /**
+   * 发起一次静默检查。超时保护：网络抖动时 electron-updater 的请求可能无限挂起（无 error 事件），
+   * 用 Promise.race 强制超时，超时视为失败走 onFail。
+   */
+  const checkOnce = (onFail: () => void): void => {
+    lastCheckAt = Date.now()
+    const CHECK_TIMEOUT = 60_000
+    const check = autoUpdater.checkForUpdates()
+    Promise.race([check, new Promise((_, rej) => setTimeout(() => rej(new Error('检查超时')), CHECK_TIMEOUT))])
+      .then(() => {
+        autoRetryIndex = 0
+      })
+      .catch(onFail)
+  }
+
   /** 启动静默自动检查（失败/超时自动重试，直至成功或重试次数耗尽） */
   const scheduleAutoCheck = (delay: number): void => {
     if (autoRetryTimer) clearTimeout(autoRetryTimer)
     autoRetryTimer = setTimeout(() => {
       // 下载中/已完成时不再打扰(重复检查会触发 available 事件重置「已就绪」状态)
       if (lastStatus.state === 'downloading' || lastStatus.state === 'downloaded') return
-      // 超时保护：网络抖动时 electron-updater 的请求可能无限挂起（无 error 事件），
-      // 用 Promise.race 强制超时，超时视为失败走重试
-      const CHECK_TIMEOUT = 60_000
-      const check = autoUpdater.checkForUpdates()
-      Promise.race([check, new Promise((_, rej) => setTimeout(() => rej(new Error('检查超时')), CHECK_TIMEOUT))])
-        .then(() => {
-          autoRetryIndex = 0
-        })
-        .catch(() => {
-          // 静默检查失败：按计划重试（网络抖动常见），不打扰用户
-          if (autoRetryIndex < RETRY_DELAYS.length - 1) {
-            autoRetryIndex++
-            logger.warn('[updater]', `静默检查失败，${RETRY_DELAYS[autoRetryIndex] / 1000}s 后重试`)
-            scheduleAutoCheck(RETRY_DELAYS[autoRetryIndex])
-          } else {
-            logger.warn('[updater]', '静默检查重试次数耗尽，本次启动不再自动检查（可手动「检查更新」）')
-          }
-        })
+      checkOnce(() => {
+        // 静默检查失败：按计划重试（网络抖动常见），不打扰用户
+        if (autoRetryIndex < RETRY_DELAYS.length - 1) {
+          autoRetryIndex++
+          logger.warn('[updater]', `静默检查失败，${RETRY_DELAYS[autoRetryIndex] / 1000}s 后重试`)
+          scheduleAutoCheck(RETRY_DELAYS[autoRetryIndex])
+        } else {
+          logger.warn('[updater]', '静默检查重试次数耗尽（可手动「检查更新」，周期检查仍会继续）')
+        }
+      })
     }, delay)
+  }
+
+  /** 周期/获焦共用的机会性检查：不打扰下载流程，失败不重试（下个周期再来） */
+  const opportunisticCheck = (reason: string): void => {
+    if (lastStatus.state === 'downloading' || lastStatus.state === 'downloaded') return
+    if (Date.now() - lastCheckAt < CHECK_MIN_GAP) return
+    logger.info('[updater]', `${reason}触发静默检查`)
+    checkOnce(() => logger.warn('[updater]', `${reason}静默检查失败`))
   }
 
   autoUpdater.on('checking-for-update', () => send({ state: 'checking' }))
@@ -122,11 +147,15 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
 
   // 启动后延迟静默检查一次（失败按 RETRY_DELAYS 递增重试）
   scheduleAutoCheck(RETRY_DELAYS[0])
+  // 长跑进程兜底：周期检查 + 窗口获焦检查（应用常开数天不重启也能发现新版本）
+  setInterval(() => opportunisticCheck('周期'), PERIODIC_INTERVAL)
+  app.on('browser-window-focus', () => opportunisticCheck('窗口获焦'))
 
   ipcMain.handle('update:check', async () => {
     // 下载进行中/已完成时不重复检查:重复的 available 事件会重置进度卡片与「已就绪」角标
     if (lastStatus.state === 'downloading' || lastStatus.state === 'downloaded') return lastStatus
     manualCheck = true
+    lastCheckAt = Date.now() // 手动检查也算「刚查过」，避免紧随其后的获焦检查重复发请求
     try {
       await autoUpdater.checkForUpdates()
     } catch (e) {

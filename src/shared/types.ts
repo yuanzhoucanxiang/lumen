@@ -111,6 +111,10 @@ export interface BoardItem {
   flipX: boolean
   /** 垂直翻转 */
   flipY: boolean
+  /** 锁定：不可拖动/缩放/删除,仍可选中以便解锁 */
+  locked: boolean
+  /** 所属组 id（'' = 未成组；同组元素一起选中与变换） */
+  groupId: string
   /** shape 类型的规格 JSON（ShapeSpec） */
   shape: string | null
   createdAt: number
@@ -309,8 +313,29 @@ export interface UpdateStatus {
 
 /** 白板元素可更新字段（主进程/预加载/渲染层共用签名,防止误传 id/boardId 等） */
 export type BoardItemPatch = Partial<
-  Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'noteFontSize' | 'opacity' | 'shape' | 'flipX' | 'flipY'>
+  Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'noteFontSize' | 'opacity' | 'shape' | 'flipX' | 'flipY' | 'locked' | 'groupId'>
 >
+
+/** 新建白板元素的入参（z 可显式指定：导入/撤销恢复要还原原层级，不给则自增到顶层） */
+export interface NewBoardItem {
+  assetId?: string | null
+  type: 'asset' | 'note' | 'shape'
+  x: number
+  y: number
+  width: number
+  height: number
+  text?: string
+  shape?: string | null
+  opacity?: number
+  noteFont?: string
+  noteColor?: string
+  noteFontSize?: number
+  flipX?: boolean
+  flipY?: boolean
+  locked?: boolean
+  groupId?: string
+  z?: number
+}
 
 /** 视频扩展名集合（主进程导出/故事板与渲染层缩略图 URL 共用,避免两处漂移） */
 export const VIDEO_EXTS = ['mp4', 'webm', 'mov', 'mkv', 'avi', 'wmv', 'm4v']

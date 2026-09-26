@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { getDb } from '../db'
 import { stmt } from '../stmtCache'
-import type { Board, BoardItem } from '../../shared/types'
+import type { Board, BoardItem, BoardItemPatch, NewBoardItem } from '../../shared/types'
 
 export function listBoards(): Board[] {
   return stmt(
@@ -47,6 +47,8 @@ interface BoardItemRow {
   shape: string | null
   flip_x: number
   flip_y: number
+  locked: number
+  group_id: string
   created_at: number
 }
 
@@ -69,6 +71,8 @@ function rowToBoardItem(r: BoardItemRow): BoardItem {
     shape: r.shape ?? null,
     flipX: !!r.flip_x,
     flipY: !!r.flip_y,
+    locked: !!r.locked,
+    groupId: r.group_id ?? '',
     createdAt: r.created_at
   }
 }
@@ -76,61 +80,65 @@ function rowToBoardItem(r: BoardItemRow): BoardItem {
 export function listBoardItems(boardId: number): BoardItem[] {
   const rows = stmt(
     getDb(),
-    `SELECT id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, note_font_size, opacity, shape, flip_x, flip_y, created_at
+    `SELECT id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, note_font_size, opacity, shape, flip_x, flip_y, locked, group_id, created_at
        FROM board_items WHERE board_id = ? ORDER BY z ASC`
   ).all(boardId) as BoardItemRow[]
   return rows.map(rowToBoardItem)
 }
 
-/** 添加白板元素（asset / note / shape），返回完整元素 */
-export function addBoardItem(
-  boardId: number,
-  item: {
-    assetId?: string | null
-    type: 'asset' | 'note' | 'shape'
-    x: number
-    y: number
-    width: number
-    height: number
-    text?: string
-    shape?: string
-    opacity?: number
-    noteFont?: string
-    noteColor?: string
-    noteFontSize?: number
-    flipX?: boolean
-    flipY?: boolean
-  }
-): BoardItem {
+const INSERT_BOARD_ITEM = `INSERT INTO board_items (id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, note_font_size, opacity, shape, flip_x, flip_y, locked, group_id, created_at)
+ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+/**
+ * 批量添加元素（撤销恢复/粘贴/导入用）：一次 MAX(z) 查询 + 一个事务，
+ * 取代此前「循环里逐条 await addBoardItem」的 N 次 IPC 往返。
+ */
+export function addBoardItems(boardId: number, items: NewBoardItem[]): BoardItem[] {
+  if (items.length === 0) return []
   const db = getDb()
-  const id = randomUUID().replace(/-/g, '').slice(0, 16)
-  const z = (stmt(db, 'SELECT COALESCE(MAX(z), -1) + 1 AS z FROM board_items WHERE board_id = ?').get(boardId) as { z: number }).z
-  const createdAt = Date.now()
-  stmt(
-    db,
-    `INSERT INTO board_items (id, board_id, asset_id, type, x, y, width, height, z, text, note_font, note_color, note_font_size, opacity, shape, flip_x, flip_y, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    id,
-    boardId,
-    item.assetId ?? null,
-    item.type,
-    item.x,
-    item.y,
-    item.width,
-    item.height,
-    z,
-    item.text ?? '',
-    item.noteFont ?? '',
-    item.noteColor ?? '',
-    item.noteFontSize ?? 16,
-    item.opacity ?? 100,
-    item.shape ?? null,
-    item.flipX ? 1 : 0,
-    item.flipY ? 1 : 0,
-    createdAt
-  )
-  stmt(db, 'UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), boardId)
+  const now = Date.now()
+  let nextZ = (
+    stmt(db, 'SELECT COALESCE(MAX(z), -1) + 1 AS z FROM board_items WHERE board_id = ?').get(boardId) as {
+      z: number
+    }
+  ).z
+  const ins = stmt(db, INSERT_BOARD_ITEM)
+  const out: BoardItem[] = []
+  const run = db.transaction(() => {
+    for (const item of items) {
+      const id = randomUUID().replace(/-/g, '').slice(0, 16)
+      const z = item.z ?? nextZ++
+      ins.run(
+        id,
+        boardId,
+        item.assetId ?? null,
+        item.type,
+        item.x,
+        item.y,
+        item.width,
+        item.height,
+        z,
+        item.text ?? '',
+        item.noteFont ?? '',
+        item.noteColor ?? '',
+        item.noteFontSize ?? 16,
+        item.opacity ?? 100,
+        item.shape ?? null,
+        item.flipX ? 1 : 0,
+        item.flipY ? 1 : 0,
+        item.locked ? 1 : 0,
+        item.groupId ?? '',
+        now
+      )
+      out.push(boardItemOf(id, boardId, item, z, now))
+    }
+    stmt(db, 'UPDATE boards SET updated_at = ? WHERE id = ?').run(now, boardId)
+  })
+  run()
+  return out
+}
+
+function boardItemOf(id: string, boardId: number, item: NewBoardItem, z: number, createdAt: number): BoardItem {
   return {
     id,
     boardId,
@@ -149,94 +157,87 @@ export function addBoardItem(
     shape: item.shape ?? null,
     flipX: !!item.flipX,
     flipY: !!item.flipY,
+    locked: !!item.locked,
+    groupId: item.groupId ?? '',
     createdAt
   }
 }
 
-/** 更新白板元素（动态 SET，x/y/width/height/z/text/noteFont/noteColor/opacity/shape/flipX/flipY 可部分更新） */
-export function updateBoardItem(
-  id: string,
-  patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'noteFontSize' | 'opacity' | 'shape' | 'flipX' | 'flipY'>>
-): void {
-  const db = getDb()
+/** 添加白板元素（asset / note / shape），返回完整元素 */
+export function addBoardItem(boardId: number, item: NewBoardItem): BoardItem {
+  return addBoardItems(boardId, [item])[0]
+}
+
+/** 白板元素可部分更新的字段 → 列名 */
+const BOARD_ITEM_COLS = {
+  x: 'x',
+  y: 'y',
+  width: 'width',
+  height: 'height',
+  z: 'z',
+  text: 'text',
+  noteFont: 'note_font',
+  noteColor: 'note_color',
+  noteFontSize: 'note_font_size',
+  opacity: 'opacity',
+  shape: 'shape',
+  flipX: 'flip_x',
+  flipY: 'flip_y',
+  locked: 'locked',
+  groupId: 'group_id'
+} as const
+
+const PATCH_KEYS = Object.keys(BOARD_ITEM_COLS) as (keyof typeof BOARD_ITEM_COLS)[]
+
+/** 把 patch 编成 (SET 子句, 参数)；空 patch 返回 null */
+function buildPatch(patch: BoardItemPatch): { sets: string; params: unknown[] } | null {
   const sets: string[] = []
   const params: unknown[] = []
-  const colMap: Record<string, string> = {
-    x: 'x',
-    y: 'y',
-    width: 'width',
-    height: 'height',
-    z: 'z',
-    text: 'text',
-    noteFont: 'note_font',
-    noteColor: 'note_color',
-    noteFontSize: 'note_font_size',
-    opacity: 'opacity',
-    shape: 'shape',
-    flipX: 'flip_x',
-    flipY: 'flip_y'
-  }
-  for (const key of Object.keys(colMap) as (keyof typeof colMap)[]) {
-    const v = patch[key as keyof typeof patch]
+  for (const key of PATCH_KEYS) {
+    const v = patch[key]
     if (v !== undefined) {
-      sets.push(`${colMap[key]} = ?`)
+      sets.push(`${BOARD_ITEM_COLS[key]} = ?`)
       // better-sqlite3 不接受 boolean 绑定,统一转 0/1
       params.push(typeof v === 'boolean' ? (v ? 1 : 0) : v)
     }
   }
-  if (sets.length === 0) return
+  return sets.length > 0 ? { sets: sets.join(', '), params } : null
+}
+
+/** 更新白板元素（x/y/width/height/z/text/noteFont/noteColor/opacity/shape/flipX/flipY 可部分更新） */
+export function updateBoardItem(id: string, patch: BoardItemPatch): void {
+  const db = getDb()
+  const p = buildPatch(patch)
+  if (!p) return
   const row = stmt(db, 'SELECT board_id FROM board_items WHERE id = ?').get(id) as { board_id: number } | undefined
   if (!row) return
-  stmt(db, `UPDATE board_items SET ${sets.join(', ')} WHERE id = ?`).run(...params, id)
+  stmt(db, `UPDATE board_items SET ${p.sets} WHERE id = ?`).run(...p.params, id)
   stmt(db, 'UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), row.board_id)
 }
 
 /** 批量更新白板元素（组移动/组缩放等一次性落库，事务原子） */
-export function updateBoardItems(
-  items: { id: string; patch: Partial<Pick<BoardItem, 'x' | 'y' | 'width' | 'height' | 'z' | 'text' | 'noteFont' | 'noteColor' | 'noteFontSize' | 'opacity' | 'shape' | 'flipX' | 'flipY'>> }[]
-): void {
+export function updateBoardItems(items: { id: string; patch: BoardItemPatch }[]): void {
   if (items.length === 0) return
   const db = getDb()
-  const colMap: Record<string, string> = {
-    x: 'x',
-    y: 'y',
-    width: 'width',
-    height: 'height',
-    z: 'z',
-    text: 'text',
-    noteFont: 'note_font',
-    noteColor: 'note_color',
-    noteFontSize: 'note_font_size',
-    opacity: 'opacity',
-    shape: 'shape',
-    flipX: 'flip_x',
-    flipY: 'flip_y'
-  }
   const run = db.transaction(() => {
-    const touched = new Set<number>()
-    // 语句缓存:组拖拽每帧批量落库,SELECT/UPDATE 走缓存不再逐条重编译
-    const selBoard = stmt(db, 'SELECT board_id FROM board_items WHERE id = ?')
-    const touchBoard = stmt(db, 'UPDATE boards SET updated_at = ? WHERE id = ?')
+    // 整批只查一次归属板（此前逐行 SELECT board_id = N 条额外语句）；
+    // 一批元素总来自同一块白板，DISTINCT 只是防御性写法
+    const ids = items.map((i) => i.id)
+    const boards = stmt(
+      db,
+      `SELECT DISTINCT board_id FROM board_items WHERE id IN (${ids.map(() => '?').join(',')})`
+    ).all(...ids) as { board_id: number }[]
+    let touched = 0
     for (const { id, patch } of items) {
-      const sets: string[] = []
-      const params: unknown[] = []
-      for (const key of Object.keys(colMap) as (keyof typeof colMap)[]) {
-        const v = patch[key as keyof typeof patch]
-        if (v !== undefined) {
-          sets.push(`${colMap[key]} = ?`)
-          params.push(typeof v === 'boolean' ? (v ? 1 : 0) : v)
-        }
-      }
-      if (sets.length === 0) continue
-      const row = selBoard.get(id) as { board_id: number } | undefined
-      if (!row) continue
-      stmt(db, `UPDATE board_items SET ${sets.join(', ')} WHERE id = ?`).run(...params, id)
-      touched.add(row.board_id)
+      const p = buildPatch(patch)
+      if (!p) continue
+      // 同一批的 SET 形状通常一致，stmt 缓存按 SQL 文本命中
+      touched += stmt(db, `UPDATE board_items SET ${p.sets} WHERE id = ?`).run(...p.params, id).changes
     }
-    // updated_at 刷新并入事务：与元素更新原子提交
-    for (const boardId of touched) {
-      touchBoard.run(Date.now(), boardId)
-    }
+    if (touched === 0) return
+    const now = Date.now()
+    const touchBoard = stmt(db, 'UPDATE boards SET updated_at = ? WHERE id = ?')
+    for (const b of boards) touchBoard.run(now, b.board_id)
   })
   run()
 }
@@ -246,6 +247,24 @@ export function deleteBoardItem(id: string): void {
   const row = stmt(db, 'SELECT board_id FROM board_items WHERE id = ?').get(id) as { board_id: number } | undefined
   stmt(db, 'DELETE FROM board_items WHERE id = ?').run(id)
   if (row) stmt(db, 'UPDATE boards SET updated_at = ? WHERE id = ?').run(Date.now(), row.board_id)
+}
+
+/** 批量删除（撤销恢复/右键删除多选用）：一个事务 + 一次归属板查询，取代循环里逐条 await */
+export function deleteBoardItems(ids: string[]): void {
+  if (ids.length === 0) return
+  const db = getDb()
+  const run = db.transaction(() => {
+    const boards = stmt(
+      db,
+      `SELECT DISTINCT board_id FROM board_items WHERE id IN (${ids.map(() => '?').join(',')})`
+    ).all(...ids) as { board_id: number }[]
+    const del = stmt(db, 'DELETE FROM board_items WHERE id = ?')
+    for (const id of ids) del.run(id)
+    const now = Date.now()
+    const touchBoard = stmt(db, 'UPDATE boards SET updated_at = ? WHERE id = ?')
+    for (const b of boards) touchBoard.run(now, b.board_id)
+  })
+  run()
 }
 
 /** 置顶：z = 当前最大值 + 1（起点 -1 与 addBoardItem 一致,空画板首元素 z=0） */

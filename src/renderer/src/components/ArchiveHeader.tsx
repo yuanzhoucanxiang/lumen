@@ -15,6 +15,8 @@ export default function ArchiveHeader() {
   const terminal = pixel || cyber
   const view = useLibraryStore((s) => s.view)
   const assets = useLibraryStore((s) => s.assets)
+  /** 分页未取完时计数带 + 号（不带就会把"已加载 480"报成"共 480"） */
+  const assetsHasMore = useLibraryStore((s) => s.assetsHasMore)
   const folders = useLibraryStore((s) => s.folders)
   const tags = useLibraryStore((s) => s.tags)
   const selection = useLibraryStore((s) => s.selection)
@@ -47,7 +49,7 @@ export default function ArchiveHeader() {
         </div>
         <div className="archive-masthead__title-row">
           <h2>{title}</h2>
-          <span className="archive-masthead__count tnum">{String(assets.length).padStart(3, '0')} {pixel ? 'RECORDS' : cyber ? 'NODES' : 'FRAMES'}</span>
+          <span className="archive-masthead__count tnum">{String(assets.length).padStart(3, '0')}{assetsHasMore ? '+' : ''} {pixel ? 'RECORDS' : cyber ? 'NODES' : 'FRAMES'}</span>
         </div>
       </div>
 

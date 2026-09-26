@@ -190,7 +190,8 @@ export default function App() {
       } else if (matchesShortcut(e, sc.selectAll)) {
         if (inInput) return
         e.preventDefault()
-        s.setSelection(s.assets.map((a) => a.id))
+        // 图库分页后 assets 只是已加载部分，全选要走 store（会把剩余页取完）
+        void s.selectAllAssets()
       } else if (matchesShortcut(e, sc.preview)) {
         if (inInput) return
         e.preventDefault()

@@ -67,7 +67,11 @@ export async function cleanupOrphanAssets(
   return removed
 }
 
-/** 为 hash='' 的图片素材回填 dHash(启动时一次性,findDuplicates 查询时不再反复现算) */
+/**
+ * 为 hash='' 的图片素材回填 dHash(启动时一次性,findDuplicates 查询时不再反复现算)。
+ * 哈希一律取自 512 缩略图:与导入时同源,且 AI/HEIC 这类 sharp 解不动原图的素材
+ * 只要缩略图在就能补上;连缩略图都没有的行直接跳过,不再每次启动重扫一遍。
+ */
 export async function backfillMissingHashes(
   libPath: string = getLibraryPath(),
   db: Database.Database = getDb()
@@ -80,8 +84,9 @@ export async function backfillMissingHashes(
   let done = 0
   await mapWithConcurrency(rows, Math.max(1, cpus().length), async (row) => {
     if (assetKindOf(row.ext) !== 'image' || row.ext === 'svg') return
-    const filePath = join(libPath, row.rel_dir, `${row.id}.${row.ext}`)
-    const h = await computeDHash(filePath)
+    const thumbPath = join(libPath, row.rel_dir, 'thumbnail.jpg')
+    if (!existsSync(thumbPath)) return
+    const h = await computeDHash(thumbPath)
     if (h) {
       upd.run(h, row.id)
       done++

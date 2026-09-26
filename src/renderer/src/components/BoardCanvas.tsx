@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { assetThumbUrl, useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 import { useTheme } from '../theme'
-import type { Asset, BoardItem, BoardItemPatch, ShapeSpec } from '@shared/types'
+import type { Asset, BoardItem, BoardItemPatch, NewBoardItem, ShapeSpec } from '@shared/types'
 
 const ASSET_MIME = 'application/x-eaglelike-assets'
 
@@ -40,10 +40,18 @@ const BOARD_DROP_LONG_EDGE = 1280
  *  逐项滞回防抖动:渲染长边 >512 开原图、< ~358 切回缩略图(控制大图显存)。 */
 const ORIG_PX_UP = 512
 const ORIG_PX_DOWN = 512 * 0.7
+/**
+ * 同时挂原图的数量上限。判据只看「屏幕上被放大」，于是缩小视图下几百个元素
+ * 一起够格 → 几百张原图解码 + 显存直接顶穿。超了按屏幕尺寸排序取前 N，
+ * 反正越大的原图越需要那点对比度，小图用缩略图肉眼无差。
+ */
+const ORIG_MAX = 32
 /** 白板可直接用浏览器解码的扩展名(heic/psd/ai 等无浏览器原图,仍用缩略图) */
 const BOARD_ORIG_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'tiff', 'tif', 'svg'])
 /** 框选拖拽超过该距离(画布坐标 px)才视为框选而非点击 */
 const MARQUEE_THRESHOLD = 3
+/** 智能吸附容差（屏幕像素，除以缩放换算到画布坐标）：对标 Figma/PureRef 的对齐磁吸 */
+const SNAP_TOL = 6
 /** 形状描边默认样式（新绘制时使用,右键改样式后记忆） */
 const DEFAULT_SHAPE_STYLE = { color: '#5aa0ff', sw: 2.5 }
 /** 形状可选颜色 */
@@ -191,9 +199,13 @@ interface Rect {
  * - 空格+拖拽 / 中键平移
  * - 空白处拖拽 = 框选多选（Shift=追加），框选后组移动 / 组缩放（8 向手柄）
  * - 从图库拖素材进来（application/x-eaglelike-assets MIME）
- * - 元素：图片/视频/文字/矢量形状；拖动/8 向手柄缩放/Delete 删除/点击置顶
+ * - 元素：图片/视频/文字/矢量形状；拖动/8 向手柄缩放/Shift 等比缩放/Delete 删除/点击置顶
+ * - 拖动智能吸附到邻近元素边·中心与手动参考线（Alt 临时关闭）
+ * - 锁定（不可拖动/缩放/删除，仍可选中以便解锁）与成组（组内一起选中、一起变换）
+ * - 右键：对齐六向 / 图层置顶·置底·上下移一层 / 成组解组 / 锁定 / 透明度 / 翻转 / 排列分布
  * - 绘图工具：手绘/箭头/直线/矩形/椭圆/文字（tool prop 控制）
- * - 快捷键：Ctrl+Z/Y 撤销重做 / Ctrl+C/V/D 复制粘贴 / 方向键微调 / 0 复位 / ± 缩放 / F 适配
+ * - 快捷键：Ctrl+Z/Y 撤销重做 / Ctrl+C/V/D 复制粘贴 / Ctrl+G·Shift+G 成组解组 / Ctrl+L 锁定
+ *   / Ctrl+] 与 [ 图层移动（Shift 为置顶置底）/ 方向键微调 / 0 复位 / ± 缩放 / F 适配
  * - 双击空白适配全部内容；画布外观（背景色/网格）按白板持久化
  * - onApiReady 暴露缩放/适配/导出/工具控制给工具栏
  */
@@ -264,7 +276,6 @@ export default function BoardCanvas({
     }
   }, [assets, boardItems])
 
-  /* ---------- 视口状态 ---------- */
   const [viewport, setViewport] = useState<Viewport>({ s: 1, x: 0, y: 0 })
   const viewportRef = useRef(viewport)
   viewportRef.current = viewport
@@ -282,17 +293,20 @@ export default function BoardCanvas({
   const [origItems, setOrigItems] = useState<ReadonlySet<string>>(new Set())
   useEffect(() => {
     setOrigItems((prev) => {
-      const next = new Set<string>()
+      // 收集时带上屏幕尺寸：超过上限就按「屏幕上更大」的优先给原图
+      const want: { id: string; px: number }[] = []
       for (const it of boardItems) {
         if (it.type !== 'asset' || !it.assetId) continue
         const h = it.height > 0 ? it.height : it.width * (aspectCacheRef.current[it.assetId] ?? 0.75)
         const rendered = Math.max(it.width, h) * viewport.s
-        if (prev.has(it.id)) {
-          if (rendered > ORIG_PX_DOWN) next.add(it.id) // 已在原图:缩回阈值以下才切回
-        } else if (rendered >= ORIG_PX_UP) {
-          next.add(it.id) // 缩略图被放大:换原图
-        }
+        // 已在原图:缩回阈值以下才切回；不在原图:放大到阈值以上才换（滞回防抖动）
+        if (prev.has(it.id) ? rendered > ORIG_PX_DOWN : rendered >= ORIG_PX_UP) want.push({ id: it.id, px: rendered })
       }
+      if (want.length > ORIG_MAX) {
+        want.sort((a, b) => b.px - a.px)
+        want.length = ORIG_MAX
+      }
+      const next = new Set(want.map((w) => w.id))
       if (next.size !== prev.size) return next
       for (const id of next) if (!prev.has(id)) return next
       return prev
@@ -300,18 +314,32 @@ export default function BoardCanvas({
   }, [viewport.s, boardItems])
   /** 已成功加载原图的 assetId(驱动淡入,避免原图未就绪时的空白闪动) */
   const [origLoaded, setOrigLoaded] = useState<Set<string>>(new Set())
+
+  /**
+   * 素材/原图缓存按当前白板收敛：两者此前只增不减，来回切几块板就把用不到的
+   * Asset 对象与已加载标记一直留在内存里。缺的条目由上面的补查 effect 重新拉，
+   * 所以裁剪是安全的；没有东西可裁时保持原对象引用，避免无谓重渲染。
+   */
+  useEffect(() => {
+    const keep = new Set<string>()
+    for (const it of boardItems) if (it.assetId) keep.add(it.assetId)
+    setBoardAssetCache((cur) => {
+      const ids = Object.keys(cur)
+      if (ids.length === keep.size && ids.every((id) => keep.has(id))) return cur
+      const next: Record<string, Asset> = {}
+      for (const id of ids) if (keep.has(id)) next[id] = cur[id]
+      return next
+    })
+    setOrigLoaded((cur) => {
+      const gone = Array.from(cur).some((id) => !keep.has(id))
+      return gone ? new Set(Array.from(cur).filter((id) => keep.has(id))) : cur
+    })
+  }, [boardItems])
+
+  /* ---------- 视口状态 ---------- */
   const markOrigLoaded = (id: string): void => {
     setOrigLoaded((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
   }
-  /** 当前视口对应的画布可见矩形(供"仅视口内元素加载原图"判定) */
-  const viewportRect = (() => {
-    const frame = frameRef.current
-    if (!frame) return { x: -Infinity, y: -Infinity, w: Infinity, h: Infinity }
-    const r = frame.getBoundingClientRect()
-    const s = viewport.s
-    return { x: -viewport.x / s, y: -viewport.y / s, w: r.width / s, h: r.height / s }
-  })()
-
   /* ---------- 视口裁剪(千元素白板只渲染可见区) ----------
      首帧 frame 未布局,cullRect=null 时先渲染空 surface;
      useLayoutEffect 量帧后二次渲染(paint 前完成,无闪烁),之后裁剪生效。
@@ -320,14 +348,27 @@ export default function BoardCanvas({
   useLayoutEffect(() => {
     setFrameReady(true)
   }, [])
-  const cullRect = useMemo(() => {
+  /**
+   * 帧矩形量测：cullRect（渲染裁剪）与 viewportRect（原图加载）共用同一次
+   * getBoundingClientRect——此前每次渲染各量一次，等于每帧两轮强制同步布局。
+   */
+  const frameMetrics = useMemo(() => {
     const frame = frameRef.current
-    if (!frameReady || !frame) return null
+    if (!frame) return null
     const r = frame.getBoundingClientRect()
-    const v = viewport
-    const margin = Math.max(r.width, r.height) / v.s
-    return { x: -v.x / v.s - margin, y: -v.y / v.s - margin, w: r.width / v.s + margin * 2, h: r.height / v.s + margin * 2 }
+    const s = viewport.s
+    return { left: -viewport.x / s, top: -viewport.y / s, w: r.width / s, h: r.height / s, margin: Math.max(r.width, r.height) / s }
   }, [viewport, frameReady])
+  /** 当前视口对应的画布可见矩形(供"仅视口内元素加载原图"判定) */
+  const viewportRect = frameMetrics
+    ? { x: frameMetrics.left, y: frameMetrics.top, w: frameMetrics.w, h: frameMetrics.h }
+    : { x: -Infinity, y: -Infinity, w: Infinity, h: Infinity }
+  const cullRect = useMemo(() => {
+    if (!frameReady || !frameMetrics) return null
+    const m = frameMetrics
+    return { x: m.left - m.margin, y: m.top - m.margin, w: m.w + m.margin * 2, h: m.h + m.margin * 2 }
+  }, [frameMetrics, frameReady])
+
   // 平移期间 rAF 节流同步裁剪(每帧最多一次 setState;窗口失焦时 rAF 不调度,pointerup 兜底)
   const cullSyncPendingRef = useRef(false)
   // 窗口尺寸变化时强制一次渲染,重算裁剪矩形
@@ -436,30 +477,35 @@ export default function BoardCanvas({
       const c = curMap.get(t.id)
       if (!c) continue
       const patch: Record<string, string | number | null> = {}
-      for (const k of ['x', 'y', 'width', 'height', 'z', 'text', 'noteFont', 'noteColor', 'noteFontSize', 'opacity', 'shape'] as const) {
+      for (const k of ['x', 'y', 'width', 'height', 'z', 'text', 'noteFont', 'noteColor', 'noteFontSize', 'opacity', 'shape', 'flipX', 'flipY'] as const) {
         if (c[k] !== t[k]) patch[k] = t[k] as string | number | null
       }
       if (Object.keys(patch).length > 0) toUpdate.push({ id: t.id, patch })
     }
-    for (const id of toDelete) await window.api.deleteBoardItem(id)
-    for (const t of toAdd) {
-      const row = await window.api.addBoardItem(boardIdRef.current, {
-        type: t.type,
-        assetId: t.assetId,
-        x: t.x,
-        y: t.y,
-        width: t.width,
-        height: t.height,
-        text: t.text,
-        shape: t.shape ?? undefined,
-        opacity: t.opacity ?? 100,
-        noteFont: t.noteFont ?? '',
-        noteColor: t.noteColor ?? '',
-        noteFontSize: t.noteFontSize ?? 16
-      })
-      // 还原层级（addBoardItem 自增 z,快照里的 z 需显式恢复）
-      if (row.z !== t.z) await window.api.updateBoardItem(row.id, { z: t.z })
-    }
+    // 三类差异各一次批量 IPC（此前逐条 await：撤销一次 = 元素数 × 2 次 IPC 往返）
+    if (toDelete.length > 0) await window.api.deleteBoardItems(toDelete)
+    if (toAdd.length > 0)
+      await window.api.addBoardItems(
+        boardIdRef.current,
+        toAdd.map((t) => ({
+          type: t.type,
+          assetId: t.assetId,
+          x: t.x,
+          y: t.y,
+          width: t.width,
+          height: t.height,
+          text: t.text,
+          shape: t.shape,
+          opacity: t.opacity ?? 100,
+          noteFont: t.noteFont ?? '',
+          noteColor: t.noteColor ?? '',
+          noteFontSize: t.noteFontSize ?? 16,
+          flipX: t.flipX,
+          flipY: t.flipY,
+          // 快照里的层级原样还原（不给则 addBoardItems 自增到顶层）
+          z: t.z
+        }))
+      )
     if (toUpdate.length > 0) await window.api.updateBoardItems(toUpdate as { id: string; patch: Partial<BoardItem> }[])
     await refreshBoardItems(boardIdRef.current)
   }
@@ -508,8 +554,9 @@ export default function BoardCanvas({
     histBusyRef.current = true
     try {
       pushHistory()
-      for (const it of src) {
-        await window.api.addBoardItem(boardIdRef.current, {
+      await window.api.addBoardItems(
+        boardIdRef.current,
+        src.map((it) => ({
           type: it.type,
           assetId: it.assetId,
           x: Math.round(it.x + dx),
@@ -517,13 +564,16 @@ export default function BoardCanvas({
           width: it.width,
           height: it.height,
           text: it.text,
-          shape: it.shape ?? undefined,
+          shape: it.shape,
           opacity: it.opacity ?? 100,
           noteFont: it.noteFont ?? '',
           noteColor: it.noteColor ?? '',
-          noteFontSize: it.noteFontSize ?? 16
-        })
-      }
+          noteFontSize: it.noteFontSize ?? 16,
+          // 镜像必须跟着复制走（此前漏传，Ctrl+D 出来的图左右翻回正面）
+          flipX: it.flipX,
+          flipY: it.flipY
+        }))
+      )
       await refreshBoardItems(boardIdRef.current)
     } finally {
       histBusyRef.current = false
@@ -660,14 +710,80 @@ export default function BoardCanvas({
     startY: number
     origs: Map<string, Rect>
     bbox: Rect // resize 模式的原始组包围盒
+    /** Shift 等比缩放（resize 模式，随 pointermove 实时更新） */
+    lockAspect?: boolean
+    /** Alt 临时关闭吸附（随 pointermove 更新，松手落库沿用最后一帧的判定） */
+    snapOff?: boolean
   } | null>(null)
   // 组包围盒 DOM（缩放时直接改 style）
   const groupBoxRef = useRef<HTMLDivElement>(null)
+  /** 吸附线 DOM 池（拖动时直改 style；进 state 会让整棵画布每帧重渲染） */
+  const snapLinesRef = useRef<(HTMLDivElement | null)[]>([])
 
   // 素材宽高比缓存（用于 height=0 时自动计算）
   const [aspectCache, setAspectCache] = useState<Record<string, number>>({})
   const aspectCacheRef = useRef(aspectCache)
   aspectCacheRef.current = aspectCache
+
+  /**
+   * 元素 y 轴索引：按上边界升序 + 前缀最大下边界。
+   * 有了它，裁剪只需扫描「可能与视口相交」的那一段，而不是每帧把全量元素比一遍。
+   */
+  const yIndex = useMemo(() => {
+    const arr = boardItems.map((it, i) => ({
+      y: it.y,
+      bottom: it.y + (it.height > 0 ? it.height : it.width * (aspectCache[it.assetId ?? ''] ?? 0.75)),
+      i
+    }))
+    arr.sort((a, b) => a.y - b.y)
+    const maxBottom: number[] = new Array(arr.length)
+    let m = -Infinity
+    arr.forEach((e, k) => {
+      m = Math.max(m, e.bottom)
+      maxBottom[k] = m
+    })
+    return { arr, maxBottom }
+  }, [boardItems, aspectCache])
+
+  /** 视口内应渲染的元素（含一圈余量；正在编辑的文字豁免——卸载即丢编辑内容） */
+  const visibleItems = useMemo(() => {
+    if (!cullRect) return boardItems // 首帧未布局：先全渲染，量完帧后下一帧起裁剪生效
+    const top = cullRect.y
+    const bottom = cullRect.y + cullRect.h
+    const left = cullRect.x
+    const right = cullRect.x + cullRect.w
+    const { arr, maxBottom } = yIndex
+    // 下界：跳过整段都在视口上方的元素（maxBottom 单调不减，可二分）
+    let lo = 0
+    let hi = arr.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (maxBottom[mid] <= top) lo = mid + 1
+      else hi = mid
+    }
+    const start = lo
+    // 上界：arr 按 y 升序，第一个上边界越过视口下沿的即为终点
+    lo = start
+    hi = arr.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (arr[mid].y <= bottom) lo = mid + 1
+      else hi = mid
+    }
+    const picked: number[] = []
+    for (let k = start; k < lo; k++) {
+      const idx = arr[k].i
+      const it = boardItems[idx]
+      if (it.x + it.width > left && it.x < right) picked.push(idx)
+    }
+    if (editingNoteId) {
+      const at = boardItems.findIndex((i) => i.id === editingNoteId)
+      if (at >= 0 && !picked.includes(at)) picked.push(at)
+    }
+    // 数组下标即 z 顺序（listBoardItems 按 z 升序返回），排序保证叠放不被打乱
+    picked.sort((a, b) => a - b)
+    return picked.map((i) => boardItems[i])
+  }, [boardItems, cullRect, yIndex, editingNoteId])
 
   /* ---------- 右键菜单 ---------- */
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; itemId: string | null } | null>(null)
@@ -1143,6 +1259,7 @@ export default function BoardCanvas({
       let cursorX = originX
       let cursorY = originY
       let rowHeight = 0
+      const added: NewBoardItem[] = []
       for (let i = 0; i < ids.length; i++) {
         if (i > 0 && i % 3 === 0) {
           cursorX = originX
@@ -1154,33 +1271,25 @@ export default function BoardCanvas({
         const asset = assetById.get(ids[i]) ?? useLibraryStore.getState().assets.find((a) => a.id === ids[i])
         // 按原比例入板:长边取原像素尺寸、封顶 1280(不放大),比例保持
         let w = 240
+        let h = 0
         if (asset && asset.width > 0 && asset.height > 0) {
           const scale = Math.min(1, BOARD_DROP_LONG_EDGE / Math.max(asset.width, asset.height))
           w = Math.round(asset.width * scale)
-          const h = Math.round(asset.height * scale)
-          await window.api.addBoardItem(boardId, {
-            assetId: ids[i],
-            type: 'asset',
-            x: Math.round(cursorX),
-            y: Math.round(cursorY),
-            width: w,
-            height: h
-          })
-          cursorX += w
-          rowHeight = Math.max(rowHeight, h)
-        } else {
-          await window.api.addBoardItem(boardId, {
-            assetId: ids[i],
-            type: 'asset',
-            x: Math.round(cursorX),
-            y: Math.round(cursorY),
-            width: w,
-            height: 0
-          })
-          cursorX += w
-          rowHeight = Math.max(rowHeight, w * 0.75)
+          h = Math.round(asset.height * scale)
         }
+        added.push({
+          assetId: ids[i],
+          type: 'asset',
+          x: Math.round(cursorX),
+          y: Math.round(cursorY),
+          width: w,
+          height: h
+        })
+        cursorX += w
+        rowHeight = Math.max(rowHeight, h || w * 0.75)
       }
+      // 一次批量 IPC（此前逐个 await：拖 20 张 = 20 趟往返）
+      if (added.length > 0) await window.api.addBoardItems(boardId, added)
       await refreshBoardItems(boardId)
     },
     [assetById, boardId, refreshBoardItems]
@@ -1191,23 +1300,37 @@ export default function BoardCanvas({
   useEffect(() => {
     const frame = frameRef.current
     if (!frame) return
+    let wheelAcc = 0
+    let wheelAnchor = { x: 0, y: 0 }
+    let wheelRaf = 0
     const onWheelNative = (e: WheelEvent) => {
       e.preventDefault()
       // 元素拖动/缩放/平移进行中禁止滚轮缩放：松手落库按按下时的视口换算,
       // 中途变焦会让 dx/dy 与 origs 口径不一致,元素落错位置
       if (dragRef.current || panRef.current) return
+      // 合帧：一次滚动手势连发十几个 wheel 事件，逐事件 applyViewport 会让
+      // 全组件重渲染十几遍（还连带原图判定的全量遍历）。这里累加 delta、每帧只落一次。
+      wheelAcc += e.deltaY
       const rect = frame.getBoundingClientRect()
-      const v = viewportRef.current
-      const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.s * Math.exp(-e.deltaY * 0.0015)))
-      if (nextZoom === v.s) return
-      const anchorX = e.clientX - rect.left
-      const anchorY = e.clientY - rect.top
-      const boardX = (anchorX - v.x) / v.s
-      const boardY = (anchorY - v.y) / v.s
-      applyViewport({ s: nextZoom, x: anchorX - boardX * nextZoom, y: anchorY - boardY * nextZoom })
+      wheelAnchor = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+      if (wheelRaf) return
+      wheelRaf = requestAnimationFrame(() => {
+        wheelRaf = 0
+        const dy = wheelAcc
+        wheelAcc = 0
+        const v = viewportRef.current
+        const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.s * Math.exp(-dy * 0.0015)))
+        if (nextZoom === v.s) return
+        const boardX = (wheelAnchor.x - v.x) / v.s
+        const boardY = (wheelAnchor.y - v.y) / v.s
+        applyViewport({ s: nextZoom, x: wheelAnchor.x - boardX * nextZoom, y: wheelAnchor.y - boardY * nextZoom })
+      })
     }
     frame.addEventListener('wheel', onWheelNative, { passive: false })
-    return () => frame.removeEventListener('wheel', onWheelNative)
+    return () => {
+      frame.removeEventListener('wheel', onWheelNative)
+      if (wheelRaf) cancelAnimationFrame(wheelRaf)
+    }
   }, [applyViewport])
 
   /** 框选结束：把与框相交的元素加入/设为选中 */
@@ -1230,6 +1353,8 @@ export default function BoardCanvas({
     }
     if (rect.w === 0 && rect.h === 0) return
     const hit: string[] = []
+    const hitSet = new Set<string>()
+    const hitGroups = new Set<string>()
     for (const it of boardItemsRef.current) {
       const h = effHeight(it)
       const ix = it.x
@@ -1238,6 +1363,17 @@ export default function BoardCanvas({
       const ih = h
       if (rect.x < ix + iw && rect.x + rect.w > ix && rect.y < iy + ih && rect.y + rect.h > iy) {
         hit.push(it.id)
+        hitSet.add(it.id)
+        if (it.groupId) hitGroups.add(it.groupId)
+      }
+    }
+    // 框到成组元素的任一成员 = 整组入选（组是「一起动」的单位，半组入选会把组拆散）
+    if (hitGroups.size > 0) {
+      for (const it of boardItemsRef.current) {
+        if (it.groupId && hitGroups.has(it.groupId) && !hitSet.has(it.id)) {
+          hit.push(it.id)
+          hitSet.add(it.id)
+        }
       }
     }
     if (m.additive) {
@@ -1596,13 +1732,15 @@ export default function BoardCanvas({
       if (editable) return
       const key = e.key.toLowerCase()
       if (e.key === 'Delete' && selectedIdsRef.current.length > 0) {
-        const ids = [...selectedIdsRef.current]
-        setSel([])
+        // 锁定元素删不掉（Delete 与右键移除同一口径），否则误触就没法找回
+        const ids = boardItemsRef.current.filter((i) => selectedIdsRef.current.includes(i.id) && !i.locked).map((i) => i.id)
+        if (ids.length === 0) return
+        setSel(selectedIdsRef.current.filter((id) => !ids.includes(id)))
         // 逐个并发发起但不等待就刷新,listBoardItems 可能先于删除返回旧数据 → 已删元素"闪回"。
         // 等全部删除落库后再刷新。
         void (async () => {
           pushHistory()
-          await Promise.all(ids.map((id) => window.api.deleteBoardItem(id)))
+          await window.api.deleteBoardItems(ids)
           if (boardIdRef.current != null) await refreshBoardItems(boardIdRef.current)
         })()
         return
@@ -1637,6 +1775,26 @@ export default function BoardCanvas({
         if (key === 'y') {
           e.preventDefault()
           void redo()
+          return
+        }
+        // 成组 / 解组（对标 Figma Ctrl+G / Ctrl+Shift+G）
+        if (key === 'g') {
+          e.preventDefault()
+          if (e.shiftKey) void ungroupCtx()
+          else void groupCtx()
+          return
+        }
+        // 锁定 / 解锁（按当前选中态取反）
+        if (key === 'l') {
+          e.preventDefault()
+          void lockCtx(null)
+          return
+        }
+        // 图层：] 上移 / [ 下移，Shift 版为置顶 / 置底（对标 Figma）
+        if (key === ']' || key === '[') {
+          e.preventDefault()
+          const up = key === ']'
+          void reorderCtx(e.shiftKey ? (up ? 'front' : 'back') : up ? 'forward' : 'backward')
           return
         }
         return
@@ -1733,6 +1891,10 @@ export default function BoardCanvas({
   }
 
   /* ---------- 元素拖动 / 组移动 / 8 向缩放 / 组缩放 ---------- */
+  /** 命中元素 → 应选中的 id 集合：成组元素整组选中（组就是「一起动」的语义单位） */
+  const groupOf = (item: BoardItem): string[] =>
+    item.groupId ? boardItemsRef.current.filter((i) => i.groupId === item.groupId).map((i) => i.id) : [item.id]
+
   const onItemPointerDown = (e: React.PointerEvent, item: BoardItem, mode: 'move' | 'resize', dir?: ResizeDir) => {
     if (e.button !== 0) return
     focusFrame(e.target)
@@ -1746,11 +1908,17 @@ export default function BoardCanvas({
       /* 合成事件忽略 */
     }
     setCtxMenu(null)
+    // 锁定元素只选中、不拖动/缩放（否则只能删掉才能解锁）
+    if (item.locked) {
+      setSel(groupOf(item))
+      return
+    }
     // Shift 点击：切换选中（命中则并入组拖动,未命中则不拖动）
     if (e.shiftKey) {
       const cur = selectedIdsRef.current
-      const on = cur.includes(item.id)
-      const next = on ? cur.filter((x) => x !== item.id) : [...cur, item.id]
+      const hit = groupOf(item)
+      const on = hit.every((id) => cur.includes(id))
+      const next = on ? cur.filter((x) => !hit.includes(x)) : [...new Set([...cur, ...hit])]
       setSel(next)
       if (!on) {
         // 刚加入选中：整组拖动
@@ -1758,12 +1926,13 @@ export default function BoardCanvas({
       }
       return
     }
-    // 非 Shift：点击已选中元素 = 组拖动;点击未选中元素 = 单选后拖动
+    // 非 Shift：点击已选中元素 = 组拖动;点击未选中元素 = 单选（含所在组）后拖动
     if (isSelected(item.id)) {
       startDrag(selectedIdsRef.current, item, mode, dir, e)
     } else {
-      setSel([item.id])
-      startDrag([item.id], item, mode, dir, e)
+      const sel = groupOf(item)
+      setSel(sel)
+      startDrag(sel, item, mode, dir, e)
     }
   }
 
@@ -1780,7 +1949,8 @@ export default function BoardCanvas({
     let maxX = -Infinity
     let maxY = -Infinity
     for (const it of boardItemsRef.current) {
-      if (!ids.includes(it.id)) continue
+      // 锁定元素不参与组拖动/组缩放：混选时其余照常移动，锁定的留在原地
+      if (!ids.includes(it.id) || it.locked) continue
       const h = effHeight(it)
       const r = { x: it.x, y: it.y, w: it.width, h }
       origs.set(it.id, r)
@@ -1797,63 +1967,187 @@ export default function BoardCanvas({
       startX: e.clientX,
       startY: e.clientY,
       origs,
-      bbox: { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
+      bbox: { x: minX, y: minY, w: maxX - minX, h: maxY - minY },
+      lockAspect: mode === 'resize' && e.shiftKey
     }
     // 拖动开始即隐藏组包围盒（松手后恢复）
     if (groupBoxRef.current) groupBoxRef.current.style.display = 'none'
   }
 
-  /** 把拖动结果应用到各元素 DOM（不触发 React 渲染） */
-  const applyDragToDom = (e: React.PointerEvent) => {
-    const d = dragRef.current
-    if (!d) return
-    const dx = (e.clientX - d.startX) / viewportRef.current.s
-    const dy = (e.clientY - d.startY) / viewportRef.current.s
-    if (d.mode === 'move') {
-      for (const id of d.ids) {
-        const o = d.origs.get(id)
-        const el = itemEls.current.get(id)
-        if (o && el) {
-          el.style.left = `${o.x + dx}px`
-          el.style.top = `${o.y + dy}px`
+  /**
+   * 智能吸附：把被拖包围盒的「左/水平中/右」「顶/垂直中/底」贴到附近元素对应边或手动参考线上。
+   * 返回位移修正量与命中的吸附线位置（画布坐标）。
+   */
+  const snapOffsets = (box: Rect, moving: Set<string>) => {
+    const tol = SNAP_TOL / viewportRef.current.s
+    const vTargets: number[] = []
+    const hTargets: number[] = []
+    for (const g of guidesRef.current) {
+      // 参考线位置统一存在 x（旧数据可能只有 y,一并兜底）
+      const pos = g.x ?? g.y
+      if (pos == null) continue
+      if (g.horizontal) hTargets.push(pos)
+      else vTargets.push(pos)
+    }
+    for (const it of boardItemsRef.current) {
+      if (moving.has(it.id)) continue
+      vTargets.push(it.x, it.x + it.width / 2, it.x + it.width)
+      const h = effHeight(it)
+      hTargets.push(it.y, it.y + h / 2, it.y + h)
+    }
+    const pick = (edges: number[], targets: number[]) => {
+      let best: { off: number; line: number; dist: number } | null = null
+      for (const t of targets) {
+        for (const e of edges) {
+          const dist = Math.abs(t - e)
+          if (dist <= tol && (!best || dist < best.dist)) best = { off: t - e, line: t, dist }
         }
       }
-      return
+      return best
+    }
+    const v = pick([box.x, box.x + box.w / 2, box.x + box.w], vTargets)
+    const h = pick([box.y, box.y + box.h / 2, box.y + box.h], hTargets)
+    return { dx: v?.off ?? 0, dy: h?.off ?? 0, v: v ? [v.line] : [], h: h ? [h.line] : [] }
+  }
+
+  /** 吸附线绘制：只在命中时显示；线宽按缩放反算，屏幕上恒为 1px */
+  const paintSnapLines = (vLines: number[], hLines: number[], box: Rect | null) => {
+    const s = viewportRef.current.s
+    const thick = Math.max(0.5, 1 / s)
+    const pad = 48 / s
+    const put = (k: number, show: boolean, style: Record<string, string>) => {
+      const el = snapLinesRef.current[k]
+      if (!el) return
+      if (!show || !box) {
+        el.style.display = 'none'
+        return
+      }
+      Object.assign(el.style, { display: 'block', position: 'absolute', background: 'var(--accent)', zIndex: 4 }, style)
+    }
+    const v = vLines[0]
+    const h = hLines[0]
+    put(0, v !== undefined, { left: `${v ?? 0}px`, top: `${box ? box.y - pad : 0}px`, width: `${thick}px`, height: `${box ? box.h + pad * 2 : 0}px` })
+    put(1, h !== undefined, { left: `${box ? box.x - pad : 0}px`, top: `${h ?? 0}px`, width: `${box ? box.w + pad * 2 : 0}px`, height: `${thick}px` })
+    put(2, false, {})
+    put(3, false, {})
+  }
+
+  /** 拖动/缩放的落位计算：预览（DOM 直改）与松手落库共用同一套数学，避免两处口径漂移 */
+  const layoutDrag = (
+    d: NonNullable<typeof dragRef.current>,
+    dx: number,
+    dy: number,
+    opts: { snap: boolean; lockAspect: boolean }
+  ): { rects: Map<string, Rect>; vLines: number[]; hLines: number[]; box: Rect | null } => {
+    const rects = new Map<string, Rect>()
+    if (d.mode === 'move') {
+      let sx = Infinity
+      let sy = Infinity
+      let ex = -Infinity
+      let ey = -Infinity
+      for (const id of d.ids) {
+        const o = d.origs.get(id)
+        if (!o) continue
+        sx = Math.min(sx, o.x)
+        sy = Math.min(sy, o.y)
+        ex = Math.max(ex, o.x + o.w)
+        ey = Math.max(ey, o.y + o.h)
+      }
+      let ox = dx
+      let oy = dy
+      let vLines: number[] = []
+      let hLines: number[] = []
+      if (sx < ex) {
+        const box = { x: sx + dx, y: sy + dy, w: ex - sx, h: ey - sy }
+        if (opts.snap) {
+          const s = snapOffsets(box, new Set(d.ids))
+          ox += s.dx
+          oy += s.dy
+          vLines = s.v
+          hLines = s.h
+        }
+        box.x += ox - dx
+        box.y += oy - dy
+      }
+      for (const id of d.ids) {
+        const o = d.origs.get(id)
+        if (o) rects.set(id, { x: o.x + ox, y: o.y + oy, w: o.w, h: o.h })
+      }
+      return { rects, vLines, hLines, box: sx < ex ? { x: sx + ox, y: sy + oy, w: ex - sx, h: ey - sy } : null }
     }
     // 8 向缩放（组缩放 = 包围盒缩放后按比例映射每个元素）
     const dir = d.dir ?? 'se'
     const b = d.bbox
     let { x, y, w, h } = { x: b.x, y: b.y, w: b.w, h: b.h }
-    if (dir.includes('e')) w = Math.max(MIN_SIZE, b.w + dx)
-    if (dir.includes('s')) h = Math.max(MIN_SIZE, b.h + dy)
-    if (dir.includes('w')) {
-      const nw = Math.max(MIN_SIZE, b.w - dx)
-      x = b.x + (b.w - nw)
-      w = nw
-    }
-    if (dir.includes('n')) {
-      const nh = Math.max(MIN_SIZE, b.h - dy)
-      y = b.y + (b.h - nh)
-      h = nh
+    if (opts.lockAspect && b.w > 0 && b.h > 0) {
+      // Shift 等比：两轴取同一个缩放比（变化更大的那一轴说了算），短边跟随长边
+      const cands: number[] = []
+      if (dir.includes('e')) cands.push((b.w + dx) / b.w)
+      if (dir.includes('w')) cands.push((b.w - dx) / b.w)
+      if (dir.includes('s')) cands.push((b.h + dy) / b.h)
+      if (dir.includes('n')) cands.push((b.h - dy) / b.h)
+      let scale = cands.length > 0 ? cands.reduce((best, v) => (Math.abs(v - 1) > Math.abs(best - 1) ? v : best), cands[0]) : 1
+      scale = Math.max(MIN_SIZE / Math.max(b.w, b.h), scale)
+      w = Math.max(MIN_SIZE, b.w * scale)
+      h = Math.max(MIN_SIZE, b.h * scale)
+      if (dir.includes('w')) x = b.x + (b.w - w)
+      if (dir.includes('n')) y = b.y + (b.h - h)
+    } else {
+      if (dir.includes('e')) w = Math.max(MIN_SIZE, b.w + dx)
+      if (dir.includes('s')) h = Math.max(MIN_SIZE, b.h + dy)
+      if (dir.includes('w')) {
+        const nw = Math.max(MIN_SIZE, b.w - dx)
+        x = b.x + (b.w - nw)
+        w = nw
+      }
+      if (dir.includes('n')) {
+        const nh = Math.max(MIN_SIZE, b.h - dy)
+        y = b.y + (b.h - nh)
+        h = nh
+      }
     }
     const sx = b.w > 0 ? w / b.w : 1
     const sy = b.h > 0 ? h / b.h : 1
     for (const id of d.ids) {
       const o = d.origs.get(id)
+      if (o)
+        rects.set(id, {
+          x: x + (o.x - b.x) * sx,
+          y: y + (o.y - b.y) * sy,
+          w: Math.max(16, o.w * sx),
+          h: Math.max(16, o.h * sy)
+        })
+    }
+    return { rects, vLines: [], hLines: [], box: { x, y, w, h } }
+  }
+
+  const applyDragToDom = (e: React.PointerEvent) => {
+    const d = dragRef.current
+    if (!d) return
+    const s = viewportRef.current.s
+    const dx = (e.clientX - d.startX) / s
+    const dy = (e.clientY - d.startY) / s
+    d.lockAspect = d.mode === 'resize' && e.shiftKey
+    // Alt 临时关闭吸附（对标 Figma：需要精确错位摆放时按住 Alt）
+    d.snapOff = e.altKey
+    const { rects, vLines, hLines, box } = layoutDrag(d, dx, dy, { snap: !e.altKey, lockAspect: d.lockAspect })
+    for (const [id, r] of rects) {
       const el = itemEls.current.get(id)
-      if (o && el) {
-        el.style.left = `${x + (o.x - b.x) * sx}px`
-        el.style.top = `${y + (o.y - b.y) * sy}px`
-        el.style.width = `${Math.max(16, o.w * sx)}px`
-        el.style.height = `${Math.max(16, o.h * sy)}px`
+      if (!el) continue
+      el.style.left = `${r.x}px`
+      el.style.top = `${r.y}px`
+      if (d.mode === 'resize') {
+        el.style.width = `${r.w}px`
+        el.style.height = `${r.h}px`
       }
     }
-    // 组包围盒实时跟随
-    if (groupBoxRef.current) {
-      groupBoxRef.current.style.left = `${x}px`
-      groupBoxRef.current.style.top = `${y}px`
-      groupBoxRef.current.style.width = `${w}px`
-      groupBoxRef.current.style.height = `${h}px`
+    paintSnapLines(vLines, hLines, box)
+    // 组包围盒实时跟随（仅缩放模式；移动时按下即隐藏）
+    if (d.mode === 'resize' && box && groupBoxRef.current) {
+      groupBoxRef.current.style.left = `${box.x}px`
+      groupBoxRef.current.style.top = `${box.y}px`
+      groupBoxRef.current.style.width = `${box.w}px`
+      groupBoxRef.current.style.height = `${box.h}px`
     }
   }
 
@@ -1874,6 +2168,7 @@ export default function BoardCanvas({
       }
       dragRef.current = null
       if (groupBoxRef.current) groupBoxRef.current.style.display = 'flex'
+      paintSnapLines([], [], null)
       panRef.current = {
         startX: e.clientX,
         startY: e.clientY,
@@ -1892,6 +2187,7 @@ export default function BoardCanvas({
     if (!d) return
     dragRef.current = null
     if (groupBoxRef.current) groupBoxRef.current.style.display = 'flex'
+    paintSnapLines([], [], null)
     const rawDx = e.clientX - d.startX
     const rawDy = e.clientY - d.startY
     // 未发生位移的按下-松开 = 纯点击：交给随后的 click(选中/置顶)处理,
@@ -1901,42 +2197,26 @@ export default function BoardCanvas({
     suppressItemClickUntilRef.current = Date.now() + 240
     // 移动/缩放前入栈（此时 store 还是拖动前状态）
     pushHistory()
-    const dx = rawDx / viewportRef.current.s
-    const dy = rawDy / viewportRef.current.s
-    const updates: { id: string; patch: Partial<BoardItem> }[] = []
-    if (d.mode === 'move') {
-      for (const id of d.ids) {
-        const o = d.origs.get(id)
-        if (o) updates.push({ id, patch: { x: Math.round(o.x + dx), y: Math.round(o.y + dy) } })
+    const s = viewportRef.current.s
+    // 与预览同一套数学（吸附/等比沿用最后一帧的修饰键状态，避免松手瞬间跳几像素）
+    const { rects } = layoutDrag(d, rawDx / s, rawDy / s, { snap: !d.snapOff, lockAspect: !!d.lockAspect })
+    const updates: { id: string; patch: BoardItemPatch }[] = []
+    for (const [id, r] of rects) {
+      const o = d.origs.get(id)
+      if (!o) continue
+      const x = Math.round(r.x)
+      const y = Math.round(r.y)
+      const patch: BoardItemPatch = { x, y }
+      let changed = x !== Math.round(o.x) || y !== Math.round(o.y)
+      if (d.mode === 'resize') {
+        const width = Math.round(r.w)
+        const height = Math.round(r.h)
+        patch.width = width
+        patch.height = height
+        changed = changed || width !== Math.round(o.w) || height !== Math.round(o.h)
       }
-    } else {
-      const dir = d.dir ?? 'se'
-      const b = d.bbox
-      let { x, y, w, h } = { x: b.x, y: b.y, w: b.w, h: b.h }
-      if (dir.includes('e')) w = Math.max(MIN_SIZE, b.w + dx)
-      if (dir.includes('s')) h = Math.max(MIN_SIZE, b.h + dy)
-      if (dir.includes('w')) {
-        const nw = Math.max(MIN_SIZE, b.w - dx)
-        x = b.x + (b.w - nw)
-        w = nw
-      }
-      if (dir.includes('n')) {
-        const nh = Math.max(MIN_SIZE, b.h - dy)
-        y = b.y + (b.h - nh)
-        h = nh
-      }
-      const sx = b.w > 0 ? w / b.w : 1
-      const sy = b.h > 0 ? h / b.h : 1
-      for (const id of d.ids) {
-        const o = d.origs.get(id)
-        if (!o) continue
-        const nw = Math.max(16, o.w * sx)
-        const nh = Math.max(16, o.h * sy)
-        updates.push({
-          id,
-          patch: { x: Math.round(x + (o.x - b.x) * sx), y: Math.round(y + (o.y - b.y) * sy), width: Math.round(nw), height: Math.round(nh) }
-        })
-      }
+      // 组变换里没动过的成员不写库
+      if (changed) updates.push({ id, patch })
     }
     if (updates.length > 0) await window.api.updateBoardItems(updates)
     if (boardId != null) await refreshBoardItems(boardId)
@@ -1964,18 +2244,23 @@ export default function BoardCanvas({
     if (item && !isSelected(item.id)) setSel([item.id])
     setCtxMenu({ x: e.clientX, y: e.clientY, itemId: item?.id ?? null })
   }
-  /** 菜单作用对象：多选时作用于选中组,否则单元素/全部素材 */
+  /**
+   * 菜单/命令作用对象：多选时作用于选中组，否则作用于右键元素。
+   * 右键菜单关闭时（键盘 Ctrl+G / Ctrl+L / Ctrl+] 走的就是这条路）回落到当前选中集——
+   * 否则单选状态下所有键盘命令都会静默空转。
+   */
   const ctxTarget = (): BoardItem[] => {
     const ids = selectedIdsRef.current
     if (ids.length > 1) return boardItemsRef.current.filter((i) => ids.includes(i.id))
     if (ctxMenu?.itemId) return boardItemsRef.current.filter((i) => i.id === ctxMenu.itemId)
+    if (ids.length === 1) return boardItemsRef.current.filter((i) => i.id === ids[0])
     return []
   }
   const removeCtxItem = async () => {
-    const target = ctxTarget()
+    const target = ctxTarget().filter((i) => !i.locked)
     if (target.length > 0) {
       pushHistory()
-      for (const it of target) await window.api.deleteBoardItem(it.id)
+      await window.api.deleteBoardItems(target.map((i) => i.id))
       setSel([])
       if (boardId != null) await refreshBoardItems(boardId)
     }
@@ -2004,14 +2289,15 @@ export default function BoardCanvas({
     let gridX = startX
     let gridY = startY
     let assetIdx = 0
+    const updates: { id: string; patch: BoardItemPatch }[] = []
     for (const it of target) {
       // 高度口径与拖动包围盒一致（aspectCache 推算）
       const h = effHeight(it)
       if (mode === 'row') {
-        await window.api.updateBoardItem(it.id, { x: startX + cursor, y: startY })
+        updates.push({ id: it.id, patch: { x: startX + cursor, y: startY } })
         cursor += it.width
       } else if (mode === 'column') {
-        await window.api.updateBoardItem(it.id, { x: startX, y: startY + cursor })
+        updates.push({ id: it.id, patch: { x: startX, y: startY + cursor } })
         cursor += h
       } else {
         if (assetIdx > 0 && assetIdx % 3 === 0) {
@@ -2021,16 +2307,18 @@ export default function BoardCanvas({
         }
         if (it.type === 'asset') {
           // 网格排列统一素材卡片尺寸;note/shape 保持原尺寸,只摆位置(否则破坏文字/形状)
-          await window.api.updateBoardItem(it.id, { x: gridX, y: gridY, width: 240, height: Math.round(h) })
+          updates.push({ id: it.id, patch: { x: gridX, y: gridY, width: 240, height: Math.round(h) } })
           gridX += 240
         } else {
-          await window.api.updateBoardItem(it.id, { x: gridX, y: gridY })
+          updates.push({ id: it.id, patch: { x: gridX, y: gridY } })
           gridX += it.width
         }
         rowHeight = Math.max(rowHeight, h)
       }
       assetIdx++
     }
+    // 一次批量 IPC（此前逐条 await：排列 200 个元素 = 200 趟往返）
+    await window.api.updateBoardItems(updates)
     await refreshBoardItems(boardId)
     setCtxMenu(null)
   }
@@ -2085,6 +2373,115 @@ export default function BoardCanvas({
     await window.api.updateBoardItems(updates)
     if (boardId != null) await refreshBoardItems(boardId)
     setCtxMenu(null)
+  }
+  /** 批量落库 + 刷新（右键菜单各命令共用；刷新保持对象引用，不会让全画布重渲染） */
+  const commitPatches = async (updates: { id: string; patch: BoardItemPatch }[]): Promise<boolean> => {
+    if (updates.length === 0) return false
+    pushHistory()
+    await window.api.updateBoardItems(updates)
+    if (boardId != null) await refreshBoardItems(boardId)
+    return true
+  }
+  /** 锁定/解锁：locked 传 null = 按当前态取反（对标 PureRef 钉住参考图） */
+  const lockCtx = async (locked: boolean | null) => {
+    const targets = ctxTarget()
+    if (targets.length === 0) return
+    // 选中里有未锁定的就整体锁定，全已锁定才整体解锁
+    const next = locked ?? targets.some((it) => !it.locked)
+    if (await commitPatches(targets.map((it) => ({ id: it.id, patch: { locked: next } })))) setCtxMenu(null)
+  }
+  /** 成组：选中元素打同一个 groupId（已在组里的保留原组，不拆开别人的组） */
+  const groupCtx = async () => {
+    const targets = ctxTarget()
+    if (targets.length < 2) return
+    const gid = Math.random().toString(36).slice(2, 10)
+    if (await commitPatches(targets.map((it) => ({ id: it.id, patch: { groupId: it.groupId || gid } })))) setCtxMenu(null)
+  }
+  const ungroupCtx = async () => {
+    const targets = boardItemsRef.current.filter((i) => selectedIdsRef.current.includes(i.id) && i.groupId)
+    if (targets.length === 0) return
+    if (await commitPatches(targets.map((it) => ({ id: it.id, patch: { groupId: '' } })))) setCtxMenu(null)
+  }
+  /**
+   * 图层顺序：置顶 / 置底 / 上移一层 / 下移一层。
+   * z 是叠放的唯一依据（listBoardItems 按 z 升序，数组下标即绘制顺序），
+   * 所以这里只算目标顺序、把 z 重编号为下标，且只落库真正变化的行——
+   * 顺带把导入/撤销可能留下的重复 z 压实。
+   */
+  const reorderCtx = async (action: 'front' | 'back' | 'forward' | 'backward') => {
+    const targets = ctxTarget()
+    if (targets.length === 0) return
+    const all = boardItemsRef.current
+    const ids = new Set(targets.map((i) => i.id))
+    const arr = all.map((i) => i.id)
+    const moved = all.filter((i) => ids.has(i.id)).map((i) => i.id)
+    const rest = all.filter((i) => !ids.has(i.id)).map((i) => i.id)
+    if (action === 'front' || action === 'back') {
+      arr.length = 0
+      arr.push(...(action === 'front' ? [...rest, ...moved] : [...moved, ...rest]))
+    } else if (action === 'forward') {
+      // 自上而下冒泡：选中元素与它上面那个未选中元素交换
+      for (let k = arr.length - 2; k >= 0; k--) {
+        if (ids.has(arr[k]) && !ids.has(arr[k + 1])) [arr[k], arr[k + 1]] = [arr[k + 1], arr[k]]
+      }
+    } else {
+      for (let k = 1; k < arr.length; k++) {
+        if (ids.has(arr[k]) && !ids.has(arr[k - 1])) [arr[k], arr[k - 1]] = [arr[k - 1], arr[k]]
+      }
+    }
+    const before = new Map(all.map((i) => [i.id, i.z]))
+    const updates: { id: string; patch: BoardItemPatch }[] = []
+    arr.forEach((id, k) => {
+      if (before.get(id) !== k) updates.push({ id, patch: { z: k } })
+    })
+    if (updates.length === 0) {
+      setCtxMenu(null)
+      return
+    }
+    if (await commitPatches(updates)) setCtxMenu(null)
+  }
+  /**
+   * 多选对齐（对标 Figma/PureRef）：以选区包围盒为基准六向对齐。
+   * 高度口径与拖动包围盒一致（asset 的 height=0 走 aspectCache 推算），否则对齐到"看不见的边"。
+   */
+  const alignCtx = async (mode: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom') => {
+    const targets = ctxTarget()
+    if (targets.length < 2) return
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    const hs = new Map<string, number>()
+    for (const it of targets) {
+      const h = effHeight(it)
+      hs.set(it.id, h)
+      minX = Math.min(minX, it.x)
+      minY = Math.min(minY, it.y)
+      maxX = Math.max(maxX, it.x + it.width)
+      maxY = Math.max(maxY, it.y + h)
+    }
+    const updates: { id: string; patch: BoardItemPatch }[] = []
+    for (const it of targets) {
+      const h = hs.get(it.id) ?? effHeight(it)
+      const horizontal = mode === 'left' || mode === 'hcenter' || mode === 'right'
+      const before = horizontal ? it.x : it.y
+      const after =
+        mode === 'left'
+          ? minX
+          : mode === 'right'
+            ? maxX - it.width
+            : mode === 'hcenter'
+              ? (minX + maxX) / 2 - it.width / 2
+              : mode === 'top'
+                ? minY
+                : mode === 'bottom'
+                  ? maxY - h
+                  : (minY + maxY) / 2 - h / 2
+      const pos = Math.round(after)
+      if (pos === Math.round(before)) continue
+      updates.push({ id: it.id, patch: horizontal ? { x: pos } : { y: pos } })
+    }
+    if (await commitPatches(updates)) setCtxMenu(null)
   }
   const setActiveNoteStyle = async (patch: NoteStylePatch) => {
     setNoteDefaults((current) => ({ ...current, ...patch }))
@@ -2210,6 +2607,13 @@ export default function BoardCanvas({
       onDragOver={onDragOver}
       onDrop={onDrop}
       onContextMenu={(e) => openCtxMenu(e, null)}
+      onDoubleClick={(e) => {
+        // 双击空白 = 适配全部内容（工具栏 tooltip 一直这么写着，此前并没有实现）。
+        // 元素上的双击另有语义（文字进编辑），必须排除。
+        const el = e.target as HTMLElement
+        if (el.closest('[data-board-item]') || el.closest('[data-group-box]')) return
+        fitContent()
+      }}
     >
       {showTextStyleBar && (
         <div
@@ -2280,21 +2684,8 @@ export default function BoardCanvas({
           transformOrigin: '0 0'
         }}
       >
-        {boardItems.map((item) => {
+        {visibleItems.map((item) => {
           const autoH = item.height > 0 ? item.height : item.width * (aspectCache[item.assetId ?? ''] ?? 0.75)
-          // 视口裁剪:只渲染与可见区(含一圈余量)相交的元素;正在编辑的文字豁免(卸载即丢编辑内容)
-          if (
-            cullRect &&
-            item.id !== editingNoteId &&
-            !(
-              item.x + item.width > cullRect.x &&
-              item.x < cullRect.x + cullRect.w &&
-              item.y + autoH > cullRect.y &&
-              item.y < cullRect.y + cullRect.h
-            )
-          ) {
-            return null
-          }
           const asset = item.assetId ? assetById.get(item.assetId) : undefined
           const sel = isSelected(item.id)
           const editing = item.type === 'note' && editingNoteId === item.id
@@ -2343,6 +2734,20 @@ export default function BoardCanvas({
             />
           )
         })}
+
+        {/* 智能吸附线：拖动命中时由 paintSnapLines 直改 style（进 state 会让整棵画布每帧重渲染）*/}
+        {[0, 1, 2, 3].map((k) => (
+          <div
+            key={k}
+            ref={(el) => {
+              snapLinesRef.current[k] = el
+            }}
+            aria-hidden="true"
+            data-snap-line
+            className="pointer-events-none absolute"
+            style={{ display: 'none', zIndex: 100001 }}
+          />
+        ))}
 
         {/* 多选时的组包围盒 + 8 向组缩放手柄（照抄 MOTZ group-selection）。
             拖动/缩放进行中由 groupBoxRef.style.display='none' 隐藏(不读 ref 做条件渲染) */}
@@ -2477,7 +2882,15 @@ export default function BoardCanvas({
       {ctxMenu && (
         <div
           className="menu fixed z-[300] w-44 py-1"
-          style={{ left: Math.min(ctxMenu.x, window.innerWidth - 190), top: Math.min(ctxMenu.y, window.innerHeight - 220) }}
+          /* 菜单加了锁定/成组/图层/对齐后高度翻倍（note 元素那份实测 634px 内容 > 503px 可视）：
+             按视口钳高并显式开启纵向滚动，否则底部命令永远点不到。
+             modal-scroll 只定制滚动条外观、不设 overflow，所以 overflowY 必须自己写 */
+          style={{
+            left: Math.min(ctxMenu.x, window.innerWidth - 190),
+            top: Math.min(ctxMenu.y, Math.max(8, window.innerHeight - 460)),
+            maxHeight: `calc(100vh - ${Math.max(16, ctxMenu.y)}px)`,
+            overflowY: 'auto'
+          }}
           onPointerDown={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
@@ -2497,6 +2910,86 @@ export default function BoardCanvas({
                 <Icon name="copy" size={12} />
                 {multiSelected ? `复制（${selectedIds.length} 项）` : '复制'}
               </button>
+              {/* 锁定：锁住后不可拖动/缩放/删除，仍可选中以便解锁 */}
+              <button
+                aria-label={ctxItem.locked ? '解锁选中元素' : '锁定选中元素'}
+                className="flex w-full cursor-pointer items-center gap-1.5 px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                onClick={() => void lockCtx(null)}
+              >
+                <Icon name={ctxItem.locked ? 'lock' : 'unlock'} size={12} />
+                {ctxItem.locked ? '解锁' : '锁定'}
+                {multiSelected && `（${selectedIds.length} 项）`}
+              </button>
+              {/* 成组 / 解组（组内成员一起选中、一起变换） */}
+              {selectedIds.length >= 2 ? (
+                <button
+                  aria-label="成组"
+                  className="flex w-full cursor-pointer items-center gap-1.5 px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                  onClick={() => void groupCtx()}
+                >
+                  <Icon name="group" size={12} />
+                  成组（{selectedIds.length} 项）
+                </button>
+              ) : (
+                ctxItem.groupId && (
+                  <button
+                    aria-label="解组"
+                    className="flex w-full cursor-pointer items-center gap-1.5 px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                    onClick={() => void ungroupCtx()}
+                  >
+                    <Icon name="group" size={12} />
+                    解组
+                  </button>
+                )
+              )}
+              {/* 对齐（对标 Figma）：以选区包围盒为基准，仅多选时出现 */}
+              {multiSelected && (
+                <div className="flex items-center gap-1 px-4 py-1.5">
+                  <span className="mr-1 text-[10px] text-[var(--text-faint)]">对齐</span>
+                  {(
+                    [
+                      ['left', '左对齐', 'alignLeft'],
+                      ['hcenter', '水平居中', 'alignCenterH'],
+                      ['right', '右对齐', 'alignRight'],
+                      ['top', '顶对齐', 'alignTop'],
+                      ['vcenter', '垂直居中', 'alignMiddle'],
+                      ['bottom', '底对齐', 'alignBottom']
+                    ] as const
+                  ).map(([mode, label, icon]) => (
+                    <button
+                      key={mode}
+                      aria-label={label}
+                      title={label}
+                      className="flex h-5 flex-1 cursor-pointer items-center justify-center rounded-sm border border-[var(--border)] text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
+                      onClick={() => void alignCtx(mode)}
+                    >
+                      <Icon name={icon} size={12} />
+                    </button>
+                  ))}
+                </div>
+              )}
+              {/* 图层顺序（对标 Figma）：四个图标按钮一行，避免菜单被撑长 */}
+              <div className="flex items-center gap-1 px-4 py-1.5">
+                <span className="mr-1 text-[10px] text-[var(--text-faint)]">图层</span>
+                {(
+                  [
+                    ['front', '置顶', 'chevronUp'],
+                    ['forward', '上移一层', 'arrowUp'],
+                    ['backward', '下移一层', 'arrowDown'],
+                    ['back', '置底', 'chevronDown']
+                  ] as const
+                ).map(([action, label, icon]) => (
+                  <button
+                    key={action}
+                    aria-label={`图层${label}`}
+                    title={label}
+                    className="flex h-5 flex-1 cursor-pointer items-center justify-center rounded-sm border border-[var(--border)] text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
+                    onClick={() => void reorderCtx(action)}
+                  >
+                    <Icon name={icon} size={12} />
+                  </button>
+                ))}
+              </div>
               {ctxItem?.type === 'asset' && (
                 <>
                   <button
@@ -2972,7 +3465,16 @@ const BoardItemView = memo(function BoardItemView({
         </div>
       )}
       {/* 单选时的 8 向缩放手柄（照抄 MOTZ selection-handles） */}
-      {sel && !multiSelected && !editing && (
+      {/* 锁定标记：一眼看出哪些元素动不了（仍可选中以便解锁） */}
+      {item.locked && (
+        <span
+          aria-label="已锁定"
+          className="absolute -left-1 -top-1 z-[2] flex h-3.5 w-3.5 items-center justify-center rounded-sm bg-[var(--accent)] text-[var(--on-accent)]"
+        >
+          <Icon name="lock" size={9} strokeWidth={2.2} />
+        </span>
+      )}
+      {sel && !multiSelected && !editing && !item.locked && (
         <div className="pointer-events-none absolute -inset-1">
           {RESIZE_HANDLES.map((handle) => (
             <span

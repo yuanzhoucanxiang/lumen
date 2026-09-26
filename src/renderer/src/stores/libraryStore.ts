@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { VIDEO_EXTS } from '@shared/types'
-import type { Asset, Board, BoardItem, Folder, Tag, TagGroup } from '@shared/types'
+import type { Asset, AssetQuery, Board, BoardItem, Folder, Tag, TagGroup } from '@shared/types'
 
 export type ViewType =
   | { type: 'all' }
@@ -16,9 +16,21 @@ export type SortBy = 'imported' | 'name' | 'size' | 'star'
 
 export type LayoutMode = 'masonry' | 'grid' | 'list'
 
+/**
+ * 图库单页条数。此前渲染层不传 limit，主进程静默截断到 1000 条——
+ * 万级素材库滚到 1000 就再无内容，且首屏要把上千行的序列化与缩略图请求全压进一次。
+ */
+const ASSET_PAGE = 480
+
 interface LibraryState {
   assets: Asset[]
   loading: boolean
+  /** 当前筛选下还有未取回的下一页（万级库不再静默停在第一页） */
+  assetsHasMore: boolean
+  /** 下一页请求进行中（滚动反复触底时防重入） */
+  loadingMore: boolean
+  /** 最近一次取页所用的查询条件（不含 limit/offset），续借时复用同一口径 */
+  assetsQuery: AssetQuery
   tags: Tag[]
   tagGroups: TagGroup[]
   folders: Folder[]
@@ -79,6 +91,10 @@ interface LibraryState {
   setLayout: (l: LayoutMode) => void
 
   refreshAssets: () => Promise<void>
+  /** 图库触底续借下一页（AI/相似搜索模式不分页） */
+  loadMoreAssets: () => Promise<void>
+  /** 全选当前筛选下的全部素材（会先把未加载的页取完） */
+  selectAllAssets: () => Promise<void>
   refreshTags: () => Promise<void>
   refreshTagGroups: () => Promise<void>
   refreshFolders: () => Promise<void>
@@ -149,9 +165,26 @@ async function autoAiAfterImport(importedCount: number): Promise<void> {
   }
 }
 
+/**
+ * 白板元素逐字段比较。全量重拉（listBoardItems 每行 rows.map 新建对象）会让视口内
+ * **所有**元素的 React.memo 集体失效——拖动 1 个元素却重渲染整屏，所以未变化的元素必须沿用旧引用。
+ * 这里按对象键遍历而不是手写字段清单：BoardItem 加字段时（locked/groupId 就踩过）
+ * 手写清单会静默漏比对新字段，把真实变化当成"没变"沿旧引用，界面从此不更新。
+ */
+function sameBoardItem(a: BoardItem, b: BoardItem): boolean {
+  const keys = Object.keys(b) as (keyof BoardItem)[]
+  for (const k of keys) {
+    if (a[k] !== b[k]) return false
+  }
+  return true
+}
+
 export const useLibraryStore = create<LibraryState>((set, get) => ({
   assets: [],
   loading: false,
+  assetsHasMore: false,
+  loadingMore: false,
+  assetsQuery: {},
   tags: [],
   tagGroups: [],
   folders: [],
@@ -338,10 +371,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         set({ loading: false })
         return
       }
-      // 以图搜图模式：走相似度查询，忽略常规筛选
+      // 以图搜图模式：走相似度查询，忽略常规筛选（相似度结果集不分页）
       if (s.similarTo) {
         const assets = await window.api.findSimilar(s.similarTo.id)
-        set({ assets, loading: false })
+        set({ assets, assetsQuery: {}, assetsHasMore: false, loading: false })
         return
       }
       const view = s.view
@@ -363,13 +396,15 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           }
         }
       }
-      const assets = await window.api.queryAssets({
+      const assetsQuery: AssetQuery = {
         keyword: s.keyword || undefined,
         exts: s.extFilters.length > 0 ? s.extFilters : undefined,
         color: s.colorFilter?.hex,
         colorTolerance: s.colorFilter?.tolerance,
         colorCountMax: s.colorCountMax || undefined,
-        starMin: s.starMin || undefined,
+        // 「已收藏」视图改走服务端 star 过滤:此前是取回一页再客户端 filter star>0,
+        // 分页下会让每页条数不齐、offset 错位；star>=1 与 star>0 等价
+        starMin: view.type === 'starred' ? Math.max(s.starMin, 1) : s.starMin || undefined,
         untagged: s.untagged || undefined,
         withinDays: s.withinDays || undefined,
         sortBy: s.sortBy,
@@ -378,21 +413,69 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         folderId: view.type === 'folder' && !smartQuery ? view.id : undefined,
         tagIds: view.type === 'tag' ? [view.id] : undefined,
         ...(smartQuery ?? {})
+      }
+      const first = await window.api.queryAssets({ ...assetsQuery, limit: ASSET_PAGE, offset: 0 })
+      set({
+        assets: first,
+        assetsQuery,
+        assetsHasMore: first.length === ASSET_PAGE,
+        loading: false
       })
-      let result = assets
-      if (view.type === 'starred') result = assets.filter((a) => a.star > 0)
-      set({ assets: result, loading: false })
     } catch {
       set({ loading: false })
     }
+  },
+
+  loadMoreAssets: async () => {
+    const s = get()
+    if (!s.assetsHasMore || s.loadingMore || s.loading || s.aiSearch || s.similarTo) return
+    set({ loadingMore: true })
+    try {
+      const page = await window.api.queryAssets({ ...s.assetsQuery, limit: ASSET_PAGE, offset: s.assets.length })
+      const cur = get().assets
+      // 请求期间列表被 refreshAssets 重置过(改了筛选/切了视图)：这一页属于旧查询，整页丢弃
+      const stale = get().assetsQuery !== s.assetsQuery
+      const seen = new Set(cur.map((a) => a.id))
+      set({
+        assets: stale || page.length === 0 ? cur : [...cur, ...page.filter((a) => !seen.has(a.id))],
+        assetsHasMore: stale ? get().assetsHasMore : page.length === ASSET_PAGE,
+        loadingMore: false
+      })
+    } catch {
+      set({ loadingMore: false })
+    }
+  },
+
+  /** 全选当前筛选下的全部素材：分页后「看到的」不再等于「全部的」，Ctrl+A 得先把剩余页取完 */
+  selectAllAssets: async () => {
+    const s = get()
+    if (s.aiSearch || s.similarTo) {
+      set({ selection: s.assets.map((a) => a.id) })
+      return
+    }
+    // 正常在 assetsHasMore 转 false 时退出；100 页(4.8 万条)上限只是兜底
+    for (let i = 0; i < 100 && get().assetsHasMore; i++) await get().loadMoreAssets()
+    set({ selection: get().assets.map((a) => a.id) })
   },
 
   refreshTags: async () => set({ tags: await window.api.listTags() }),
   refreshTagGroups: async () => set({ tagGroups: await window.api.listTagGroups() }),
   refreshFolders: async () => set({ folders: await window.api.listFolders() }),
   refreshBoards: async () => set({ boards: await window.api.listBoards() }),
-  refreshBoardItems: async (boardId) =>
-    set({ boardItems: await window.api.listBoardItems(boardId), boardItemsBoardId: boardId }),
+  refreshBoardItems: async (boardId) => {
+    const rows = await window.api.listBoardItems(boardId)
+    const prev = get().boardItems
+    const prevById = new Map(prev.map((i) => [i.id, i]))
+    let changed = prev.length !== rows.length
+    const merged = rows.map((r) => {
+      const old = prevById.get(r.id)
+      if (old && sameBoardItem(old, r)) return old
+      changed = true
+      return r
+    })
+    // 一个字段都没变时连数组身份都不换（数组一变，父级 map 与依赖它的 memo 全部重算）
+    set({ boardItems: changed ? merged : prev, boardItemsBoardId: boardId })
+  },
   refreshStats: async () => set({ stats: await window.api.getLibraryStats() }),
 
   refreshAll: async () => {
@@ -479,7 +562,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   setAiSearchResults: (query, assets) => {
     const s = get()
     if (s.aiSearchPending !== query) return // 搜索期间用户已退出/切视图，丢弃过期结果
-    set({ aiSearch: { query }, assets, similarTo: null, selection: [], previewId: null, loading: false, aiSearchPending: null })
+    set({ aiSearch: { query }, assets, similarTo: null, selection: [], previewId: null, loading: false, aiSearchPending: null, assetsHasMore: false })
   },
   setAiSearchPending: (q) => set({ aiSearchPending: q }),
   clearAiSearch: () => {

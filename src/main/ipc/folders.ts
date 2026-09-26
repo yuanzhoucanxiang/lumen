@@ -1,5 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron'
-import { addToFolder, createFolder, deleteFolder, listFolders, removeFromFolder, renameFolder, updateSmartFolder } from '../repository'
+import { addToFolder, createFolder, deleteFolder, listFolders, moveFolder, removeFromFolder, renameFolder, updateSmartFolder } from '../repository'
 
 export function registerFoldersIpc(getWindow: () => BrowserWindow | null): void {
   /* ---------------- 文件夹 ---------------- */
@@ -11,6 +11,9 @@ export function registerFoldersIpc(getWindow: () => BrowserWindow | null): void 
     updateSmartFolder(id, name, conditions)
   )
   ipcMain.handle('folders:rename', (_e, id: number, name: string) => renameFolder(id, name))
+  ipcMain.handle('folders:move', (_e, id: number, targetParentId: number | null) =>
+    moveFolder(id, targetParentId ?? null)
+  )
   ipcMain.handle('folders:delete', (_e, id: number) => deleteFolder(id))
   ipcMain.handle('folders:addAssets', (_e, assetIds: string[], folderId: number) =>
     addToFolder(assetIds, folderId)
