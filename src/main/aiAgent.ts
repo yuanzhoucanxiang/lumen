@@ -7,10 +7,10 @@
  * 而非 function calling：兼容各家 OpenAI 兼容模型，容错解析复用 aiSearch 的 extractJson。
  * 只读——本模块不写库，写操作（打标签/存智能文件夹）留待后续版本。
  */
-import { listTags, libraryStats, queryAssets } from './repository'
+import { listTags, libraryStats, queryAssets, getAssetById } from './repository'
 import { logger } from './logger'
 import { chat } from './aiClient'
-import { extractJson } from './aiSearch'
+import { extractJson, rankByVision } from './aiSearch'
 import type { AiConfig, ChatTurn } from './aiClient'
 import type {
   AgentAssetBrief,
@@ -201,10 +201,10 @@ function buildPrompt(message: string): string {
     `- minW / maxW: 宽度像素(数字)\n` +
     `- sortBy: "imported"导入时间 / "name"名称 / "size"文件大小 / "star"星级;sortDesc: true 降序\n\n` +
     `标签库(只能从中挑选,没有匹配就省略 tags):${tagLib || '(空)'}\n` +
-    `素材库现状: 共 ${stats.total} 个素材\n\n` +
+    `素材库现状: 共 ${stats.total} 个素材(其中 AI 助手导入 ${stats.agent} 个,回收站 ${stats.deleted} 个)\n\n` +
     `要求:\n` +
     `1. 只返回 JSON,不要任何解释文字:{"reply":"给用户的简短中文回复(一句话)","conditions":{...}}\n` +
-    `2. 用户只是闲聊/提问、无法转成检索条件时,conditions 返回 null\n` +
+    `2. 用户只是闲聊/提问、无法转成检索条件时,conditions 返回 null——如果是问库的统计(如"库里有多少张"),直接在 reply 里用上面的现状数据回答\n` +
     `3. 多轮对话要结合上文:用户说"再暗一点""换成竖图"等,必须在上轮条件基础上调整后输出完整条件\n` +
     `4. 不要编造标签库里没有的标签;拿不准的字段宁可省略\n\n` +
     `用户本轮:${message}\n\n` +
@@ -214,7 +214,7 @@ function buildPrompt(message: string): string {
 
 /**
  * 一轮对话：模型 → JSON 指令 → 条件映射 → 查库 → 回复。
- * 失败兜底：模型输出无法解析时，把原文当回复返回（conditions=null），不抛错打断对话。
+ * 失败兜底：模型输出无法解析为 JSON 时自动重试一次（附严格格式提醒）；仍失败则把原文当回复返回，不抛错打断对话。
  */
 export async function agentChatTurn(
   message: string,
@@ -228,11 +228,27 @@ export async function agentChatTurn(
 
   const prompt = buildPrompt(trimmed)
   // maxTokens 给足:推理型模型思考链与正文共享预算
-  const content = await chat(cfg, prompt, undefined, 1500, 90_000, 0.2, history)
-  const obj = extractJson(content)
+  let content = await chat(cfg, prompt, undefined, 1500, 90_000, 0.2, history)
+  let obj = extractJson(content)
 
   if (!obj) {
-    logger.warn('[aiAgent]', `模型输出无法解析为 JSON: ${content.slice(0, 120)}`)
+    // 重试一次:附严格格式提醒(推理型模型偶发把说明文字混进输出)
+    logger.warn('[aiAgent]', `首轮输出无法解析,重试: ${content.slice(0, 120)}`)
+    const retry = await chat(
+      cfg,
+      `${prompt}\n\n(重要:你上一次的回复无法解析。这次必须只输出一个 JSON 对象,以 { 开头以 } 结尾,不要任何其他文字。)`.trim(),
+      undefined,
+      1500,
+      90_000,
+      0.1,
+      history
+    )
+    obj = extractJson(retry)
+    if (obj) content = retry
+  }
+
+  if (!obj) {
+    logger.warn('[aiAgent]', `重试后仍无法解析: ${content.slice(0, 120)}`)
     return {
       reply: content.trim().slice(0, 300) || '（AI 没有返回可用的结果，换个说法再试试）',
       conditions: null,
@@ -256,4 +272,34 @@ export async function agentChatTurn(
 
   const result = executeAgentConditions(conditions)
   return { reply, conditions, smart: agentConditionsToSmart(conditions), raw: content, ...result }
+}
+
+/**
+ * AI 视觉重排（里程碑 164）：对助手已检索到的一批素材按查询意图做视觉相关性重排。
+ * 复用 aiSearch 的 rankByVision 管线（缩略图分批发视觉模型打分）。
+ * 处理「感觉上像 XX」这类无法结构化表达的查询；scores 挂在 brief.score 上（未打分的排后面）。
+ */
+export async function agentRerank(
+  query: string,
+  ids: string[],
+  cfg: AiConfig,
+  onProgress: (phase: string, done: number, total: number) => void
+): Promise<AgentAssetBrief[]> {
+  const assets = ids.map((id) => getAssetById(id)).filter((a): a is NonNullable<typeof a> => !!a)
+  if (assets.length === 0) return []
+  const scores = await rankByVision(query, assets, cfg, onProgress)
+  if (scores.size === 0) return [] // 全部批次失败:调用方保留原顺序并提示
+  return assets
+    .map((a) => ({
+      id: a.id,
+      name: a.name,
+      ext: a.ext,
+      width: a.width,
+      height: a.height,
+      star: a.star,
+      source: a.source,
+      tags: a.tagNames ?? [],
+      score: scores.get(a.id)
+    }))
+    .sort((x, y) => (y.score ?? -1) - (x.score ?? -1))
 }

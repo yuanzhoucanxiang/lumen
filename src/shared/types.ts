@@ -174,6 +174,8 @@ export interface AgentAssetBrief {
   star: number
   source: string
   tags: string[]
+  /** 视觉重排后的相关性得分(0-10;未重排时缺省) */
+  score?: number
 }
 
 export interface AgentSearchResult {

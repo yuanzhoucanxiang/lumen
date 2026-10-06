@@ -229,6 +229,10 @@ export default function App() {
           input.focus()
           input.select()
         }
+      } else if (matchesShortcut(e, sc.toggleAssistant)) {
+        // 助手面板开关(允许在输入框内触发——它是全局面板而非图库操作)
+        e.preventDefault()
+        useLibraryStore.getState().toggleAgentPanel()
       } else if (/^[1-5]$/.test(e.key) && !e.ctrlKey && !e.metaKey) {
         if (inInput) return
         const id = s.selection[0]

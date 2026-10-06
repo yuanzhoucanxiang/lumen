@@ -1,7 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { aiApplySuggestions, aiProcessBatch, aiSuggestBatch, testAiConnection } from '../aiRename'
 import { aiSearch } from '../aiSearch'
-import { agentChatTurn, agentSearchFull, executeAgentConditions } from '../aiAgent'
+import { agentChatTurn, agentSearchFull, agentRerank, executeAgentConditions } from '../aiAgent'
 import { normalizeAiBaseUrl } from '../aiClient'
 import { loadConfig } from '../library'
 import { isUnnamedName, queryAssets } from '../repository'
@@ -105,4 +105,21 @@ export function registerAiIpc(getWindow: () => BrowserWindow | null): void {
 
   // 全量结果（完整 Asset）：「在素材库中查看」把助手结果铺进图库视图
   ipcMain.handle('ai:agentSearchFull', (_e, conditions: unknown) => agentSearchFull(conditions))
+
+  // AI 视觉重排：对助手已检索到的素材按查询意图做视觉相关性重排（复用 aiSearch 的视觉精排管线）
+  ipcMain.handle(
+    'ai:agentRerank',
+    async (_e, query: string, ids: string[]) => {
+      const cfg = loadConfig()
+      if (!cfg.aiApiKey) throw new Error('未配置 AI API Key，请在设置页填写')
+      const safeIds = Array.isArray(ids) ? ids.filter((x) => typeof x === 'string').slice(0, 60) : []
+      if (!query?.trim() || safeIds.length === 0) return []
+      return agentRerank(
+        query.trim(),
+        safeIds,
+        { baseUrl: cfg.aiBaseUrl ?? 'https://open.bigmodel.cn/api/paas/v4', apiKey: cfg.aiApiKey, model: cfg.aiModel ?? 'glm-4v' },
+        (phase, done, total) => getWindow()?.webContents.send('ai:searchProgress', { phase, done, total })
+      )
+    }
+  )
 }

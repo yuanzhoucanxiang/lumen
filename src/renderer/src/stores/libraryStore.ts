@@ -179,6 +179,8 @@ interface LibraryState {
   agentBusy: boolean
   agentSend: (text: string) => Promise<void>
   agentClearChat: () => void
+  /** 视觉重排结果回写(里程碑 164):把重排后的素材顺序写回指定消息 */
+  agentApplyRerank: (msgIndex: number, assets: AgentAssetBrief[]) => void
   showToast: (msg: string) => void
   undoLast: () => Promise<void>
 }
@@ -651,6 +653,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   closeAgentPanel: () => set({ agentPanelOpen: false }),
 
   agentClearChat: () => set({ agentMessages: [], agentHistory: [] }),
+
+  agentApplyRerank: (msgIndex, assets) =>
+    set((s) => ({
+      agentMessages: s.agentMessages.map((m, i) => (i === msgIndex ? { ...m, assets } : m))
+    })),
 
   agentSend: async (text) => {
     const q = text.trim()

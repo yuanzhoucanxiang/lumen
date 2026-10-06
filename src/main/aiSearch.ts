@@ -75,8 +75,9 @@ const VISION_CONCURRENCY = 3 // 并发批次数
 /**
  * 视觉精排：把候选缩略图分批(并发)发给视觉模型打分（0-10 相关性）。
  * 返回 assetId -> score 映射；任一批次失败不影响其他批次。
+ * 导出供找图助手的「AI 视觉重排」复用（里程碑 164）。
  */
-async function rankByVision(
+export async function rankByVision(
   query: string,
   candidates: Asset[],
   cfg: AiConfig,

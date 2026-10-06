@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { Asset, AssetQuery, AgentChatTurn, AgentReply, AgentSearchResult, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSearchProgress, AiSuggestionItem, AppSettings, Board, BoardItem, BoardItemPatch, DbBackupInfo, DupeGroup, ExportOptions, Folder, ImportResult, LibraryInfo, NewBoardItem, Tag, TagGroup, UpdateStatus, ZipBackupInfo } from '../shared/types'
+import type { Asset, AssetQuery, AgentAssetBrief, AgentChatTurn, AgentReply, AgentSearchResult, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSearchProgress, AiSuggestionItem, AppSettings, Board, BoardItem, BoardItemPatch, DbBackupInfo, DupeGroup, ExportOptions, Folder, ImportResult, LibraryInfo, NewBoardItem, Tag, TagGroup, UpdateStatus, ZipBackupInfo } from '../shared/types'
 
 const api = {
   /* 库管理 */
@@ -109,6 +109,9 @@ const api = {
   /** 找图助手：条件全量结果（完整 Asset，供「在素材库中查看」铺进图库） */
   agentSearchFull: (conditions: unknown): Promise<Asset[]> =>
     ipcRenderer.invoke('ai:agentSearchFull', conditions),
+  /** 找图助手：AI 视觉重排（按查询意图对已有结果做视觉相关性排序） */
+  agentRerank: (query: string, ids: string[]): Promise<AgentAssetBrief[]> =>
+    ipcRenderer.invoke('ai:agentRerank', query, ids),
 
   /* 标签 */
   listTags: (): Promise<Tag[]> => ipcRenderer.invoke('tags:list'),

@@ -25,6 +25,7 @@ export default function AgentPanel() {
   const [input, setInput] = useState('')
   const [smartSaveFor, setSmartSaveFor] = useState<number | null>(null)
   const [smartName, setSmartName] = useState('')
+  const [rerankBusy, setRerankBusy] = useState<number | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -77,6 +78,26 @@ export default function AgentPanel() {
       setSmartSaveFor(null)
     } catch (e) {
       useLibraryStore.getState().showToast(`创建失败：${String((e as Error)?.message ?? e)}`)
+    }
+  }
+
+  /** AI 视觉重排（里程碑 164）：按查询意图对结果做视觉相关性排序（处理"感觉像XX"类查询） */
+  const rerank = async (index: number, m: AgentMsg) => {
+    if (rerankBusy !== null || !m.assets || m.assets.length < 2) return
+    setRerankBusy(index)
+    try {
+      const query = m.query ?? messages[index - 1]?.text ?? ''
+      const ranked = await window.api.agentRerank(query, m.assets.map((a) => a.id))
+      if (ranked.length === 0) {
+        useLibraryStore.getState().showToast('视觉重排失败，已保留原顺序')
+      } else {
+        useLibraryStore.getState().agentApplyRerank(index, ranked)
+        useLibraryStore.getState().showToast('已按视觉相关性重排')
+      }
+    } catch (e) {
+      useLibraryStore.getState().showToast(`视觉重排失败：${String((e as Error)?.message ?? e)}`)
+    } finally {
+      setRerankBusy(null)
     }
   }
 
@@ -162,6 +183,11 @@ export default function AgentPanel() {
                         draggable={false}
                         className="h-full w-full object-cover"
                       />
+                      {typeof a.score === 'number' && (
+                        <span className="tnum absolute right-0.5 top-0.5 rounded-sm bg-black/70 px-1 text-[9px] leading-[13px] text-white">
+                          {a.score}
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -191,6 +217,22 @@ export default function AgentPanel() {
                   >
                     在素材库中查看
                   </button>
+                  {/* AI 视觉重排（里程碑 164）："感觉像 XX"类意图无法结构化，用视觉模型对已有结果重排 */}
+                  {m.assets && m.assets.length >= 2 && (
+                    <button
+                      className="flex items-center gap-1 rounded-sm border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text-dim)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent-text)] disabled:opacity-40"
+                      disabled={rerankBusy === i || busy}
+                      title="用视觉模型按你的描述对结果重新排序"
+                      onClick={() => void rerank(i, m)}
+                    >
+                      <Icon
+                        name="rotate"
+                        size={10}
+                        className={rerankBusy === i ? 'animate-spin' : ''}
+                      />
+                      视觉重排
+                    </button>
+                  )}
                   {m.smart &&
                     (smartSaveFor === i ? (
                       <span className="flex items-center gap-1">
