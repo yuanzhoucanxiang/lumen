@@ -44,6 +44,8 @@ export interface ImportOptions {
   checkTombstone?: boolean
   /** true = 结果附带逐文件明细 files(Agent /import 需要;其余渠道省内存不填) */
   detail?: boolean
+  /** 导入来源标记:'' = 用户手动;agent/clip/watcher/startup/screenshot(支撑来源统计/筛选) */
+  source?: string
   /** 导入进度回调:阶段 A 每完成一个文件触发一次('prepare'),阶段 B 事务提交后触发一次('commit') */
   onProgress?: (phase: 'prepare' | 'commit', done: number, total: number) => void
 }
@@ -627,12 +629,12 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
  * 用 better-sqlite3 事务包裹 DB 写入，任一失败整批回滚（已复制的文件保留，下次启动 isDuplicate 会判重）。
  * metadata.json 写盘与 DB 原子性无关，移出事务后异步写（单文件失败仅告警不回滚，行为不变）。
  */
-async function commitBatch(records: PreparedAsset[]): Promise<void> {
+async function commitBatch(records: PreparedAsset[], source = ''): Promise<void> {
   const db = getDb()
   const insert = stmt(
     db,
-    `INSERT INTO assets (id, name, ext, rel_dir, size, width, height, colors, color_count, hash, star, comment, url, created_at, imported_at, exif, name_pinyin, name_pinyin_init)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO assets (id, name, ext, rel_dir, size, width, height, colors, color_count, hash, star, comment, url, created_at, imported_at, exif, name_pinyin, name_pinyin_init, source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?, ?, ?, ?)`
   )
   const now = Date.now()
   const run = db.transaction((recs: PreparedAsset[]) => {
@@ -641,7 +643,7 @@ async function commitBatch(records: PreparedAsset[]): Promise<void> {
       insert.run(
         r.id, r.name, r.ext, r.relDir, r.size, r.width, r.height,
         JSON.stringify(r.colors), r.colors ? r.colors.length : 0, r.hash, r.sourceUrl ?? '', r.mtimeMs, now, r.exif ?? '',
-        py.full, py.initial
+        py.full, py.initial, source
       )
     }
   })
@@ -705,7 +707,7 @@ export async function importFiles(paths: string[], opts: ImportOptions = {}): Pr
   // 阶段 B：事务原子写入数据库 + metadata.json（串行，任一失败整批回滚）
   if (okRecords.length > 0) {
     try {
-      await commitBatch(okRecords)
+      await commitBatch(okRecords, opts.source ?? '')
       result.imported = okRecords.length
       result.importedIds = okRecords.map((r) => r.id!)
     } catch (e) {

@@ -228,10 +228,19 @@ app.whenReady().then(() => {
   ipcMain.handle('window:floatingToggleMinimize', () => toggleFloatingBoardMinimize())
   ipcMain.handle('window:floatingResetPos', () => resetFloatingBoardPosition())
 
-  // 本机接收服务(浏览器剪藏 /clip + AI Agent /import)：导入成功后通知渲染进程刷新
-  startClipServer((count, source) => {
-    mainWindow?.webContents.send('clip:imported', count, source)
-  })
+  // 本机接收服务(浏览器剪藏 /clip + AI Agent /import)：导入成功后通知渲染进程刷新,
+  // 进度复用 import:progress 通道,后台任务事件走 agent:notify
+  startClipServer(
+    (count, source) => {
+      mainWindow?.webContents.send('clip:imported', count, source)
+    },
+    (phase, done, total) => {
+      mainWindow?.webContents.send('import:progress', { phase, done, total })
+    },
+    (event) => {
+      mainWindow?.webContents.send('agent:notify', event)
+    }
+  )
 
   // 监控文件夹自动导入
   syncWatchers((count) => {

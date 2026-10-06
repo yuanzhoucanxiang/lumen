@@ -175,7 +175,7 @@ export function registerScreenshotIpc(getMainWindow: () => BrowserWindow | null)
         const file = join(tmpDir, `screenshot_${Date.now()}.png`)
         try {
           writeFileSync(file, buf)
-          const result = await importFiles([file], { sourceUrl: '屏幕截图' })
+          const result = await importFiles([file], { sourceUrl: '屏幕截图', source: 'screenshot' })
           if (result.imported > 0) getMainWindow()?.webContents.send('screenshot:imported', result.imported)
           return result
         } finally {

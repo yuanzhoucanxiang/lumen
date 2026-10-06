@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-/* LUMEN 本地导入脚本:把文件/目录批量导入 LUMEN 素材库(可打标签/归文件夹/写备注/查相似)。
+/* LUMEN 本地导入脚本:把文件/目录批量导入 LUMEN 素材库(可打标签/归文件夹/写备注/查相似/上白板/AI打标签)。
    用法:
-     node import.cjs --paths <文件或目录>... [--tags 标签1,标签2] [--folder "A/B"] [--move]
-                     [--note "prompt:... 模型:..."] [--check-similar]
+     node import.cjs --paths <文件或目录>... [--tags 标签1,标签2] [--folder "A/B"] [--note "prompt..."]
+                     [--check-similar] [--dry-run] [--board 白板id] [--auto-tag] [--move]
    退出码: 0=成功 1=有失败项 2=LUMEN 未运行 3=LUMEN 版本过旧(无 /import) */
 'use strict'
 const http = require('http')
 
 function parseArgs(argv) {
-  const args = { paths: [], tags: [], folder: '', move: false, note: '', checkSimilar: false, validate: false }
+  const args = { paths: [], tags: [], folder: '', move: false, note: '', checkSimilar: false, validate: false, boardId: null, autoTag: false }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--paths' || a === '--path') {
@@ -22,6 +22,11 @@ function parseArgs(argv) {
       args.note = argv[++i] ?? ''
     } else if (a === '--check-similar') {
       args.checkSimilar = true
+    } else if (a === '--board') {
+      const n = Number(argv[++i])
+      if (Number.isInteger(n)) args.boardId = n
+    } else if (a === '--auto-tag') {
+      args.autoTag = true
     } else if (a === '--dry-run') {
       args.validate = true
     } else if (a === '--move') {
@@ -55,12 +60,12 @@ function post(payload) {
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   if (args.paths.length === 0) {
-    console.error('用法: node import.cjs --paths <文件或目录>... [--tags 标签1,标签2] [--folder "A/B"] [--move]')
+    console.error('用法: node import.cjs --paths <文件或目录>... [--tags 标签1,标签2] [--folder "A/B"] [--note "prompt..."] [--check-similar] [--dry-run] [--board 白板id] [--auto-tag] [--move]')
     process.exit(1)
   }
   let res
   try {
-    res = await post({ paths: args.paths, tags: args.tags, folder: args.folder, move: args.move, note: args.note, checkSimilar: args.checkSimilar, validate: args.validate })
+    res = await post({ paths: args.paths, tags: args.tags, folder: args.folder, move: args.move, note: args.note, checkSimilar: args.checkSimilar, validate: args.validate, boardId: args.boardId, autoTag: args.autoTag })
   } catch (e) {
     console.error('LUMEN 未运行或无法连接(127.0.0.1:45678):', e.message)
     console.error('请先启动 LUMEN 桌面应用后重试。')

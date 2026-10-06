@@ -24,6 +24,7 @@ interface AssetRow {
   deleted_at: number | null
   edited: number
   exif: string
+  source: string
 }
 
 function rowToAsset(row: AssetRow): Asset {
@@ -44,6 +45,7 @@ function rowToAsset(row: AssetRow): Asset {
     deletedAt: row.deleted_at,
     edited: row.edited ?? 0,
     exif: row.exif ?? '',
+    source: row.source ?? '',
     tagIds: [],
     tagNames: []
   }
@@ -95,6 +97,12 @@ export function queryAssets(q: AssetQuery): Asset[] {
 
   if (q.deleted) where.push('deleted_at IS NOT NULL')
   else where.push('deleted_at IS NULL')
+
+  // 来源筛选(里程碑 159):''/缺省 = 用户手动,agent/clip/watcher/startup/screenshot
+  if (q.source) {
+    where.push('source = ?')
+    params.push(q.source)
+  }
 
   if (q.keyword) {
     // LIKE 通配符转义:用户搜「100%」应按字面匹配,否则 % 会被当作通配符命中全库

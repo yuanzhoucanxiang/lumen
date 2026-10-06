@@ -2,7 +2,7 @@ import { getDb } from '../db'
 import { stmt } from '../stmtCache'
 import { deleteAssets } from './assets'
 
-export function libraryStats(): { total: number; deleted: number; tombstones: number } {
+export function libraryStats(): { total: number; deleted: number; tombstones: number; agent: number } {
   const db = getDb()
   const total = (stmt(db, 'SELECT COUNT(*) AS n FROM assets WHERE deleted_at IS NULL').get() as { n: number }).n
   const deleted = (stmt(db, 'SELECT COUNT(*) AS n FROM assets WHERE deleted_at IS NOT NULL').get() as { n: number }).n
@@ -12,7 +12,14 @@ export function libraryStats(): { total: number; deleted: number; tombstones: nu
   } catch {
     // deleted_files 表尚不存在(旧库未迁移)时返回 0
   }
-  return { total, deleted, tombstones }
+  // agent 来源计数(里程碑 159):旧库无 source 列时按 0 处理
+  let agent = 0
+  try {
+    agent = (stmt(db, "SELECT COUNT(*) AS n FROM assets WHERE deleted_at IS NULL AND source = 'agent'").get() as { n: number }).n
+  } catch {
+    // source 列尚未迁移时返回 0
+  }
+  return { total, deleted, tombstones, agent }
 }
 
 /* ---------------- 重复检测与相似检索 ---------------- */

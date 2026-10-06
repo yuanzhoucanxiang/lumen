@@ -38,7 +38,7 @@ async function flush(): Promise<void> {
       }
     })
     if (valid.length === 0) return
-    const result = await importFiles(valid, { move: cfg.importMode === 'move', checkTombstone: true })
+    const result = await importFiles(valid, { move: cfg.importMode === 'move', checkTombstone: true, source: 'watcher' })
     if (result.imported > 0) notify(result.imported)
     if (result.failed > 0) logger.warn('[watcher]', `批量导入失败 ${result.failed}/${valid.length} 个文件`)
   } catch (e) {
@@ -114,7 +114,7 @@ export async function syncOnStartup(onImported: (count: number) => void): Promis
   logger.info('[watcher]', `启动增量同步：扫描 ${dirs.length} 个监控目录，${files.length} 个文件`)
   // importMode 由 loadConfig 决定，syncOnStartup 用 copy（不删源文件，监控目录的文件要保留）
   // checkTombstone: 已删除文件不再自动重导入(尊重删除记忆)
-  const result = await importFiles(files, { checkTombstone: true })
+  const result = await importFiles(files, { checkTombstone: true, source: 'startup' })
   if (result.imported > 0) {
     logger.info('[watcher]', `启动增量同步完成：新增 ${result.imported}，跳过 ${result.skipped}，失败 ${result.failed}`)
     onImported(result.imported)

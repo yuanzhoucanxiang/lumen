@@ -222,7 +222,10 @@ function migrate(d: Database.Database): void {
     color_count: 'INTEGER NOT NULL DEFAULT 0',
     // 拼音检索串(里程碑 98,对标 Eagle):导入/改名写入,存量由启动维护任务回填
     name_pinyin: "TEXT NOT NULL DEFAULT ''",
-    name_pinyin_init: "TEXT NOT NULL DEFAULT ''"
+    name_pinyin_init: "TEXT NOT NULL DEFAULT ''",
+    // 导入来源(里程碑 159):'' = 用户手动;agent/clip/watcher/startup/screenshot;
+    // 支撑来源统计与筛选("这个月 AI 生成了多少张")
+    source: "TEXT NOT NULL DEFAULT ''"
   })
   ensureColumns(d, 'folders', {
     is_smart: 'INTEGER NOT NULL DEFAULT 0',

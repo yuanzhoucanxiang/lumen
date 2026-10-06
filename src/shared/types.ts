@@ -13,6 +13,8 @@ export interface Asset {
   star: number
   comment: string
   url: string
+  /** 导入来源：'' = 用户手动；agent/clip/watcher/startup/screenshot（里程碑 159） */
+  source: string
   createdAt: number
   importedAt: number
   deletedAt: number | null
@@ -168,6 +170,7 @@ export interface ImportResult {
 
 export interface AssetQuery {
   keyword?: string
+  source?: string
   tagIds?: number[]
   folderId?: number | null
   color?: string // hex，如 #FF0000

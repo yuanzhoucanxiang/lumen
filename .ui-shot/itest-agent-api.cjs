@@ -236,6 +236,16 @@ async function main() {
   check('GET /stats 返回库汇总(agentImported>=1)', rStats.status === 200 && rStats.json?.ok === true && rStats.json?.assets > 0 && (rStats.json?.agentImported ?? 0) >= 1 && Number.isInteger(rStats.json?.tags),
     `assets=${rStats.json?.assets} agentImported=${rStats.json?.agentImported} tags=${rStats.json?.tags}`)
 
+  /* ---------- 5f. source 来源 + boardId 校验 + autoTag 启动标记 ---------- */
+  const rSrc = await request('GET', `/assets?q=${encodeURIComponent(tag)}&limit=1`)
+  check('GET /assets 回传 source=agent', rSrc.json?.assets?.[0]?.source === 'agent', `source=${rSrc.json?.assets?.[0]?.source}`)
+  const rNoBoard = await request('POST', '/import', JSON.stringify({ paths: [simPng], boardId: 99999999 }))
+  check('boardId 不存在返回 400(校验先于导入)', rNoBoard.status === 400, `status=${rNoBoard.status}`)
+  const autoPng = path.join(dupDir, `${tag}-auto.png`)
+  fs.writeFileSync(autoPng, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 7, 3, 3]))
+  const rAuto = await request('POST', '/import', JSON.stringify({ paths: [autoPng], autoTag: true }))
+  check('autoTag=true 响应标记后台任务已启动', rAuto.status === 200 && rAuto.json?.autoTagStarted === true, `autoTagStarted=${rAuto.json?.autoTagStarted}`)
+
   /* ---------- 6. CDP 会话建立(清理与技能安装断言都走渲染层) ---------- */
   const targets = await getJson('http://127.0.0.1:9333/json/list')
   const page = targets.find((t) => t.type === 'page' && t.url.includes('localhost:5173') && !t.url.includes('floating'))
@@ -280,6 +290,24 @@ async function main() {
   // 装完即最新:状态比对须在 installAgentSkill 之后(此前旧版未同步时 upToDate=false 是正确行为)
   const skillSt = await run(`return await window.api.agentSkillStatus()`)
   check('agentSkillStatus 已安装且版本最新', skillSt?.installed === true && skillSt?.upToDate === true, JSON.stringify(skillSt)?.slice(0, 120))
+
+  /* ---------- 8. boardId 直送白板 + 进度推送(走渲染层验证) ---------- */
+  const board = await run(`return await window.api.createBoard('agentapi-board')`)
+  const bid = board?.id
+  const boardPng = path.join(dupDir, `${tag}-board.png`)
+  fs.writeFileSync(boardPng, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 6, 6, 6]))
+  const rBoard = await request('POST', '/import', JSON.stringify({ paths: [boardPng], boardId: bid }))
+  const boardItems = Number.isInteger(bid) ? (await run(`return (await window.api.listBoardItems(${bid})).length`)) : 0
+  check('boardId 直送白板(新素材已上板)', rBoard.status === 200 && rBoard.json?.boardId === bid && boardItems >= 1,
+    `boardId=${rBoard.json?.boardId} items=${boardItems}`)
+
+  await run(`(() => { window.__itestProgEvents = 0; window.api.onImportProgress(() => window.__itestProgEvents++) })()`)
+  const progPng = path.join(dupDir, `${tag}-prog.png`)
+  fs.writeFileSync(progPng, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 6, 3, 3]))
+  await request('POST', '/import', JSON.stringify({ paths: [progPng] }))
+  await sleep(400)
+  const progEvents = await run(`return window.__itestProgEvents`)
+  check('Agent 导入进度经 import:progress 推送到渲染层', progEvents >= 1, `events=${progEvents}`)
   const skillMd = path.join(os.homedir(), '.agents', 'skills', 'lumen', 'SKILL.md')
   const skillOk = fs.existsSync(skillMd) && fs.readFileSync(skillMd, 'utf-8').includes('/import')
   check('技能文件已落到 ~/.agents/skills/lumen 且含 /import 文档', skillOk, `SKILL.md=${skillMd}`)
@@ -302,6 +330,8 @@ async function main() {
     const defFolder = folders.find((x) => x.name === 'Agent 导入')
     if (defFolder) fids.push(defFolder.id)
     for (const fid of fids) await window.api.deleteFolder(fid)
+    // 测试白板(含其上的测试素材项)一并删除
+    if (Number.isInteger(${JSON.stringify(bid)})) await window.api.deleteBoard(${JSON.stringify(bid)})
     return { deleted: ids.length, tags: tids.length, folders: fids.length }
   `)
   check('清理:测试素材已软删 + 标签/文件夹已删', cleanup.deleted >= 3 && cleanup.tags >= 1 && cleanup.folders >= 1,

@@ -256,6 +256,13 @@ const api = {
     return () => ipcRenderer.removeListener('clip:imported', h)
   },
 
+  /* Agent 后台任务事件(autoTag 进度/完成/跳过) */
+  onAgentNotify: (cb: (event: { type: string } & Record<string, unknown>) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, event: { type: string } & Record<string, unknown>) => cb(event)
+    ipcRenderer.on('agent:notify', h)
+    return () => ipcRenderer.removeListener('agent:notify', h)
+  },
+
   /* 浮动白板窗：主进程复用窗口时通知切换白板 */
   onBoardSwitch: (cb: (boardId: number) => void): (() => void) => {
     const h = (_e: Electron.IpcRendererEvent, boardId: number) => cb(boardId)

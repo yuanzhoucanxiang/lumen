@@ -123,6 +123,16 @@ export default function App() {
       if (label) useLibraryStore.getState().showToast(label)
       void useLibraryStore.getState().refreshAll()
     })
+    // Agent 后台任务事件(AI 自动打标签等)转 toast
+    const offAgent = window.api.onAgentNotify((event) => {
+      if (event.type === 'autoTagDone') {
+        useLibraryStore.getState().showToast(`AI 已为 ${event.tagged} 张 Agent 导入素材打好标签`)
+      } else if (event.type === 'autoTagSkipped') {
+        useLibraryStore.getState().showToast(`AI 未配置，已跳过自动打标签（${event.reason ?? ''}）`)
+      } else if (event.type === 'autoTagError') {
+        useLibraryStore.getState().showToast(`AI 自动打标签失败：${event.message ?? ''}`)
+      }
+    })
     // 自动更新状态
     const offUpd = window.api.onUpdateStatus((s) => {
       setUpd(s)
@@ -162,6 +172,7 @@ export default function App() {
       offAi()
       offImp()
       offShot()
+      offAgent()
     }
   }, [refreshAll])
 

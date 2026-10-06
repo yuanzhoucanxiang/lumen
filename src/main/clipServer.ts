@@ -5,20 +5,25 @@ import { basename, join, isAbsolute } from 'path'
 import { tmpdir } from 'os'
 import { app } from 'electron'
 import { collectFiles, importFiles, isKnownAssetByNameSize } from './importer'
-import { getLibraryPath } from './library'
+import { getLibraryPath, loadConfig } from './library'
 import {
+  addBoardItems,
   addTagToAssets,
   addToFolder,
   createFolder,
   findSimilar,
+  getAssetById,
   libraryStats,
+  listBoards,
   listFolders,
   listTags,
   queryAssets,
   updateAsset
 } from './repository'
+import { aiProcessBatch } from './aiRename'
+import { logger } from './logger'
 import { guardedFetch, readBodyCapped } from './netGuard'
-import type { ImportFileDetail } from '../shared/types'
+import type { ImportFileDetail, NewBoardItem } from '../shared/types'
 
 const PORT = 45678
 const MAX_BODY = 80 * 1024 * 1024 // 80MB
@@ -121,6 +126,9 @@ async function saveClip(payload: ClipPayload): Promise<number> {
   return result.imported
 }
 
+/** Agent 通知事件(autoTag 进度/完成经渲染层 toast 呈现) */
+type AgentNotify = (event: Record<string, unknown>) => void
+
 /** AI Agent 本地导入请求：按磁盘路径导入(支持目录递归)，可选打标签/归文件夹 */
 interface AgentImportPayload {
   paths?: string | string[]
@@ -134,6 +142,10 @@ interface AgentImportPayload {
   checkSimilar?: boolean
   /** true = 试运行(dry-run):只做路径展开与 name+size 查重预估,不导入不写库 */
   validate?: boolean
+  /** 导入完成后把这些新素材直接放上指定白板(画布内流式排布) */
+  boardId?: number
+  /** true = 导入完成后在后台跑 AI 自动打标签(不阻塞本次响应,完成经 agent:notify 推送) */
+  autoTag?: boolean
 }
 
 /** 标签名/文件夹名上限:防 agent 批量生成超长或超量名称污染库 */
@@ -171,12 +183,72 @@ function resolveFolderId(segments: string[]): number {
   return id
 }
 
+/** Agent 自动打标签后台队列:AI 打标签耗时分钟级,不阻塞导入响应,完成经 notify 推送 */
+let autoTagQueue: Promise<unknown> = Promise.resolve()
+
+function queueAutoTag(ids: string[], notify?: AgentNotify): void {
+  autoTagQueue = autoTagQueue
+    .then(async () => {
+      const cfg = loadConfig()
+      if (!cfg.aiApiKey) {
+        notify?.({ type: 'autoTagSkipped', reason: '未配置 AI API Key' })
+        logger.info('[agent-autoTag]', 'AI 未配置,跳过自动打标签')
+        return
+      }
+      const r = await aiProcessBatch(
+        ids,
+        { baseUrl: cfg.aiBaseUrl ?? 'https://open.bigmodel.cn/api/paas/v4', apiKey: cfg.aiApiKey, model: cfg.aiModel ?? 'glm-4v' },
+        { rename: false, tag: true },
+        (done, total, failed) => notify?.({ type: 'autoTagProgress', done, total, failed })
+      )
+      notify?.({ type: 'autoTagDone', tagged: r.processed, failed: r.failed })
+      logger.info('[agent-autoTag]', `AI 打标签完成 ${r.processed}/${ids.length},失败 ${r.failed}`)
+    })
+    .catch((e: unknown) => {
+      notify?.({ type: 'autoTagError', message: (e as Error).message })
+      logger.warn('[agent-autoTag]', `自动打标签失败: ${(e as Error).message}`)
+    })
+}
+
+/** 把新导入素材放上白板:原比例、长边封顶 1280 不放大,按 1600 逻辑宽度流式换行排布 */
+function placeAssetsOnBoard(boardId: number, ids: string[]): void {
+  const items: NewBoardItem[] = []
+  const GAP = 40
+  let x = 60
+  let y = 60
+  let rowMaxH = 0
+  for (const id of ids) {
+    const a = getAssetById(id)
+    if (!a) continue
+    let w = a.width > 0 ? a.width : 400
+    let h = a.height > 0 ? a.height : 300
+    const shrink = 1280 / Math.max(w, h)
+    if (shrink < 1) {
+      w = Math.round(w * shrink)
+      h = Math.round(h * shrink)
+    }
+    if (x + w > 1660 && x > 60) {
+      x = 60
+      y += rowMaxH + GAP
+      rowMaxH = 0
+    }
+    items.push({ assetId: id, type: 'asset', x, y, width: w, height: h })
+    x += w + GAP
+    rowMaxH = Math.max(rowMaxH, h)
+  }
+  addBoardItems(boardId, items)
+}
+
 /**
  * Agent 按路径导入：与剪藏共用 importFiles 管线(查重/缩略图/主色/哈希一致)。
  * paths 支持文件或目录(目录递归展开)；标签与文件夹作用于「本次调用涉及的全部素材」——
  * 新导入的 + 跳过的重复文件命中的库内已有素材(幂等重跑不会漏掉已入库文件的标签/归档)。
  */
-async function importFromPaths(payload: AgentImportPayload): Promise<{
+async function importFromPaths(
+  payload: AgentImportPayload,
+  sendProgress?: (phase: 'prepare' | 'commit', done: number, total: number) => void,
+  notify?: AgentNotify
+): Promise<{
   validate?: boolean
   fileCount?: number
   wouldImport?: number
@@ -190,6 +262,8 @@ async function importFromPaths(payload: AgentImportPayload): Promise<{
   files: ImportFileDetail[]
   missing: string[]
   folderId: number | null
+  boardId: number | null
+  autoTagStarted: boolean
   similar: { id: string; name: string; matches: { id: string; name: string }[] }[]
 }> {
   const raw = payload.paths == null ? [] : Array.isArray(payload.paths) ? payload.paths : [payload.paths]
@@ -207,6 +281,11 @@ async function importFromPaths(payload: AgentImportPayload): Promise<{
   const folderSegments = folderRaw.split(/[\\/]+/).map(sanitizeName).filter(Boolean)
   if (folderRaw.trim() && folderSegments.length === 0) throw new Error('folder 名称为空')
   if (folderSegments.length > 5) throw new Error('folder 层级过深(最多 5 级)')
+
+  // boardId 校验同样提前:白板不存在立刻报错,不做半截导入
+  const boardId = typeof payload.boardId === 'number' && Number.isInteger(payload.boardId) ? payload.boardId : null
+  if (payload.boardId != null && boardId === null) throw new Error('boardId must be an integer')
+  if (boardId !== null && !listBoards().some((b) => b.id === boardId)) throw new Error(`board ${boardId} not found`)
 
   // collectFiles 会静默跳过不存在的路径,这里预检把缺失路径回传给 agent(便于发现路径写错)
   const missing: string[] = []
@@ -247,11 +326,18 @@ async function importFromPaths(payload: AgentImportPayload): Promise<{
       matchedIds: [],
       files: [],
       folderId: null,
+      boardId: null,
+      autoTagStarted: false,
       similar: []
     }
   }
 
-  const result = await importFiles(exists, { move: payload.move === true, detail: true })
+  const result = await importFiles(exists, {
+    move: payload.move === true,
+    detail: true,
+    source: 'agent',
+    onProgress: sendProgress
+  })
   const importedIds = result.importedIds ?? []
 
   // 幂等应用标签:新导入 + 命中的库内已有素材(显式标签是 agent 的指令,作用于涉及的全部素材)
@@ -282,6 +368,18 @@ async function importFromPaths(payload: AgentImportPayload): Promise<{
     if (note) for (const id of importedIds) updateAsset(id, { comment: note })
   }
 
+  // 直送白板:新素材放上指定画布(仅新导入;流式排布)
+  if (boardId !== null && importedIds.length > 0) {
+    placeAssetsOnBoard(boardId, importedIds)
+  }
+
+  // AI 自动打标签:后台队列执行,不阻塞响应;完成/跳过/失败经 agent:notify 推送
+  let autoTagStarted = false
+  if (payload.autoTag === true && importedIds.length > 0) {
+    autoTagStarted = true
+    queueAutoTag([...importedIds], notify)
+  }
+
   // 相似检测(默认关):对每个新导入素材查库内近似项(dHash 汉明距离≤10,每张最多 3 条),
   // agent 可据此决定跳过重复生成或提醒用户
   const similar: { id: string; name: string; matches: { id: string; name: string }[] }[] = []
@@ -303,6 +401,8 @@ async function importFromPaths(payload: AgentImportPayload): Promise<{
     files: result.files ?? [],
     missing,
     folderId,
+    boardId,
+    autoTagStarted,
     similar
   }
 }
@@ -312,10 +412,16 @@ async function importFromPaths(payload: AgentImportPayload): Promise<{
 let importQueue: Promise<unknown> = Promise.resolve()
 
 /** 启动本机接收服务（仅监听本机回环地址，需携带客户端鉴权头）。
- *  服务对象:①浏览器剪藏扩展(/clip) ②本机 AI Agent(/import /tags /folders)——
+ *  服务对象:①浏览器剪藏扩展(/clip) ②本机 AI Agent(/import /tags /folders /assets /stats)——
  *  鉴权模型一致:网页 JS 无法携带自定义头,本机原生程序不在威胁模型内。
- *  onImported 的 source 区分导入来源(渲染层据此分流提示文案)。 */
-export function startClipServer(onImported?: (count: number, source: 'clip' | 'agent') => void): void {
+ *  onImported 的 source 区分导入来源(渲染层据此分流提示文案);
+ *  sendProgress 把导入进度推给渲染层(与手动导入共用 import:progress 通道);
+ *  notify 推送 Agent 后台任务事件(autoTag 完成/跳过/失败)。 */
+export function startClipServer(
+  onImported?: (count: number, source: 'clip' | 'agent') => void,
+  sendProgress?: (phase: 'prepare' | 'commit', done: number, total: number) => void,
+  notify?: AgentNotify
+): void {
   const server = createServer((req, res) => {
     // 未携带鉴权头的请求直接拒绝(含网页跨域预检 OPTIONS:浏览器不会放行自定义头)
     if (!isAuthorized(req)) {
@@ -341,6 +447,11 @@ export function startClipServer(onImported?: (count: number, source: 'clip' | 'a
 
     if (req.method === 'GET' && url.pathname === '/folders') {
       json(res, 200, { ok: true, folders: listFolders() })
+      return
+    }
+
+    if (req.method === 'GET' && url.pathname === '/boards') {
+      json(res, 200, { ok: true, boards: listBoards().map((b) => ({ id: b.id, name: b.name })) })
       return
     }
 
@@ -374,17 +485,17 @@ export function startClipServer(onImported?: (count: number, source: 'clip' | 'a
         size: a.size,
         star: a.star,
         importedAt: a.importedAt,
+        source: a.source,
         tags: a.tagNames ?? []
       }))
       json(res, 200, { ok: true, count: assets.length, truncated, assets })
       return
     }
 
-    // Agent 汇总(只读):库规模 + Agent 导入专属文件夹计数,供汇报"库内共 X 张,Agent 收纳 Y 张"
+    // Agent 汇总(只读):库规模 + 来源计数,供汇报"库内共 X 张,Agent 收纳 Y 张"
     if (req.method === 'GET' && url.pathname === '/stats') {
       const s = libraryStats()
       const folders = listFolders()
-      const agentFolder = folders.find((f) => f.name === AGENT_DEFAULT_FOLDER)
       json(res, 200, {
         ok: true,
         version: app.getVersion(),
@@ -393,7 +504,7 @@ export function startClipServer(onImported?: (count: number, source: 'clip' | 'a
         trash: s.deleted,
         tags: listTags().length,
         folders: folders.length,
-        agentImported: agentFolder?.count ?? 0
+        agentImported: s.agent
       })
       return
     }
@@ -417,7 +528,7 @@ export function startClipServer(onImported?: (count: number, source: 'clip' | 'a
       readBody(req, res)
         .then(async (body) => {
           const payload = JSON.parse(body) as AgentImportPayload
-          const task = importQueue.then(() => importFromPaths(payload))
+          const task = importQueue.then(() => importFromPaths(payload, sendProgress, notify))
           importQueue = task.catch(() => undefined) // 单批失败不让队列卡死
           const r = await task
           // 新导入或命中已有素材(补打了标签/归档)都通知渲染层刷新;纯 missing/failed 不打扰
