@@ -13,7 +13,61 @@ const http = require('http')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+const zlib = require('zlib')
 const { execSync } = require('child_process')
+
+/**
+ * 生成指定纯色的合法 PNG(width×height)。
+ * 夹具要求:①每次运行随机颜色 => 字节唯一,不会被跨轮遗留素材的哈希查重跳过;
+ * ②两张夹具必须**不同尺寸**——纯色图的 dHash 恒为零且同尺寸 PNG 结构相同(文件大小也相同),
+ *   同尺寸会命中 hash+size 查重导致第二张被跳过(实测:2x2+2x2 => imported 只剩 1);
+ * ③宽高相等才能命中 shape=square 断言。
+ */
+function makeUniquePng(W, H) {
+  const crcTable = []
+  for (let n = 0; n < 256; n++) {
+    let c = n
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    crcTable[n] = c >>> 0
+  }
+  const crc32 = (buf) => {
+    let c = 0xffffffff
+    for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8)
+    return (c ^ 0xffffffff) >>> 0
+  }
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4)
+    len.writeUInt32BE(data.length)
+    const body = Buffer.concat([Buffer.from(type), data])
+    const crc = Buffer.alloc(4)
+    crc.writeUInt32BE(crc32(body))
+    return Buffer.concat([len, body, crc])
+  }
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(W, 0)
+  ihdr.writeUInt32BE(H, 4)
+  ihdr[8] = 8
+  ihdr[9] = 2 // RGB
+  const r = Math.floor(Math.random() * 256)
+  const g = Math.floor(Math.random() * 256)
+  const b = Math.floor(Math.random() * 256)
+  const raw = []
+  for (let y = 0; y < H; y++) {
+    const row = Buffer.alloc(1 + W * 3)
+    for (let x = 0; x < W; x++) {
+      row[1 + x * 3] = r
+      row[2 + x * 3] = g
+      row[3 + x * 3] = b
+    }
+    raw.push(row)
+  }
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(Buffer.concat(raw))),
+    chunk('IEND', Buffer.alloc(0))
+  ])
+}
 
 const PORT = 45678
 const AUTH = { 'x-lumen-client': 'lumen-clip/1', 'content-type': 'application/json' }
@@ -80,16 +134,14 @@ async function main() {
     else fail++
   }
 
-  /* ---------- 准备:导入带标签/不带标签的测试素材各一(真实 PNG 且内容互异,避免哈希查重跳过) ---------- */
-  const PNG_1X1_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
-  const PNG_2X2_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEklEQVR4nGM4YaNxwkaDAUIBACNeBLHVZQG1AAAAAElFTkSuQmCC'
+  /* ---------- 准备:导入带标签/不带标签的测试素材各一(每次运行随机色 => 字节唯一、可解码) ---------- */
   const tag = 'agentpanel-' + Date.now().toString(36)
   const TAG_NAME = `${tag}-标签`
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumen-agentpanel-'))
   const taggedPng = path.join(tmpDir, `${tag}-tagged.png`)
   const plainPng = path.join(tmpDir, `${tag}-plain.png`)
-  fs.writeFileSync(taggedPng, Buffer.from(PNG_1X1_B64, 'base64'))
-  fs.writeFileSync(plainPng, Buffer.from(PNG_2X2_B64, 'base64'))
+  fs.writeFileSync(taggedPng, makeUniquePng(2, 2))
+  fs.writeFileSync(plainPng, makeUniquePng(4, 4))
   const rImp1 = await request('POST', '/import', JSON.stringify({ paths: [taggedPng], tags: [TAG_NAME] }))
   const rImp2 = await request('POST', '/import', JSON.stringify({ paths: [plainPng] }))
   check('准备:测试素材导入(带标签/不带标签)', rImp1.json?.imported === 1 && rImp2.json?.imported === 1,
@@ -182,6 +234,35 @@ async function main() {
   `)
   check('agentSearch 非法条件消毒(不崩溃/越界钳制)', badConds.empty === 0 && badConds.cleaned === 0 && badConds.clamped === 2,
     JSON.stringify(badConds))
+
+  /* ---------- 3b. 沉淀:全量结果 + 智能文件夹(含来源条件,里程碑 163) ---------- */
+  const full = await run(`return await window.api.agentSearchFull({ keyword: ${JSON.stringify(tag)} })`)
+  check('agentSearchFull 回传完整素材(含 tagNames)',
+    full.length === 2 && full.every((a) => a.name.includes(tag) && Array.isArray(a.tagNames)),
+    `count=${full.length}`)
+
+  const SMART_NAME = `${tag}-智能夹`
+  const SMART_EMPTY = `${tag}-空夹`
+  // 注意:run() 自带 async IIFE 包裹,这里直接写语句,不要再包一层 (async () => {}) —— 否则返回 undefined
+  const smartMade = await run(`
+    const f1 = await window.api.createFolder(${JSON.stringify(SMART_NAME)}, null, 1, JSON.stringify({ keyword: ${JSON.stringify(tag)}, source: 'agent' }))
+    const f2 = await window.api.createFolder(${JSON.stringify(SMART_EMPTY)}, null, 1, JSON.stringify({ keyword: ${JSON.stringify(tag)}, source: 'manual' }))
+    return { f1: f1.id, f2: f2.id }
+  `)
+  const foldersNow = await run(`return await window.api.listFolders()`)
+  const sf1 = foldersNow.find((f) => f.name === SMART_NAME)
+  const sf2 = foldersNow.find((f) => f.name === SMART_EMPTY)
+  const sf1Conds = sf1 ? JSON.parse(sf1.conditions) : {}
+  check('智能文件夹按来源条件过滤(source=agent 命中 2)',
+    sf1?.isSmart === 1 && sf1?.count === 2 && sf1Conds.source === 'agent' && sf1Conds.keyword === tag,
+    `count=${sf1?.count} source=${sf1Conds.source}`)
+  check('智能文件夹 source=manual 命中 0(来源条件真正生效)',
+    sf2?.isSmart === 1 && sf2?.count === 0,
+    `count=${sf2?.count}`)
+  await run(`
+    if (Number.isInteger(${JSON.stringify(smartMade.f1)})) await window.api.deleteFolder(${JSON.stringify(smartMade.f1)})
+    if (Number.isInteger(${JSON.stringify(smartMade.f2)})) await window.api.deleteFolder(${JSON.stringify(smartMade.f2)})
+  `)
 
   /* ---------- 3. 关闭面板 ---------- */
   await run(`

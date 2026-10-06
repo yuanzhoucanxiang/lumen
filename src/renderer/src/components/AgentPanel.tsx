@@ -1,18 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import Icon from './Icon'
-import { useLibraryStore } from '../stores/libraryStore'
-import type { AgentAssetBrief, AgentChatTurn } from '@shared/types'
+import { useLibraryStore, type AgentMsg } from '../stores/libraryStore'
 
-interface AgentMsg {
-  role: 'user' | 'assistant'
-  text: string
-  assets?: AgentAssetBrief[]
-  total?: number
-  truncated?: boolean
-  error?: boolean
-}
-
-/** 空态示例提示（点击填入输入框） */
+/** 空态示例提示（点击直接发送） */
 const EXAMPLES = [
   '最近一周导入的竖构图',
   '还没打过标签的素材',
@@ -20,25 +10,21 @@ const EXAMPLES = [
   '帮我找星标 4 星以上的横图'
 ]
 
-/** IPC 错误消息去掉 Electron 包装前缀，给用户看干净的原因 */
-function cleanError(e: unknown): string {
-  return String((e as Error)?.message ?? e)
-    .replace(/^Error invoking remote method '[^']*':\s*/, '')
-    .replace(/^Error:\s*/, '')
-}
-
 /**
- * 找图助手（里程碑 161）：右侧对话抽屉——自然语言多轮找图。
- * 只读：模型输出结构化条件 -> 主进程查库 -> 结果缩略图直接预览。
- * 多轮上下文由本组件持有（assistant 项回传模型原始 JSON，保持条件连续性）。
+ * 助手面板（里程碑 161/163）：右侧对话抽屉——自然语言多轮找图 + 结果沉淀。
+ * 只读检索：模型输出结构化条件 -> 主进程查库 -> 结果缩略图直接预览；
+ * 沉淀动作：「在素材库中查看」（全量结果铺进图库，可用图库全部能力继续操作）、
+ * 「存为智能文件夹」（把本轮条件存成可复用的活查询）。
+ * 对话状态在 store（关闭面板/切换视图不丢）。
  */
 export default function AgentPanel() {
   const openPreview = useLibraryStore((s) => s.openPreview)
   const closeAgentPanel = useLibraryStore((s) => s.closeAgentPanel)
-  const [messages, setMessages] = useState<AgentMsg[]>([])
+  const messages = useLibraryStore((s) => s.agentMessages)
+  const busy = useLibraryStore((s) => s.agentBusy)
   const [input, setInput] = useState('')
-  const [busy, setBusy] = useState(false)
-  const historyRef = useRef<AgentChatTurn[]>([])
+  const [smartSaveFor, setSmartSaveFor] = useState<number | null>(null)
+  const [smartName, setSmartName] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -50,44 +36,48 @@ export default function AgentPanel() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, busy])
 
-  const send = async (preset?: string) => {
+  const send = (preset?: string) => {
     const q = (preset ?? input).trim()
     if (!q || busy) return
     setInput('')
-    setMessages((m) => [...m, { role: 'user', text: q }])
-    setBusy(true)
-    try {
-      const r = await window.api.agentChat(historyRef.current, q)
-      // assistant 历史回传模型原始输出（含条件 JSON），下一轮才能在此条件上继续调整
-      historyRef.current = [
-        ...historyRef.current,
-        { role: 'user' as const, content: q },
-        { role: 'assistant' as const, content: r.raw || r.reply }
-      ].slice(-20)
-      setMessages((m) => [
-        ...m,
-        { role: 'assistant', text: r.reply, assets: r.assets, total: r.total, truncated: r.truncated }
-      ])
-    } catch (e) {
-      const msg = cleanError(e)
-      setMessages((m) => [
-        ...m,
-        {
-          role: 'assistant',
-          text: msg.includes('未配置 AI')
-            ? `${msg}（设置 → AI 智能处理 里填写 Base URL / 模型 / API Key 后即可使用）`
-            : `出错了：${msg}`,
-          error: true
-        }
-      ])
-    } finally {
-      setBusy(false)
-    }
+    void useLibraryStore.getState().agentSend(q)
   }
 
   const clearChat = () => {
-    historyRef.current = []
-    setMessages([])
+    setSmartSaveFor(null)
+    useLibraryStore.getState().agentClearChat()
+  }
+
+  /** 把本轮全量结果铺进图库（用图库已有能力继续：批量打标签/导出/上板等） */
+  const viewInLibrary = async (m: AgentMsg) => {
+    if (!m.conditions || !m.query) return
+    try {
+      const assets = await window.api.agentSearchFull(m.conditions)
+      if (assets.length === 0) {
+        useLibraryStore.getState().showToast('没有可查看的素材（结果可能已变化）')
+        return
+      }
+      const st = useLibraryStore.getState()
+      st.setAiSearchPending(m.query)
+      st.setAiSearchResults(m.query, assets)
+      st.showToast(`已在素材库中显示 ${assets.length} 个结果`)
+    } catch (e) {
+      useLibraryStore.getState().showToast(`打开失败：${String((e as Error)?.message ?? e)}`)
+    }
+  }
+
+  /** 把本轮条件存成智能文件夹（结果自动更新，可长期复用） */
+  const saveSmart = async (m: AgentMsg) => {
+    if (!m.smart) return
+    const name = smartName.trim() || '助手收藏'
+    try {
+      await window.api.createFolder(name, null, 1, JSON.stringify(m.smart))
+      await useLibraryStore.getState().refreshFolders()
+      useLibraryStore.getState().showToast(`已创建智能文件夹「${name}」`)
+      setSmartSaveFor(null)
+    } catch (e) {
+      useLibraryStore.getState().showToast(`创建失败：${String((e as Error)?.message ?? e)}`)
+    }
   }
 
   return (
@@ -136,7 +126,7 @@ export default function AgentPanel() {
                 <button
                   key={ex}
                   className="rounded-full border border-[var(--border)] px-2.5 py-1 text-[11px] text-[var(--text-dim)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent-text)]"
-                  onClick={() => void send(ex)}
+                  onClick={() => send(ex)}
                 >
                   {ex}
                 </button>
@@ -191,6 +181,58 @@ export default function AgentPanel() {
                   （点击缩略图预览）
                 </div>
               )}
+
+              {/* 沉淀动作：结果铺进图库 / 条件存为智能文件夹（里程碑 163） */}
+              {m.role === 'assistant' && !m.error && m.total !== undefined && m.total > 0 && m.conditions && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <button
+                    className="rounded-sm border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text-dim)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent-text)]"
+                    onClick={() => void viewInLibrary(m)}
+                  >
+                    在素材库中查看
+                  </button>
+                  {m.smart &&
+                    (smartSaveFor === i ? (
+                      <span className="flex items-center gap-1">
+                        <input
+                          className="field-input w-[132px] px-1.5 py-0.5 text-[11px]"
+                          placeholder="智能文件夹名称"
+                          aria-label="智能文件夹名称"
+                          value={smartName}
+                          autoFocus
+                          onChange={(e) => setSmartName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.nativeEvent.isComposing) void saveSmart(m)
+                            if (e.key === 'Escape') setSmartSaveFor(null)
+                          }}
+                        />
+                        <button
+                          className="rounded-sm border border-[var(--accent)] px-2 py-0.5 text-[11px] text-[var(--accent-text)]"
+                          onClick={() => void saveSmart(m)}
+                        >
+                          保存
+                        </button>
+                        <button
+                          className="px-1 text-[11px] text-[var(--text-faint)] hover:text-[var(--text-main)]"
+                          aria-label="取消"
+                          onClick={() => setSmartSaveFor(null)}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        className="rounded-sm border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text-dim)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent-text)]"
+                        onClick={() => {
+                          setSmartSaveFor(i)
+                          setSmartName(m.query ?? '助手收藏')
+                        }}
+                      >
+                        存为智能文件夹
+                      </button>
+                    ))}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -214,13 +256,13 @@ export default function AgentPanel() {
             disabled={busy}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.nativeEvent.isComposing) void send()
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) send()
             }}
           />
           <button
             className="btn-ghost shrink-0 disabled:opacity-40"
             disabled={busy || !input.trim()}
-            onClick={() => void send()}
+            onClick={() => send()}
           >
             发送
           </button>

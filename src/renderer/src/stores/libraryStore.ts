@@ -1,6 +1,41 @@
 import { create } from 'zustand'
 import { VIDEO_EXTS } from '@shared/types'
-import type { Asset, AssetQuery, Board, BoardItem, Folder, Tag, TagGroup } from '@shared/types'
+import type {
+  AgentAssetBrief,
+  AgentChatTurn,
+  AgentConditions,
+  Asset,
+  AssetQuery,
+  Board,
+  BoardItem,
+  Folder,
+  SmartConditions,
+  Tag,
+  TagGroup
+} from '@shared/types'
+
+/** 助手对话消息（里程碑 163：状态提升到 store，关闭面板不丢对话） */
+export interface AgentMsg {
+  role: 'user' | 'assistant'
+  text: string
+  /** assistant：该轮命中的窄列预览与总数 */
+  assets?: AgentAssetBrief[]
+  total?: number
+  truncated?: boolean
+  /** assistant：该轮用户原始提问 / 检索条件（「在素材库中查看」取全量结果用） */
+  query?: string
+  conditions?: AgentConditions | null
+  /** assistant：可保存为智能文件夹的条件（null = 该轮无条件） */
+  smart?: SmartConditions | null
+  error?: boolean
+}
+
+/** IPC 错误消息去掉 Electron 包装前缀，给用户看干净的原因 */
+export function cleanAgentError(e: unknown): string {
+  return String((e as Error)?.message ?? e)
+    .replace(/^Error invoking remote method '[^']*':\s*/, '')
+    .replace(/^Error:\s*/, '')
+}
 
 export type ViewType =
   | { type: 'all' }
@@ -137,6 +172,13 @@ interface LibraryState {
   agentPanelOpen: boolean
   toggleAgentPanel: () => void
   closeAgentPanel: () => void
+  /** 助手对话（里程碑 163 提升到 store：关面板/切视图不丢对话） */
+  agentMessages: AgentMsg[]
+  /** 回传给模型的多轮历史（assistant 项存模型原始 JSON，不直接渲染） */
+  agentHistory: AgentChatTurn[]
+  agentBusy: boolean
+  agentSend: (text: string) => Promise<void>
+  agentClearChat: () => void
   showToast: (msg: string) => void
   undoLast: () => Promise<void>
 }
@@ -229,6 +271,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   editorId: null,
   aiDialogOpen: false,
   agentPanelOpen: false,
+  agentMessages: [],
+  agentHistory: [],
+  agentBusy: false,
   toast: null,
   similarTo: null,
   aiSearch: null,
@@ -604,6 +649,54 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   closeAiDialog: () => set({ aiDialogOpen: false }),
   toggleAgentPanel: () => set((s) => ({ agentPanelOpen: !s.agentPanelOpen })),
   closeAgentPanel: () => set({ agentPanelOpen: false }),
+
+  agentClearChat: () => set({ agentMessages: [], agentHistory: [] }),
+
+  agentSend: async (text) => {
+    const q = text.trim()
+    if (!q || get().agentBusy) return
+    set((s) => ({ agentMessages: [...s.agentMessages, { role: 'user', text: q }], agentBusy: true }))
+    try {
+      const r = await window.api.agentChat(get().agentHistory, q)
+      set((s) => ({
+        // assistant 历史回传模型原始输出（含条件 JSON），下一轮才能在此条件上继续调整
+        agentHistory: [
+          ...s.agentHistory,
+          { role: 'user' as const, content: q },
+          { role: 'assistant' as const, content: r.raw || r.reply }
+        ].slice(-20),
+        agentMessages: [
+          ...s.agentMessages,
+          {
+            role: 'assistant',
+            text: r.reply,
+            assets: r.assets,
+            total: r.total,
+            truncated: r.truncated,
+            query: q,
+            conditions: r.conditions,
+            smart: r.smart
+          }
+        ]
+      }))
+    } catch (e) {
+      const msg = cleanAgentError(e)
+      set((s) => ({
+        agentMessages: [
+          ...s.agentMessages,
+          {
+            role: 'assistant',
+            text: msg.includes('未配置 AI')
+              ? `${msg}（设置 → AI 智能处理 里填写 Base URL / 模型 / API Key 后即可使用）`
+              : `出错了：${msg}`,
+            error: true
+          }
+        ]
+      }))
+    } finally {
+      set({ agentBusy: false })
+    }
+  },
 
   showToast: (msg) => {
     if (toastTimer) clearTimeout(toastTimer)

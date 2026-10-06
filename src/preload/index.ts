@@ -106,6 +106,9 @@ const api = {
   /** 找图助手：直接执行一组结构化条件（不经过模型） */
   agentSearch: (conditions: unknown): Promise<AgentSearchResult> =>
     ipcRenderer.invoke('ai:agentSearch', conditions),
+  /** 找图助手：条件全量结果（完整 Asset，供「在素材库中查看」铺进图库） */
+  agentSearchFull: (conditions: unknown): Promise<Asset[]> =>
+    ipcRenderer.invoke('ai:agentSearchFull', conditions),
 
   /* 标签 */
   listTags: (): Promise<Tag[]> => ipcRenderer.invoke('tags:list'),

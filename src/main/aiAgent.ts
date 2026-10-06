@@ -16,9 +16,11 @@ import type {
   AgentAssetBrief,
   AgentConditions,
   AgentReply,
-  AgentSearchResult
+  AgentSearchResult,
+  Asset,
+  AssetQuery,
+  SmartConditions
 } from '../shared/types'
-import type { AssetQuery } from '../shared/types'
 
 /** 计数上限：命中很多时不必全量拉取，total 为下限（truncated 标记） */
 const COUNT_CAP = 2000
@@ -90,21 +92,16 @@ function resolveTagIds(names: string[]): { ids: number[]; matched: string[] } {
   return { ids, matched }
 }
 
-/**
- * 执行结构化条件检索（纯读库，不依赖 AI）——找图助手的执行层。
- * 也供渲染层/后续版本直接调用（把一组条件应用到图库）。
- */
-export function executeAgentConditions(raw: unknown): AgentSearchResult {
+/** 消毒后的条件 → AssetQuery（标签名解析为 id；供检索/全量/智能文件夹三条路径共用） */
+function buildAgentQuery(raw: unknown): { query: AssetQuery; matchedTags: string[] } | null {
   const c = sanitizeConditions(raw)
-  if (!c) return { assets: [], total: 0, truncated: false, matchedTags: [] }
+  if (!c) return null
 
   const { ids: tagIds, matched } = c.tags ? resolveTagIds(c.tags) : { ids: [], matched: [] }
   // 条件写了标签但一个都没匹配上：直接回空（否则会退化成"无标签筛选"返回全库）
-  if (c.tags && c.tags.length > 0 && tagIds.length === 0) {
-    return { assets: [], total: 0, truncated: false, matchedTags: [] }
-  }
+  if (c.tags && c.tags.length > 0 && tagIds.length === 0) return null
 
-  const q: AssetQuery = {
+  const query: AssetQuery = {
     keyword: c.keyword,
     tagIds: tagIds.length > 0 ? tagIds : undefined,
     shape: c.shape,
@@ -120,7 +117,18 @@ export function executeAgentConditions(raw: unknown): AgentSearchResult {
     sortDesc: c.sortDesc,
     limit: COUNT_CAP
   }
-  const rows = queryAssets(q)
+  return { query, matchedTags: matched }
+}
+
+/**
+ * 执行结构化条件检索（纯读库，不依赖 AI）——找图助手的执行层（窄列预览）。
+ * 也供渲染层/后续版本直接调用（把一组条件应用到图库）。
+ */
+export function executeAgentConditions(raw: unknown): AgentSearchResult {
+  const built = buildAgentQuery(raw)
+  if (!built) return { assets: [], total: 0, truncated: false, matchedTags: [] }
+
+  const rows = queryAssets(built.query)
   const total = rows.length
   const assets: AgentAssetBrief[] = rows.slice(0, PREVIEW_LIMIT).map((a) => ({
     id: a.id,
@@ -132,8 +140,41 @@ export function executeAgentConditions(raw: unknown): AgentSearchResult {
     source: a.source,
     tags: a.tagNames ?? []
   }))
-  logger.info('[aiAgent]', `条件检索命中 ${total} 个（标签命中: ${matched.join(',') || '无'}）`)
-  return { assets, total, truncated: total >= COUNT_CAP, matchedTags: matched }
+  logger.info('[aiAgent]', `条件检索命中 ${total} 个（标签命中: ${built.matchedTags.join(',') || '无'}）`)
+  return { assets, total, truncated: total >= COUNT_CAP, matchedTags: built.matchedTags }
+}
+
+/** 全量结果（完整 Asset，供「在素材库中查看」把结果铺进图库） */
+export function agentSearchFull(raw: unknown): Asset[] {
+  const built = buildAgentQuery(raw)
+  if (!built) return []
+  return queryAssets(built.query)
+}
+
+/**
+ * 条件 → 智能文件夹条件（供「存为智能文件夹」持久化）。
+ * 仅映射 SmartConditions 支持的字段：sortBy/sortDesc 不持久化（图库排序由视图决定，集合相同）。
+ * 标签名 → tagId；一个都没匹配上时返回 null（存下去会变成无标签条件，语义错误）。
+ */
+export function agentConditionsToSmart(raw: unknown): SmartConditions | null {
+  const c = sanitizeConditions(raw)
+  if (!c) return null
+  const smart: SmartConditions = {}
+  if (c.keyword) smart.keyword = c.keyword
+  if (c.tags && c.tags.length > 0) {
+    const { ids } = resolveTagIds(c.tags)
+    if (ids.length === 0) return null
+    smart.tagIds = ids
+  }
+  if (c.exts) smart.exts = c.exts
+  if (c.starMin) smart.starMin = c.starMin
+  if (c.minW) smart.minW = c.minW
+  if (c.maxW) smart.maxW = c.maxW
+  if (c.withinDays) smart.withinDays = c.withinDays
+  if (c.untagged) smart.untagged = true
+  if (c.shape) smart.shape = c.shape
+  if (c.source !== undefined) smart.source = c.source === 'manual' ? '' : c.source
+  return Object.keys(smart).length > 0 ? smart : null
 }
 
 /** 构造找图助手的提示词（含标签库与库规模上下文） */
@@ -182,7 +223,7 @@ export async function agentChatTurn(
 ): Promise<AgentReply> {
   const trimmed = message.trim()
   if (!trimmed) {
-    return { reply: '想找什么素材？直接描述就行。', conditions: null, assets: [], total: 0, truncated: false, matchedTags: [], raw: '' }
+    return { reply: '想找什么素材？直接描述就行。', conditions: null, smart: null, assets: [], total: 0, truncated: false, matchedTags: [], raw: '' }
   }
 
   const prompt = buildPrompt(trimmed)
@@ -195,6 +236,7 @@ export async function agentChatTurn(
     return {
       reply: content.trim().slice(0, 300) || '（AI 没有返回可用的结果，换个说法再试试）',
       conditions: null,
+      smart: null,
       assets: [],
       total: 0,
       truncated: false,
@@ -209,9 +251,9 @@ export async function agentChatTurn(
       : '已按条件检索完成。'
   const conditions = sanitizeConditions(obj.conditions)
   if (!conditions) {
-    return { reply, conditions: null, assets: [], total: 0, truncated: false, matchedTags: [], raw: content }
+    return { reply, conditions: null, smart: null, assets: [], total: 0, truncated: false, matchedTags: [], raw: content }
   }
 
   const result = executeAgentConditions(conditions)
-  return { reply, conditions, raw: content, ...result }
+  return { reply, conditions, smart: agentConditionsToSmart(conditions), raw: content, ...result }
 }

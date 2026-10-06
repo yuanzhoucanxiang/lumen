@@ -1,7 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { aiApplySuggestions, aiProcessBatch, aiSuggestBatch, testAiConnection } from '../aiRename'
 import { aiSearch } from '../aiSearch'
-import { agentChatTurn, executeAgentConditions } from '../aiAgent'
+import { agentChatTurn, agentSearchFull, executeAgentConditions } from '../aiAgent'
 import { normalizeAiBaseUrl } from '../aiClient'
 import { loadConfig } from '../library'
 import { isUnnamedName, queryAssets } from '../repository'
@@ -102,4 +102,7 @@ export function registerAiIpc(getWindow: () => BrowserWindow | null): void {
 
   // 直接执行一组结构化条件（不经过模型；测试与后续"把条件应用到图库"复用）
   ipcMain.handle('ai:agentSearch', (_e, conditions: unknown) => executeAgentConditions(conditions))
+
+  // 全量结果（完整 Asset）：「在素材库中查看」把助手结果铺进图库视图
+  ipcMain.handle('ai:agentSearchFull', (_e, conditions: unknown) => agentSearchFull(conditions))
 }

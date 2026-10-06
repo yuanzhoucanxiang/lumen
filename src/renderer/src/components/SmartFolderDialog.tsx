@@ -77,6 +77,8 @@ export default function SmartFolderDialog({
   const [untagged, setUntagged] = useState(initial.untagged ?? false)
   const [shape, setShape] = useState(initial.shape ?? '')
   const [colorCountMax, setColorCountMax] = useState(initial.colorCountMax ?? 0)
+  /** 来源（里程碑 163）：undefined = 不限；'' = 手动导入；agent/clip/watcher/screenshot */
+  const [source, setSource] = useState<string | undefined>(initial.source)
 
   const toggleTag = (id: number) =>
     setTagIds(tagIds.includes(id) ? tagIds.filter((t) => t !== id) : [...tagIds, id])
@@ -100,6 +102,7 @@ export default function SmartFolderDialog({
     if (withinDays > 0) conds.withinDays = withinDays
     if (untagged) conds.untagged = true
     if (shape) conds.shape = shape as SmartConditions['shape']
+    if (source !== undefined) conds.source = source
     if (colorCountMax > 0) conds.colorCountMax = colorCountMax
     if (color) {
       conds.color = color
@@ -269,6 +272,23 @@ export default function SmartFolderDialog({
               { v: 3, label: '≤ 3' }
             ].map((o) => (
               <Chip key={o.v} active={colorCountMax === o.v} onClick={() => setColorCountMax(o.v)}>
+                {o.label}
+              </Chip>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="来源">
+          <div className="flex flex-wrap gap-1">
+            {[
+              { v: undefined as string | undefined, label: '不限' },
+              { v: '' as string | undefined, label: '手动导入' },
+              { v: 'agent', label: 'AI 助手' },
+              { v: 'clip', label: '浏览器剪藏' },
+              { v: 'watcher', label: '监控文件夹' },
+              { v: 'screenshot', label: '截图' }
+            ].map((o) => (
+              <Chip key={o.label} active={source === o.v} onClick={() => setSource(o.v)}>
                 {o.label}
               </Chip>
             ))}

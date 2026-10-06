@@ -139,6 +139,8 @@ export interface SmartConditions {
   /** 构图：横图 / 竖图 / 方形 */
   shape?: 'landscape' | 'portrait' | 'square'
   colorCountMax?: number
+  /** 导入来源（里程碑 163）：undefined = 不限；'' = 手动导入；agent/clip/watcher/startup/screenshot */
+  source?: string
 }
 
 export type AssetKind = 'image' | 'video' | 'audio' | 'other'
@@ -187,6 +189,8 @@ export interface AgentReply extends AgentSearchResult {
   /** 给用户看的自然语言回复 */
   reply: string
   conditions: AgentConditions | null
+  /** 条件转成的智能文件夹条件（可保存为智能文件夹；条件不支持持久化的字段会被丢弃） */
+  smart: SmartConditions | null
   /** 模型原始输出(渲染层作为下一轮 assistant 历史回传,保持多轮条件连续性) */
   raw: string
 }
