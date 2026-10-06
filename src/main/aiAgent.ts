@@ -7,7 +7,7 @@
  * 而非 function calling：兼容各家 OpenAI 兼容模型，容错解析复用 aiSearch 的 extractJson。
  * 只读——本模块不写库，写操作（打标签/存智能文件夹）留待后续版本。
  */
-import { listTags, libraryStats, queryAssets, getAssetById } from './repository'
+import { listTags, libraryStats, queryAssets, getAssetById, addTagToAssets } from './repository'
 import { logger } from './logger'
 import { chat } from './aiClient'
 import { extractJson, rankByVision } from './aiSearch'
@@ -149,6 +149,29 @@ export function agentSearchFull(raw: unknown): Asset[] {
   const built = buildAgentQuery(raw)
   if (!built) return []
   return queryAssets(built.query)
+}
+
+/**
+ * 按条件给全部命中素材打标签（里程碑 166）——助手的可撤销写操作（标签可随时移除）。
+ * 与检索同一条 buildAgentQuery 路径（含标签名→tagId、未命中标签回空等全部守卫）。
+ * 返回实际打上标签的素材数（INSERT OR IGNORE 幂等，重复打不产生脏数据）。
+ */
+export function agentTagByConditions(raw: unknown, tag: string): { tagged: number } {
+  const name = String(tag ?? '')
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .trim()
+    .slice(0, 40)
+  if (!name) return { tagged: 0 }
+  const built = buildAgentQuery(raw)
+  if (!built) return { tagged: 0 }
+  const rows = queryAssets(built.query)
+  if (rows.length === 0) return { tagged: 0 }
+  addTagToAssets(
+    rows.map((a) => a.id),
+    name
+  )
+  logger.info('[aiAgent]', `按条件打标签「${name}」: ${rows.length} 个素材`)
+  return { tagged: rows.length }
 }
 
 /**

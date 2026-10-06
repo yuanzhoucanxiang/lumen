@@ -112,6 +112,9 @@ const api = {
   /** 找图助手：AI 视觉重排（按查询意图对已有结果做视觉相关性排序） */
   agentRerank: (query: string, ids: string[]): Promise<AgentAssetBrief[]> =>
     ipcRenderer.invoke('ai:agentRerank', query, ids),
+  /** 找图助手：按条件给全部命中素材打标签（可撤销写操作） */
+  agentTag: (conditions: unknown, tag: string): Promise<{ tagged: number }> =>
+    ipcRenderer.invoke('ai:agentTag', conditions, tag),
 
   /* 标签 */
   listTags: (): Promise<Tag[]> => ipcRenderer.invoke('tags:list'),

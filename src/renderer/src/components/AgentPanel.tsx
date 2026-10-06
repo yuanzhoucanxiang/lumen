@@ -25,6 +25,8 @@ export default function AgentPanel() {
   const [input, setInput] = useState('')
   const [smartSaveFor, setSmartSaveFor] = useState<number | null>(null)
   const [smartName, setSmartName] = useState('')
+  const [tagFor, setTagFor] = useState<number | null>(null)
+  const [tagName, setTagName] = useState('')
   const [rerankBusy, setRerankBusy] = useState<number | null>(null)
   const [rerankProgress, setRerankProgress] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -90,6 +92,23 @@ export default function AgentPanel() {
       setSmartSaveFor(null)
     } catch (e) {
       useLibraryStore.getState().showToast(`创建失败：${String((e as Error)?.message ?? e)}`)
+    }
+  }
+
+  /** 按本轮条件给全部命中素材打标签（可撤销写操作：标签可随时移除） */
+  const tagResults = async (index: number, m: AgentMsg) => {
+    if (!m.conditions) return
+    const name = tagName.trim()
+    if (!name) return
+    try {
+      const r = await window.api.agentTag(m.conditions, name)
+      await useLibraryStore.getState().refreshTags()
+      useLibraryStore.getState().showToast(
+        r.tagged > 0 ? `已为 ${r.tagged} 个素材打上「${name}」标签` : '没有命中的素材可打标签（结果可能已变化）'
+      )
+      if (r.tagged > 0) setTagFor(null)
+    } catch (e) {
+      useLibraryStore.getState().showToast(`打标签失败：${String((e as Error)?.message ?? e)}`)
     }
   }
 
@@ -250,6 +269,48 @@ export default function AgentPanel() {
                       )}
                     </span>
                   )}
+                  {/* 打标签（里程碑 166）：给本轮全部命中素材打标签，可撤销写操作 */}
+                  {m.conditions && m.total !== undefined && m.total > 0 &&
+                    (tagFor === i ? (
+                      <span className="flex items-center gap-1">
+                        <input
+                          className="field-input w-[132px] px-1.5 py-0.5 text-[11px]"
+                          placeholder="标签名称"
+                          aria-label="标签名称"
+                          value={tagName}
+                          autoFocus
+                          onChange={(e) => setTagName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.nativeEvent.isComposing) void tagResults(i, m)
+                            if (e.key === 'Escape') setTagFor(null)
+                          }}
+                        />
+                        <button
+                          className="rounded-sm border border-[var(--accent)] px-2 py-0.5 text-[11px] text-[var(--accent-text)] disabled:opacity-40"
+                          disabled={!tagName.trim()}
+                          onClick={() => void tagResults(i, m)}
+                        >
+                          打上
+                        </button>
+                        <button
+                          className="px-1 text-[11px] text-[var(--text-faint)] hover:text-[var(--text-main)]"
+                          aria-label="取消"
+                          onClick={() => setTagFor(null)}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        className="rounded-sm border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text-dim)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent-text)]"
+                        onClick={() => {
+                          setTagFor(i)
+                          setTagName('')
+                        }}
+                      >
+                        打标签
+                      </button>
+                    ))}
                   {m.smart &&
                     (smartSaveFor === i ? (
                       <span className="flex items-center gap-1">

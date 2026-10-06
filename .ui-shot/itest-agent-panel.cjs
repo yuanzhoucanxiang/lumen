@@ -241,6 +241,21 @@ async function main() {
     full.length === 2 && full.every((a) => a.name.includes(tag) && Array.isArray(a.tagNames)),
     `count=${full.length}`)
 
+  /* ---------- 3c. 打标签沉淀(agentTag,里程碑 166) ---------- */
+  const BATCH_TAG = `${TAG_NAME}-批量`
+  const rTagged = await run(`
+    const r = await window.api.agentTag({ keyword: ${JSON.stringify(tag)} }, ${JSON.stringify(BATCH_TAG)})
+    const assets = await window.api.queryAssets({ limit: 5000 })
+    const mine = assets.filter((a) => a.name.includes(${JSON.stringify(tag)}))
+    return { tagged: r.tagged, mine: mine.length, withTag: mine.filter((a) => (a.tagNames || []).includes(${JSON.stringify(BATCH_TAG)})).length }
+  `)
+  check('agentTag 按条件给全部命中素材打标签', rTagged.tagged === 2 && rTagged.withTag === 2 && rTagged.mine === 2,
+    JSON.stringify(rTagged))
+  const rTagAgain = await run(`return await window.api.agentTag({ keyword: ${JSON.stringify(tag)} }, ${JSON.stringify(BATCH_TAG)})`)
+  check('agentTag 幂等(重复打不报错不重复)', rTagAgain.tagged === 2, `tagged=${rTagAgain.tagged}`)
+  const rTagEmpty = await run(`return await window.api.agentTag({ keyword: ${JSON.stringify(tag)} }, '   ')`)
+  check('agentTag 空标签名返回 0', rTagEmpty.tagged === 0, `tagged=${rTagEmpty.tagged}`)
+
   const SMART_NAME = `${tag}-智能夹`
   const SMART_EMPTY = `${tag}-空夹`
   // 注意:run() 自带 async IIFE 包裹,这里直接写语句,不要再包一层 (async () => {}) —— 否则返回 undefined

@@ -1,7 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { aiApplySuggestions, aiProcessBatch, aiSuggestBatch, testAiConnection } from '../aiRename'
 import { aiSearch } from '../aiSearch'
-import { agentChatTurn, agentSearchFull, agentRerank, executeAgentConditions } from '../aiAgent'
+import { agentChatTurn, agentSearchFull, agentRerank, agentTagByConditions, executeAgentConditions } from '../aiAgent'
 import { normalizeAiBaseUrl } from '../aiClient'
 import { loadConfig } from '../library'
 import { isUnnamedName, queryAssets } from '../repository'
@@ -105,6 +105,9 @@ export function registerAiIpc(getWindow: () => BrowserWindow | null): void {
 
   // 全量结果（完整 Asset）：「在素材库中查看」把助手结果铺进图库视图
   ipcMain.handle('ai:agentSearchFull', (_e, conditions: unknown) => agentSearchFull(conditions))
+
+  // 按条件给全部命中素材打标签（助手的可撤销写操作；打标签本身确定性执行，不需要 AI）
+  ipcMain.handle('ai:agentTag', (_e, conditions: unknown, tag: string) => agentTagByConditions(conditions, tag))
 
   // AI 视觉重排：对助手已检索到的素材按查询意图做视觉相关性重排（复用 aiSearch 的视觉精排管线）
   ipcMain.handle(
