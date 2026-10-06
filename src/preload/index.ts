@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { Asset, AssetQuery, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSearchProgress, AiSuggestionItem, AppSettings, Board, BoardItem, BoardItemPatch, DbBackupInfo, DupeGroup, ExportOptions, Folder, ImportResult, LibraryInfo, NewBoardItem, Tag, TagGroup, UpdateStatus, ZipBackupInfo } from '../shared/types'
+import type { Asset, AssetQuery, AgentChatTurn, AgentReply, AgentSearchResult, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSearchProgress, AiSuggestionItem, AppSettings, Board, BoardItem, BoardItemPatch, DbBackupInfo, DupeGroup, ExportOptions, Folder, ImportResult, LibraryInfo, NewBoardItem, Tag, TagGroup, UpdateStatus, ZipBackupInfo } from '../shared/types'
 
 const api = {
   /* 库管理 */
@@ -100,6 +100,12 @@ const api = {
     ipcRenderer.on('ai:searchProgress', h)
     return () => ipcRenderer.removeListener('ai:searchProgress', h)
   },
+  /** 找图助手：一轮对话（多轮历史由调用方回传） */
+  agentChat: (history: AgentChatTurn[], message: string): Promise<AgentReply> =>
+    ipcRenderer.invoke('ai:agentChat', history, message),
+  /** 找图助手：直接执行一组结构化条件（不经过模型） */
+  agentSearch: (conditions: unknown): Promise<AgentSearchResult> =>
+    ipcRenderer.invoke('ai:agentSearch', conditions),
 
   /* 标签 */
   listTags: (): Promise<Tag[]> => ipcRenderer.invoke('tags:list'),

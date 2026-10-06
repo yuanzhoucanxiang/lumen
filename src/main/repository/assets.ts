@@ -98,8 +98,9 @@ export function queryAssets(q: AssetQuery): Asset[] {
   if (q.deleted) where.push('deleted_at IS NOT NULL')
   else where.push('deleted_at IS NULL')
 
-  // 来源筛选(里程碑 159):''/缺省 = 用户手动,agent/clip/watcher/startup/screenshot
-  if (q.source) {
+  // 来源筛选(里程碑 159):undefined = 不限;'' = 用户手动;agent/clip/watcher/startup/screenshot
+  // (用 undefined 判定而非真值判定——'' 是合法筛选值,表示"只要手动导入的")
+  if (q.source !== undefined) {
     where.push('source = ?')
     params.push(q.source)
   }

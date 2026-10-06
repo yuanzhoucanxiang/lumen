@@ -1,10 +1,11 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { aiApplySuggestions, aiProcessBatch, aiSuggestBatch, testAiConnection } from '../aiRename'
 import { aiSearch } from '../aiSearch'
+import { agentChatTurn, executeAgentConditions } from '../aiAgent'
 import { normalizeAiBaseUrl } from '../aiClient'
 import { loadConfig } from '../library'
 import { isUnnamedName, queryAssets } from '../repository'
-import type { AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope } from '../../shared/types'
+import type { AgentChatTurn, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope } from '../../shared/types'
 
 export function registerAiIpc(getWindow: () => BrowserWindow | null): void {
   /* ---------------- AI 智能处理（改名+打标签）---------------- */
@@ -81,4 +82,24 @@ export function registerAiIpc(getWindow: () => BrowserWindow | null): void {
       (phase, done, total) => getWindow()?.webContents.send('ai:searchProgress', { phase, done, total })
     )
   })
+
+  /* ---------------- 找图助手（对话式检索，里程碑 161） ---------------- */
+  // 一轮对话：模型 -> JSON 指令 -> 条件检索。history 由渲染层持有并回传（含上轮原始 JSON，保条件连续性）
+  ipcMain.handle('ai:agentChat', async (_e, history: AgentChatTurn[], message: string) => {
+    const cfg = loadConfig()
+    if (!cfg.aiApiKey) throw new Error('未配置 AI API Key，请在设置页填写')
+    const safeHistory = Array.isArray(history)
+      ? history
+          .filter((h) => h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
+          .slice(-20)
+      : []
+    return agentChatTurn(
+      String(message ?? ''),
+      safeHistory,
+      { baseUrl: cfg.aiBaseUrl ?? 'https://open.bigmodel.cn/api/paas/v4', apiKey: cfg.aiApiKey, model: cfg.aiModel ?? 'glm-4v' }
+    )
+  })
+
+  // 直接执行一组结构化条件（不经过模型；测试与后续"把条件应用到图库"复用）
+  ipcMain.handle('ai:agentSearch', (_e, conditions: unknown) => executeAgentConditions(conditions))
 }

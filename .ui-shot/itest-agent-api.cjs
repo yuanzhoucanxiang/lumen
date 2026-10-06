@@ -15,9 +15,39 @@ const http = require('http')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+const { execSync } = require('child_process')
 
 const PORT = 45678
 const AUTH = { 'x-lumen-client': 'lumen-clip/1', 'content-type': 'application/json' }
+
+/**
+ * 端口守卫(2026-10-06 实测踩坑):若已安装的正式版 LUMEN 正在运行,它会占住 45678,
+ * dev 实例的剪藏服务静默绑定失败(EADDRINUSE),本测试的 HTTP 请求全部打到正式版——
+ * 两者共享同一素材库存在并发写风险,且渲染层事件断言必然失真(事件推给正式版窗口)。
+ * Windows 下用 netstat 比对 CDP(9333, dev 主进程)与剪藏服务(45678)的属主 PID;
+ * 其他平台/取不到时放行(CI 无桌面环境不受此坑影响)。
+ */
+function assertClipPortOwnedByDev() {
+  if (process.platform !== 'win32') return
+  let out = ''
+  try {
+    out = execSync('netstat -ano', { encoding: 'utf-8' })
+  } catch {
+    return // netstat 不可用不阻断
+  }
+  const pidOf = (port) => {
+    const line = out.split(/\r?\n/).find((l) => new RegExp(`:${port}\\s`).test(l) && l.includes('LISTENING'))
+    return line ? line.trim().split(/\s+/).pop() : null
+  }
+  const cdpPid = pidOf(9333)
+  const clipPid = pidOf(PORT)
+  if (cdpPid && clipPid && cdpPid !== clipPid) {
+    throw new Error(
+      `端口 ${PORT} 被另一 LUMEN 实例占用(PID ${clipPid} ≠ dev 实例 PID ${cdpPid})。` +
+        `请先关闭已安装的 LUMEN(或残留进程)再跑本测试——否则请求会打到那个实例,存在并发写库风险且断言失真。`
+    )
+  }
+}
 
 /** node 直发 HTTP(绕开 CORS,直接验证服务状态码与响应体) */
 function request(method, reqPath, body, headers = AUTH) {
@@ -50,6 +80,7 @@ function getJson(url) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 async function main() {
+  assertClipPortOwnedByDev()
   let pass = 0
   let fail = 0
   const check = (name, ok, detail) => {

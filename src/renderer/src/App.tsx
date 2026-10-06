@@ -11,6 +11,7 @@ import ScrambleText from './components/ScrambleText'
 import ConfirmDialog from './components/ConfirmDialog'
 import UpdateNotes from './components/UpdateNotes'
 import AiDialog from './components/AiDialog'
+import AgentPanel from './components/AgentPanel'
 import BoardPanel from './components/BoardPanel'
 import BoardReferencePanel from './components/BoardReferencePanel'
 import ArchiveHeader from './components/ArchiveHeader'
@@ -82,6 +83,7 @@ export default function App() {
   const view = useLibraryStore((s) => s.view)
   const boardViewMode = useLibraryStore((s) => s.boardViewMode)
   const aiDialogOpen = useLibraryStore((s) => s.aiDialogOpen)
+  const agentPanelOpen = useLibraryStore((s) => s.agentPanelOpen)
   const selection = useLibraryStore((s) => s.selection)
   const [dragOver, setDragOver] = useState(false)
   const [upd, setUpd] = useState<UpdateStatus | null>(null)
@@ -388,6 +390,11 @@ export default function App() {
           selectionIds={selection}
           onClose={() => useLibraryStore.getState().closeAiDialog()}
         />
+      )}
+      {agentPanelOpen && (
+        <PanelBoundary name="找图助手">
+          <AgentPanel />
+        </PanelBoundary>
       )}
       {dragOver && (
         <div className="drag-over-overlay">

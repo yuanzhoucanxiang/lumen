@@ -133,6 +133,10 @@ interface LibraryState {
   aiDialogOpen: boolean
   openAiDialog: () => void
   closeAiDialog: () => void
+  /** 找图助手面板开关（对话式检索，里程碑 161） */
+  agentPanelOpen: boolean
+  toggleAgentPanel: () => void
+  closeAgentPanel: () => void
   showToast: (msg: string) => void
   undoLast: () => Promise<void>
 }
@@ -224,6 +228,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   previewId: null,
   editorId: null,
   aiDialogOpen: false,
+  agentPanelOpen: false,
   toast: null,
   similarTo: null,
   aiSearch: null,
@@ -597,6 +602,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   openEditor: (editorId) => set({ editorId }),
   openAiDialog: () => set({ aiDialogOpen: true }),
   closeAiDialog: () => set({ aiDialogOpen: false }),
+  toggleAgentPanel: () => set((s) => ({ agentPanelOpen: !s.agentPanelOpen })),
+  closeAgentPanel: () => set({ agentPanelOpen: false }),
 
   showToast: (msg) => {
     if (toastTimer) clearTimeout(toastTimer)

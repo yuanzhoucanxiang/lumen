@@ -52,10 +52,17 @@ function friendlyApiError(status: number, body: string): string {
   return `API ${status}: ${raw}`
 }
 
+/** 多轮对话历史项(找图助手的上下文;content 对 chat() 不透明,原样回传) */
+export interface ChatTurn {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 /**
  * 调 OpenAI 兼容 API(纯文本或含图)。
  * @param images 图片 base64 列表(多模态视觉输入,可选)
  * @param timeoutMs 超时毫秒数,超时后 Abort 并抛错
+ * @param history 可选多轮历史(找图助手用;置于本轮消息之前)
  */
 export async function chat(
   cfg: AiConfig,
@@ -63,13 +70,19 @@ export async function chat(
   images?: { base64: string }[],
   maxTokens = 300,
   timeoutMs = 60_000,
-  temperature = 0.3
+  temperature = 0.3,
+  history?: ChatTurn[]
 ): Promise<string> {
   const url = `${normalizeAiBaseUrl(cfg.baseUrl)}/chat/completions`
   const content: Record<string, unknown>[] = [{ type: 'text', text }]
   for (const img of images ?? []) {
     content.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${img.base64}` } })
   }
+  const messages: Record<string, unknown>[] = (history ?? []).map((h) => ({
+    role: h.role,
+    content: h.content
+  }))
+  messages.push({ role: 'user', content })
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -81,7 +94,7 @@ export async function chat(
       },
       body: JSON.stringify({
         model: cfg.model,
-        messages: [{ role: 'user', content }],
+        messages,
         temperature,
         max_tokens: maxTokens
       }),

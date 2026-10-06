@@ -143,6 +143,60 @@ export interface SmartConditions {
 
 export type AssetKind = 'image' | 'video' | 'audio' | 'other'
 
+/* ---------------- 找图助手(对话式检索,里程碑 161) ---------------- */
+
+/** 模型输出的结构化检索条件(与 queryAssets 能力对齐;字段全部可选) */
+export interface AgentConditions {
+  keyword?: string
+  tags?: string[]
+  shape?: 'landscape' | 'portrait' | 'square'
+  withinDays?: number
+  starMin?: number
+  untagged?: boolean
+  /** manual = 用户手动导入(source='') */
+  source?: 'manual' | 'agent' | 'clip' | 'watcher' | 'screenshot' | 'startup'
+  exts?: string[]
+  minW?: number
+  maxW?: number
+  sortBy?: 'imported' | 'name' | 'size' | 'star'
+  sortDesc?: boolean
+}
+
+/** 助手结果里的素材摘要(窄列,渲染层用 id 拼缩略图 URL) */
+export interface AgentAssetBrief {
+  id: string
+  name: string
+  ext: string
+  width: number
+  height: number
+  star: number
+  source: string
+  tags: string[]
+}
+
+export interface AgentSearchResult {
+  assets: AgentAssetBrief[]
+  /** 命中总数(达计数上限时 truncated=true,total 为下限) */
+  total: number
+  truncated: boolean
+  /** 实际生效的标签名(模型给的名字映射到库内标签后;没命中的被丢弃) */
+  matchedTags: string[]
+}
+
+export interface AgentReply extends AgentSearchResult {
+  /** 给用户看的自然语言回复 */
+  reply: string
+  conditions: AgentConditions | null
+  /** 模型原始输出(渲染层作为下一轮 assistant 历史回传,保持多轮条件连续性) */
+  raw: string
+}
+
+/** 多轮对话历史项(找图助手上下文) */
+export interface AgentChatTurn {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 /** 单文件导入明细（仅 detail 渠道填充，如 Agent /import） */
 export interface ImportFileDetail {
   path: string

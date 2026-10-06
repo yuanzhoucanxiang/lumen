@@ -5,8 +5,8 @@ import { chat, mapWithConcurrency } from './aiClient'
 import type { AiConfig } from './aiClient'
 import type { Asset, Tag } from '../shared/types'
 
-/** 从 AI 返回文本中提取 JSON（容错：去 ```json 包裹、找第一个 {...}） */
-function extractJson(text: string): Record<string, unknown> | null {
+/** 从 AI 返回文本中提取 JSON（容错：去 ```json 包裹、找第一个 {...}）——找图助手复用此解析器 */
+export function extractJson(text: string): Record<string, unknown> | null {
   const cleaned = text.replace(/```json\s*/g, '').replace(/```/g, '').trim()
   const start = cleaned.indexOf('{')
   const end = cleaned.lastIndexOf('}')
