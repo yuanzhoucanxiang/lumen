@@ -737,12 +737,6 @@ export default function Sidebar() {
           )}
           <Icon name="assistant" size={15} strokeWidth={1.9} className="text-[var(--accent-text)]" />
           <span className="min-w-0 flex-1 truncate">助手</span>
-          <span
-            aria-hidden="true"
-            className="mono shrink-0 border border-[var(--accent)] px-1 text-[9px] leading-[13px] text-[var(--accent-text)]"
-          >
-            AI
-          </span>
         </button>
       </div>
 
