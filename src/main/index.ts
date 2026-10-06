@@ -228,19 +228,19 @@ app.whenReady().then(() => {
   ipcMain.handle('window:floatingToggleMinimize', () => toggleFloatingBoardMinimize())
   ipcMain.handle('window:floatingResetPos', () => resetFloatingBoardPosition())
 
-  // 浏览器剪藏接收服务：导入成功后通知渲染进程刷新
-  startClipServer((count) => {
-    mainWindow?.webContents.send('clip:imported', count)
+  // 本机接收服务(浏览器剪藏 /clip + AI Agent /import)：导入成功后通知渲染进程刷新
+  startClipServer((count, source) => {
+    mainWindow?.webContents.send('clip:imported', count, source)
   })
 
   // 监控文件夹自动导入
   syncWatchers((count) => {
-    mainWindow?.webContents.send('clip:imported', count)
+    mainWindow?.webContents.send('clip:imported', count, 'watcher')
   })
 
   // 启动增量同步：导入软件关闭期间监控目录新增的文件（类 Eagle 行为）
   void syncOnStartup((count) => {
-    mainWindow?.webContents.send('clip:imported', count)
+    mainWindow?.webContents.send('clip:imported', count, 'startup')
   })
 
   // 回收站自动清理（30 天）

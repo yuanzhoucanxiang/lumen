@@ -141,6 +141,15 @@ export interface SmartConditions {
 
 export type AssetKind = 'image' | 'video' | 'audio' | 'other'
 
+/** 单文件导入明细（仅 detail 渠道填充，如 Agent /import） */
+export interface ImportFileDetail {
+  path: string
+  name: string
+  status: 'imported' | 'skipped' | 'failed'
+  /** imported = 新素材 id；skipped = 命中的库内已有素材 id（tombstone/无命中时缺省） */
+  id?: string
+}
+
 export interface ImportResult {
   imported: number
   skipped: number
@@ -149,6 +158,10 @@ export interface ImportResult {
   failedFiles?: string[]
   /** 本次成功导入的素材 id(白板外部拖入需把新素材放到画布上) */
   importedIds?: string[]
+  /** 本次跳过的重复文件命中的库内已有素材 id（Agent 渠道用于幂等补打标签/归档） */
+  matchedIds?: string[]
+  /** 逐文件明细（opts.detail = true 时填充） */
+  files?: ImportFileDetail[]
   /** URL 抓图失败清单(含原因),仅 import:urls 返回 */
   failedUrls?: string[]
 }

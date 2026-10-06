@@ -213,6 +213,13 @@ const api = {
   exportAssets: (ids: string[], mode: 'folder' | 'zip', opts?: ExportOptions): Promise<{ exported: number; target: string } | null> =>
     ipcRenderer.invoke('assets:export', ids, mode, opts),
 
+  /* Agent 技能 */
+  installAgentSkill: (): Promise<{ installed: string[]; source: string }> =>
+    ipcRenderer.invoke('agent:installSkill'),
+  openAgentSkillFolder: (): Promise<string> => ipcRenderer.invoke('agent:openSkillFolder'),
+  agentSkillStatus: (): Promise<{ installed: boolean; upToDate: boolean; dirs: string[] }> =>
+    ipcRenderer.invoke('agent:skillStatus'),
+
   /* 区域截图 */
   /** 工具栏触发:隐藏主窗 → 捕获 → 打开全屏覆层(已开会话时返回 false) */
   screenshotStart: (): Promise<boolean> => ipcRenderer.invoke('screenshot:start'),
@@ -242,9 +249,9 @@ const api = {
   originalUrl: (id: string): string => `asset://${id}/file?t=o`,
   storyboardUrl: (id: string): string => `asset://${id}/file?t=s`,
 
-  /* 剪藏通知 */
-  onClipImported: (cb: (count: number) => void): (() => void) => {
-    const h = (_e: Electron.IpcRendererEvent, count: number) => cb(count)
+  /* 导入通知（来源分流提示文案：剪藏/Agent/监控文件夹/启动同步） */
+  onClipImported: (cb: (count: number, source?: 'clip' | 'agent' | 'watcher' | 'startup') => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, count: number, source?: 'clip' | 'agent' | 'watcher' | 'startup') => cb(count, source)
     ipcRenderer.on('clip:imported', h)
     return () => ipcRenderer.removeListener('clip:imported', h)
   },

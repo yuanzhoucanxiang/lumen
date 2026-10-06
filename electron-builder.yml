@@ -45,6 +45,11 @@ mac:
     - zip
 asarUnpack:
   - '**/node_modules/ffmpeg-static/**'
+# Agent 技能随包分发(里程碑 151):打包后位于 resources/skill,
+# 主进程 agentSkill.ts 据此定位,设置页一键安装到本机 agent 技能目录
+extraResources:
+  - from: agent-skill
+    to: skill
 nsis:
   artifactName: Lumen-${version}-setup.${ext}
   shortcutName: LUMEN

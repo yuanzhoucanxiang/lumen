@@ -110,10 +110,15 @@ async function main() {
     const dpr = await run(`return window.devicePixelRatio`)
     const r3 = await run(`return window.api.screenshotCommit({ x: 10, y: 10, width: 120, height: 90 })`)
     const a3 = (r3.importedIds || [])[0] ? await run(`return (async () => window.api.getAsset(${JSON.stringify((r3.importedIds || [])[0])}))()`) : null
+    // 整数缩放下捕获分辨率=逻辑×scaleFactor,可精确断言;
+    // Windows 自定义分数缩放(如 273%)下 desktopCapturer 返回原生分辨率,捕获 scale ≠ devicePixelRatio,
+    // 而裁剪 scale 以实际捕获图为准(captureDisplay: size.width/display.size.width),此时按宽高比+下限断言
+    const exact = a3?.width === Math.round(120 * dpr) && a3?.height === Math.round(90 * dpr)
+    const fracOk = Math.abs((a3?.width ?? 0) / (a3?.height ?? 1) - 120 / 90) < 0.02 && a3?.width >= 120 && a3?.height >= 90
     check(
-      '真实捕获尺寸=rect×devicePixelRatio',
-      r3.imported === 1 && a3?.width === Math.round(120 * dpr) && a3?.height === Math.round(90 * dpr),
-      JSON.stringify({ dpr, imported: r3.imported, w: a3?.width, h: a3?.height })
+      '真实捕获尺寸=rect×captureScale',
+      r3.imported === 1 && (exact || fracOk),
+      JSON.stringify({ dpr, imported: r3.imported, w: a3?.width, h: a3?.height, mode: exact ? 'exact' : 'fractional-dpi' })
     )
   } else {
     console.log('  (screenshot:start 未启动,跳过真实链路用例)')

@@ -237,8 +237,42 @@ const GUIDE_SECTIONS: GuideSection[] = [
     ]
   },
   {
-    id: 'whiteboard',
+    id: 'agent',
     number: '06',
+    title: 'Agent 接入',
+    eyebrow: 'AI AGENT / LOCAL API',
+    summary: '让电脑上的 AI 助手（ZCode、Claude Code 等）把散落各处的图片批量收进素材库，自动打标签、归文件夹。',
+    keywords: ['Agent', 'AI 助手', '技能', '整理图片', '批量导入', '本地接口', 'ZCode', 'Claude', 'HTTP'],
+    blocks: [
+      {
+        title: '安装技能（使用 AI 助手才需要）',
+        steps: [
+          '进入“设置 → 偏好设置 → Agent 接入”，点击“安装技能到本机 Agent”。',
+          '技能会装到 ~/.agents/skills/lumen（检测到 Claude Code 时同步一份到 ~/.claude/skills/lumen）。',
+          '使用其他 AI 工具时，点“打开技能文件夹”把文件手动复制过去。',
+          '不使用 AI 助手可忽略本章，LUMEN 不会写入任何技能文件。'
+        ],
+        tip: 'LUMEN 更新后可在同一位置重新安装，获取最新版技能。'
+      },
+      {
+        title: '让助手替你收图',
+        steps: [
+          '保持 LUMEN 在运行，然后对 AI 助手说“帮我把 XX 文件夹里的图整理进 LUMEN”。',
+          '助手会按路径批量导入（目录连同子目录一起处理），并可顺带打标签、归入文件夹（支持 A/B 多级，缺失层级自动创建）。'
+        ],
+        bullets: [
+          '默认复制导入，原文件保留；确需移动导入时由助手显式指定。',
+          '同一批文件重复导入会自动跳过（与手动导入共用查重管线），不必担心重复入库。',
+          'Agent 自己导入的图片默认归入「Agent 导入」专属文件夹，与您手动导入的素材分开，不会混淆。',
+          '导入接口只监听本机 127.0.0.1，且要求携带客户端鉴权头，外部设备无法访问。'
+        ],
+        warning: '若助手提示连不上，先确认 LUMEN 正在运行；提示 /import 不存在说明 LUMEN 版本过旧，更新后即可。'
+      }
+    ]
+  },
+  {
+    id: 'whiteboard',
+    number: '07',
     title: '白板工作区',
     eyebrow: 'REFERENCE BOARD / CANVAS',
     summary: '把素材组织成视觉关系、情绪板或分镜参考，并使用标注工具完成表达。',
@@ -320,7 +354,7 @@ const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: 'export-backup',
-    number: '07',
+    number: '08',
     title: '导出、备份与回收站',
     eyebrow: 'DELIVERY / SAFETY',
     summary: '区分素材导出、完整库备份和数据库备份，降低误删与设备故障风险。',
@@ -374,11 +408,11 @@ const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: 'preferences',
-    number: '08',
+    number: '09',
     title: '主题、快捷键与更新',
     eyebrow: 'PREFERENCES / UPDATE',
     summary: '根据工作环境调整视觉语言和操作方式，并保持应用版本更新。',
-    keywords: ['设置', '主题', '银盐鸦影', '像素故障', '信号故障', '快捷键', '更新', '版本'],
+    keywords: ['设置', '主题', '银盐鸦影', '像素故障', '信号故障', '快捷键', '更新', '版本', 'Agent 接入'],
     blocks: [
       {
         title: '主题不是简单换色',
@@ -399,6 +433,14 @@ const GUIDE_SECTIONS: GuideSection[] = [
         ]
       },
       {
+        title: 'Agent 接入（可选）',
+        bullets: [
+          '设置页的「Agent 接入」卡片用于把 LUMEN 自带的「lumen」技能安装到本机 AI 助手（ZCode、Claude Code 等）。',
+          '安装后，助手即可把散落在各文件夹的图片批量收进素材库并自动打标签、归文件夹；详见「Agent 接入」一章。',
+          '不使用 AI 助手无需理会，LUMEN 不会写入任何技能文件。'
+        ]
+      },
+      {
         title: '检查更新',
         bullets: [
           '应用启动后会静默检查一次更新，不会反复打扰。',
@@ -410,7 +452,7 @@ const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: 'troubleshooting',
-    number: '09',
+    number: '10',
     title: '常见问题排查',
     eyebrow: 'TROUBLESHOOTING',
     summary: '遇到导入、滚动、预览、AI 或白板问题时，按低风险顺序定位原因。',

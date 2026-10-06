@@ -65,6 +65,12 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
   const [tags, setTags] = useState<Tag[]>([])
   const [tagSearch, setTagSearch] = useState('')
   const [restoreOpen, setRestoreOpen] = useState(false)
+  const [skillInstalling, setSkillInstalling] = useState(false)
+  const [skillStatus, setSkillStatus] = useState<{ installed: boolean; upToDate: boolean } | null>(null)
+
+  useEffect(() => {
+    void window.api.agentSkillStatus().then(setSkillStatus).catch(() => setSkillStatus(null))
+  }, [])
 
   useEffect(() => {
     void window.api.getSettings().then(setSettings)
@@ -148,6 +154,19 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
       useLibraryStore.getState().showToast(r.ok ? '连接成功' : `连接失败:${r.message}`)
     } finally {
       setAiTesting(false)
+    }
+  }
+
+  /** 一键安装 lumen 技能到本机 agent 技能目录(设置 → Agent 接入) */
+  const installSkill = async () => {
+    setSkillInstalling(true)
+    try {
+      const r = await window.api.installAgentSkill()
+      useLibraryStore.getState().showToast(r.installed.length === 1 ? `技能已安装到 ${r.installed[0]}` : `技能已安装到 ${r.installed.length} 个 Agent 目录`)
+    } catch {
+      useLibraryStore.getState().showToast('技能安装失败，请查看日志')
+    } finally {
+      setSkillInstalling(false)
     }
   }
 
@@ -504,8 +523,42 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
+        {/* Agent 接入 */}
+        <div className="settings-module border-t border-[var(--border)] pt-4" data-code="06 / AGENT">
+          <div className="section-title mb-2">Agent 接入</div>
+          <div className="mb-2 text-[11px] text-[var(--text-dim)]">
+            LUMEN 自带一套「lumen」技能，AI 助手（如 ZCode、Claude Code）装上后即可把散落各处的图片批量收进素材库，自动打标签、归文件夹。不使用 AI 助手可忽略本节。
+          </div>
+          <div className="flex gap-2">
+            <button className="btn-ghost disabled:opacity-40" disabled={skillInstalling} onClick={() => void installSkill()}>
+              {skillInstalling ? '安装中…' : skillStatus?.installed && !skillStatus.upToDate ? '更新技能' : '安装技能到本机 Agent'}
+            </button>
+            <button className="btn-ghost" onClick={() => void window.api.openAgentSkillFolder()}>
+              打开技能文件夹
+            </button>
+          </div>
+          {skillStatus && (
+            <div className="mt-1.5 text-[10.5px] leading-[1.5]">
+              {skillStatus.installed ? (
+                skillStatus.upToDate ? (
+                  <span className="text-[var(--accent-text)]">技能已安装，版本最新</span>
+                ) : (
+                  <span className="text-[var(--warning, #e0a83c)]">技能有新版本，点「更新技能」即可</span>
+                )
+              ) : (
+                <span className="text-[var(--text-faint)]">尚未安装</span>
+              )}
+            </div>
+          )}
+          <div className="mt-1.5 text-[10.5px] leading-[1.5] text-[var(--text-faint)]">
+            安装到 ~/.agents/skills/lumen（检测到 Claude Code 时同步写入 ~/.claude/skills/lumen）；
+            用了其他 AI 工具可打开技能文件夹手动复制。LUMEN 更新后可重新安装获取新版技能。
+            Agent 导入的素材默认归入「Agent 导入」文件夹，与您自己的素材分开。
+          </div>
+        </div>
+
         {/* 关于 / 更新 */}
-        <div className="settings-module flex items-center justify-between border-t border-[var(--border)] pt-4" data-code="06 / SYSTEM">
+        <div className="settings-module flex items-center justify-between border-t border-[var(--border)] pt-4" data-code="07 / SYSTEM">
           <div>
             <div className="section-title mb-1">关于</div>
             <div className="mono text-[12px] text-[var(--text-dim)]">

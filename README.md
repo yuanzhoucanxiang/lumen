@@ -3,7 +3,7 @@
 > 类 Eagle 的本地素材管理桌面应用：收集、整理、检索你的图片 / 视频 / 音频 / 字体 / PSD 素材。
 > 数据全部存在本地，无需注册、无需联网（联网仅用于自动更新）。
 
-当前版本 **v0.8.0**。安装包下载：<https://github.com/yuanzhoucanxiang/shiguang-materials/releases/latest>
+当前版本 **v0.8.31**。安装包下载：<https://github.com/yuanzhoucanxiang/shiguang-materials/releases/latest>
 
 ---
 
@@ -35,15 +35,17 @@ src/
 │   ├── importer.ts        # 导入管线：缩略图 / 主色 / dHash / 视频封面
 │   ├── editor.ts          # 编辑器保存
 │   ├── exporter.ts        # 导出文件夹 / ZIP
-│   ├── clipServer.ts      # 浏览器剪藏 HTTP 服务（127.0.0.1:45678）
+│   ├── clipServer.ts      # 本机接收 HTTP 服务（127.0.0.1:45678）：浏览器剪藏 /clip + Agent /import
+│   ├── agentSkill.ts      # 「lumen」技能随包分发与一键安装到 agent 技能目录
 │   ├── watcher.ts         # 监控文件夹自动导入（递归）
 │   ├── updater.ts         # electron-updater 状态机
 │   └── ipc.ts             # IPC 通道注册
 ├── preload/index.ts       # contextBridge 暴露 window.api
-└── renderer/src/
-    ├── App.tsx            # 布局 / 快捷键 / 粘贴导入
-    ├── stores/libraryStore.ts
-    └── components/        # Sidebar / Toolbar / Gallery / Inspector / Preview / Editor ...
+├── renderer/src/
+│   ├── App.tsx            # 布局 / 快捷键 / 粘贴导入
+│   ├── stores/libraryStore.ts
+│   └── components/        # Sidebar / Toolbar / Gallery / Inspector / Preview / Editor ...
+└── agent-skill/           # 「lumen」Agent 技能源文件（extraResources 打进 resources/skill）
 ```
 
 ## 开发
@@ -104,7 +106,7 @@ export FFMPEG_BINARY_HOST="https://npmmirror.com/mirrors/ffmpeg-static"
 
 ## 功能概览
 
-- 导入：拖拽 / 按钮 / Ctrl+V 粘贴 / 浏览器剪藏（LUMEN Clip 扩展）
+- 导入：拖拽 / 按钮 / Ctrl+V 粘贴 / 浏览器剪藏（LUMEN Clip 扩展）/ AI Agent 按路径批量导入
 - 浏览：瀑布流 / 网格 / 列表，虚拟滚动，悬停预览（GIF/视频/音频自动播放）
 - 检索：搜索、格式 / 颜色色环 / 星级 / 未标注 / 导入日期筛选
 - 整理：标签（颜色 + 分组）、多级文件夹、智能文件夹、批量打标签 / 评分
@@ -112,6 +114,22 @@ export FFMPEG_BINARY_HOST="https://npmmirror.com/mirrors/ffmpeg-static"
 - 编辑：画笔 / 矩形 / 箭头 / 文字批注 + 裁剪（15 步撤销）
 - 导出：到文件夹 / 打包 ZIP
 - 多库切换、监控文件夹自动导入、自动更新
+- Agent 接入：内置「lumen」技能，设置页一键安装，AI 助手可整理散落图片并自动打标签归档
+
+## Agent 接入（本地 API）
+
+LUMEN 运行时在本机 `127.0.0.1:45678` 提供 HTTP 接口（仅监听回环地址，需携带请求头 `x-lumen-client: lumen-clip/1`），供浏览器剪藏扩展与本机 AI Agent 调用：
+
+| 端点 | 说明 |
+|------|------|
+| `POST /import` | 按路径批量导入（支持目录递归、查重跳过），可选 `tags` 打标签、`folder` 归文件夹（支持 `A/B` 多级自动创建）、`move` 移动导入、`note` 把 prompt/生成信息写入素材备注（可被搜索）、`checkSimilar` 相似检测（回传库内近似素材，防近重复图入库）、`validate` 试运行（只预估不导入）；未指定 `folder` 时新素材自动归入「Agent 导入」专属文件夹，与用户素材区分；返回逐文件明细 `files`，跳过的重复文件回传命中的库内素材 `matchedIds` 并照常补标签/归档（幂等重跑安全） |
+| `GET /assets` | 查询素材（只读）：`q` 关键词（搜名称+备注+拼音）、`ext` 扩展名、`tag` 标签名、`limit`≤500，返回窄列字段 |
+| `GET /stats` | 库汇总（只读）：素材总数、回收站数、标签/文件夹数、Agent 导入文件夹张数 |
+| `GET /tags` / `GET /folders` | 列出现有标签 / 文件夹 |
+| `GET /status` | 服务探测，返回版本号与素材库路径 |
+| `POST /clip` | 单图导入（dataUrl / imageUrl），浏览器剪藏扩展使用 |
+
+技能文件随安装包内置（`resources/skill/`），用户在「设置 → Agent 接入」一键安装到 `~/.agents/skills/lumen`（检测到 Claude Code 时同步 `~/.claude/skills/lumen`），无 agent 的用户不受影响。源文件位于仓库 `agent-skill/`。
 
 ## 发布流程
 

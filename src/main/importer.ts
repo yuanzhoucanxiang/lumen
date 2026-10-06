@@ -42,6 +42,8 @@ export interface ImportOptions {
   /** true = 查重时检查 deleted_files tombstone(已删除文件不再自动重导入)。
    *  监控/启动同步设 true;用户主动导入(对话框/拖拽/剪藏)不设,允许重新导入已删文件 */
   checkTombstone?: boolean
+  /** true = 结果附带逐文件明细 files(Agent /import 需要;其余渠道省内存不填) */
+  detail?: boolean
   /** 导入进度回调:阶段 A 每完成一个文件触发一次('prepare'),阶段 B 事务提交后触发一次('commit') */
   onProgress?: (phase: 'prepare' | 'commit', done: number, total: number) => void
 }
@@ -54,25 +56,37 @@ export function assetKindOf(ext: string): 'image' | 'video' | 'audio' | 'other' 
   return 'other'
 }
 
-/** 递归展开路径列表，返回所有可导入的文件路径（异步遍历，不阻塞主进程） */
+/** 递归展开路径列表，返回所有可导入的文件路径（异步遍历，不阻塞主进程）。
+ *  同一批调用里的重叠路径（目录+目录内文件 / 同一路径传两次）会展开出重复条目，
+ *  而阶段 A 并发准备时彼此不可见（尚未提交），重复条目会把同一文件入库两次 —— 按路径归一去重兜底。 */
 export async function collectFiles(paths: string[], acc: string[] = []): Promise<string[]> {
-  for (const p of paths) {
+  const seen = new Set<string>()
+  const out: string[] = []
+  const keyOf = (p: string) =>
+    process.platform === 'win32' ? p.replace(/\//g, '\\').toLowerCase() : p
+  const walk = async (p: string): Promise<void> => {
     let st
     try {
       st = await stat(p)
     } catch {
-      continue // 路径不存在/不可访问(与原 existsSync 预检语义一致)
+      return // 路径不存在/不可访问(与原 existsSync 预检语义一致)
     }
     if (st.isDirectory()) {
       for (const e of await readdir(p, { withFileTypes: true })) {
         // 跳过符号链接/junction:目录联接可指向库外,递归会把外部目录整棵搬进库(Windows 建 junction 无需特权)
         if (e.isSymbolicLink()) continue
-        await collectFiles([join(p, e.name)], acc)
+        await walk(join(p, e.name))
       }
     } else {
-      acc.push(p)
+      const key = keyOf(p)
+      if (!seen.has(key)) {
+        seen.add(key)
+        out.push(p)
+      }
     }
   }
+  for (const p of paths) await walk(p)
+  acc.push(...out)
   return acc
 }
 
@@ -121,6 +135,33 @@ function isDuplicate(
   return false
 }
 
+/**
+ * 查重命中时反查库内活跃素材的 id（与 isDuplicate 同一套判定条件，只找活跃记录、不含 tombstone）。
+ * 跳过的重复文件靠它回填 matchedId，Agent 渠道据此对库内已有素材幂等补打标签/归档。
+ */
+function findActiveMatchId(name: string, size: number, hash: string): string | null {
+  const db = getDb()
+  const byName = stmt(db, 'SELECT id FROM assets WHERE name = ? AND size = ? AND deleted_at IS NULL LIMIT 1').get(name, size) as
+    | { id: string }
+    | undefined
+  if (byName) return byName.id
+  if (hash) {
+    const byHash = stmt(db, 'SELECT id FROM assets WHERE hash = ? AND size = ? AND deleted_at IS NULL LIMIT 1').get(hash, size) as
+      | { id: string }
+      | undefined
+    if (byHash) return byHash.id
+  }
+  return null
+}
+
+/** 只读查重:name+size 是否命中活跃素材(validate 试运行渠道用,不解码不算哈希) */
+export function isKnownAssetByNameSize(name: string, size: number): boolean {
+  return !!stmt(
+    getDb(),
+    'SELECT 1 FROM assets WHERE name = ? AND size = ? AND deleted_at IS NULL LIMIT 1'
+  ).get(name, size)
+}
+
 /* ---------------- 并发控制（自写极简池，不引入新依赖） ---------------- */
 
 /**
@@ -164,6 +205,8 @@ interface PreparedAsset {
   name: string
   /** 仅 status='ok' 时有效 */
   id?: string
+  /** 仅 status='skip' 且命中库内活跃素材时有效(tombstone 跳过无 id) */
+  matchedId?: string
   relDir?: string
   absDir?: string
   ext?: string
@@ -429,7 +472,9 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
 
     // 快速预检:name+size 活跃记录命中 -> 直接 skip(避免给正常重复文件算缩略图)
     // 仅图片需要预算哈希做二次查重(AI 改名后 name 变但内容不变)
-    if (isDuplicate(name, st.size, '', false)) return { status: 'skip', filePath, name }
+    if (isDuplicate(name, st.size, '', false)) {
+      return { status: 'skip', filePath, name, matchedId: findActiveMatchId(name, st.size, '') ?? undefined }
+    }
 
     // 图片:从源文件预算缩略图 + 哈希(与已存储哈希同源:512 缩略图 -> dHash),
     // 用 hash 做二次查重(AI 改名/已删除都能命中)。算出的 thumbBuf 复用写入磁盘。
@@ -453,7 +498,7 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
     }
     // 二次查重(含哈希 + 可选 tombstone):AI 改名后 hash 命中活跃记录;已删除文件命中 tombstone
     if (isDuplicate(name, st.size, preHash, checkTombstone)) {
-      return { status: 'skip', filePath, name }
+      return { status: 'skip', filePath, name, matchedId: findActiveMatchId(name, st.size, preHash) ?? undefined }
     }
 
     const id = randomUUID().replace(/-/g, '').slice(0, 16)
@@ -640,6 +685,21 @@ export async function importFiles(paths: string[], opts: ImportOptions = {}): Pr
       result.failed++
       result.failedFiles!.push(r.name)
     }
+  }
+
+  // 跳过的重复文件回填命中的库内素材 id（Agent 渠道幂等补打标签/归档用）
+  const matchedIds = new Set<string>()
+  for (const r of prepared) {
+    if (r.status === 'skip' && r.matchedId) matchedIds.add(r.matchedId)
+  }
+  if (matchedIds.size > 0) result.matchedIds = [...matchedIds]
+  if (opts.detail) {
+    result.files = prepared.map((r) => ({
+      path: r.filePath,
+      name: r.name,
+      status: r.status === 'ok' ? 'imported' : r.status === 'skip' ? 'skipped' : 'failed',
+      id: r.status === 'ok' ? r.id : r.matchedId
+    }))
   }
 
   // 阶段 B：事务原子写入数据库 + metadata.json（串行，任一失败整批回滚）

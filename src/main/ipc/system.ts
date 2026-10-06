@@ -1,6 +1,7 @@
 import { BrowserWindow, clipboard, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { assetPaths } from '../repository'
 import { exportToFolder, exportToZip } from '../exporter'
+import { installAgentSkill, agentSkillStatus, openAgentSkillFolder } from '../agentSkill'
 import type { ExportOptions } from '../../shared/types'
 
 export function registerSystemIpc(getWindow: () => BrowserWindow | null): void {
@@ -43,4 +44,9 @@ export function registerSystemIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('shell:openExternal', (_e, url: string) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url)
   })
+
+  /* ---------------- Agent 技能 ---------------- */
+  ipcMain.handle('agent:installSkill', () => installAgentSkill())
+  ipcMain.handle('agent:openSkillFolder', () => openAgentSkillFolder())
+  ipcMain.handle('agent:skillStatus', () => agentSkillStatus())
 }

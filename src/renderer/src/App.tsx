@@ -108,9 +108,19 @@ export default function App() {
 
   useEffect(() => {
     void refreshAll()
-    // 浏览器剪藏导入后自动刷新
-    const offClip = window.api.onClipImported((count) => {
-      useLibraryStore.getState().showToast(`剪藏成功：已导入 ${count} 张图片`)
+    // 导入通知按来源分流提示(剪藏/Agent/监控文件夹提示,启动同步静默刷新)
+    const offClip = window.api.onClipImported((count, source) => {
+      const label =
+        source === 'agent'
+          ? count > 0
+            ? `Agent 导入完成：新增 ${count} 个素材`
+            : null
+          : source === 'watcher'
+            ? `监控文件夹新增 ${count} 个素材`
+            : source === 'startup'
+              ? null
+              : `剪藏成功：已导入 ${count} 张图片`
+      if (label) useLibraryStore.getState().showToast(label)
       void useLibraryStore.getState().refreshAll()
     })
     // 自动更新状态

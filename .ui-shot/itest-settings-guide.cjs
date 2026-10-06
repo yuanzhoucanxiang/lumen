@@ -187,7 +187,7 @@ async function main() {
         theme: document.documentElement.dataset.theme
       }
     })()`)
-    check(`${theme} 九章教程渲染`, guide.exists && guide.chapters === 9 && guide.firstTitle === '第一次使用', JSON.stringify(guide))
+    check(`${theme} 十章教程渲染`, guide.exists && guide.chapters === 10 && guide.firstTitle === '第一次使用', JSON.stringify(guide))
     check(`${theme} 教程比例与滚动`, guide.noXOverflow && guide.readerScrollable && guide.offline && guide.theme === theme)
 
     if (theme === 'silver-gelatin' && process.env.LUMEN_GUIDE_SCREENSHOT) {
@@ -223,7 +223,7 @@ async function main() {
     await run(`([...document.querySelectorAll('.guide-empty button')].find((button) => button.textContent.includes('清除搜索'))).click()`)
     await sleep(160)
     const restored = await run(`return document.querySelectorAll('.guide-index__nav button').length`)
-    check(`${theme} 清除搜索恢复目录`, restored === 9, String(restored))
+    check(`${theme} 清除搜索恢复目录`, restored === 10, String(restored))
 
     await run(`(() => {
       const reader = document.querySelector('.guide-reader')
