@@ -1,5 +1,5 @@
-/* 找图助手（里程碑 161）验证：
-   ① UI:工具栏「找图」按钮打开右侧面板,空态示例可见,再点关闭
+/* 助手——对话式找图（里程碑 161/162）验证：
+   ① UI:左侧栏「助手」入口打开右侧面板,空态示例可见,再点关闭
    ② agentSearch 条件执行(不经过模型,确定性):
       - keyword 命中刚导入的测试素材
       - source=agent 只回 agent 来源 / source=manual 只回手动来源(空 source)
@@ -125,7 +125,7 @@ async function main() {
   for (let attempt = 0; attempt < 20 && !opened.found; attempt++) {
     opened = await run(`
       const btns = [...document.querySelectorAll('button')]
-      const btn = btns.find((b) => (b.getAttribute('title') || '').includes('找图助手'))
+      const btn = btns.find((b) => (b.getAttribute('title') || '').includes('助手：对话式找图'))
       if (!btn) return { found: false, count: btns.length, titles: btns.map((b) => b.getAttribute('title')).filter(Boolean).slice(0, 15) }
       btn.click()
       return { found: true }
@@ -139,7 +139,7 @@ async function main() {
     const text = panel.textContent || ''
     return {
       exists: true,
-      hasTitle: text.includes('找图助手'),
+      hasTitle: text.includes('对话式找图'),
       hasHint: text.includes('用一句话描述你想找的素材'),
       exampleChips: [...panel.querySelectorAll('button')].filter((b) => (b.textContent || '').includes('最近一周')).length
     }
@@ -185,7 +185,7 @@ async function main() {
 
   /* ---------- 3. 关闭面板 ---------- */
   await run(`
-    const btn = [...document.querySelectorAll('button')].find((b) => (b.getAttribute('title') || '').includes('找图助手'))
+    const btn = [...document.querySelectorAll('button')].find((b) => (b.getAttribute('title') || '').includes('助手：对话式找图'))
     btn?.click()
   `)
   const closedAfter = await run(`return !document.querySelector('[data-testid="agent-panel"]')`)

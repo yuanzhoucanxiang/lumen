@@ -107,7 +107,6 @@ function FilterButton({
 export default function Toolbar() {
   const keyword = useLibraryStore((s) => s.keyword)
   const setKeyword = useLibraryStore((s) => s.setKeyword)
-  const agentPanelOpen = useLibraryStore((s) => s.agentPanelOpen)
   const extFilters = useLibraryStore((s) => s.extFilters)
   const toggleExtFilter = useLibraryStore((s) => s.toggleExtFilter)
   const colorFilter = useLibraryStore((s) => s.colorFilter)
@@ -319,17 +318,6 @@ export default function Toolbar() {
           <span className="mono tnum text-[10px]">{selection.length}</span>
         </button>
       )}
-
-      {/* 找图助手：对话式检索（里程碑 161） */}
-      <button
-        className={`btn-ghost flex items-center gap-1.5 whitespace-nowrap ${agentPanelOpen ? 'text-[var(--accent-text)]' : ''}`}
-        title="找图助手（对话式找图：描述条件、追问收窄）"
-        aria-pressed={agentPanelOpen}
-        onClick={() => useLibraryStore.getState().toggleAgentPanel()}
-      >
-        <Icon name="chat" size={13} />
-        找图
-      </button>
 
       {/* 格式筛选 */}
       <div className="relative" ref={formatRef}>

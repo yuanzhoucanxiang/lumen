@@ -98,8 +98,8 @@ export default function AgentPanel() {
     >
       <header className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
         <div className="flex items-center gap-1.5">
-          <Icon name="chat" size={13} className="text-[var(--accent-text)]" />
-          <span className="text-[12px] font-medium">找图助手</span>
+          <Icon name="assistant" size={13} className="text-[var(--accent-text)]" />
+          <span className="text-[12px] font-medium">助手</span>
           <span className="text-[10px] text-[var(--text-faint)]">对话式找图</span>
         </div>
         <div className="flex items-center gap-1">

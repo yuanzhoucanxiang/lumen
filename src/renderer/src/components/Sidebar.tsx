@@ -171,6 +171,7 @@ export default function Sidebar() {
   const activeBoardId = useLibraryStore((s) => s.activeBoardId)
   const boardViewMode = useLibraryStore((s) => s.boardViewMode)
   const stats = useLibraryStore((s) => s.stats)
+  const agentPanelOpen = useLibraryStore((s) => s.agentPanelOpen)
   const [addingFolder, setAddingFolder] = useState<false | { parentId: number | null }>(false)
   const [addingTag, setAddingTag] = useState(false)
   const [inputVal, setInputVal] = useState('')
@@ -716,6 +717,33 @@ export default function Sidebar() {
             onClick={() => setView({ type: 'trash' })}
           />
         )}
+      </div>
+
+      {/* 助手：对话式找图（AI 专属入口，与视图导航分隔强调；打开右侧面板而非切换视图） */}
+      <div className="mt-2 border-t border-[var(--border)] px-2 pt-2">
+        <button
+          aria-label="助手"
+          aria-pressed={agentPanelOpen}
+          title="助手：对话式找图（用一句话描述条件，可追问收窄）"
+          className={`relative flex w-full cursor-pointer items-center gap-2.5 px-2.5 py-[7px] text-left text-[13px] transition-colors duration-100 ${
+            agentPanelOpen
+              ? 'bg-[var(--accent-soft)] font-medium text-[var(--text-main)]'
+              : 'text-[var(--text-main)] hover:bg-[var(--bg-hover)]'
+          }`}
+          onClick={() => useLibraryStore.getState().toggleAgentPanel()}
+        >
+          {agentPanelOpen && (
+            <span aria-hidden="true" className="absolute left-0 top-0 h-full w-[2px] bg-[var(--accent)]" />
+          )}
+          <Icon name="assistant" size={15} strokeWidth={1.9} className="text-[var(--accent-text)]" />
+          <span className="min-w-0 flex-1 truncate">助手</span>
+          <span
+            aria-hidden="true"
+            className="mono shrink-0 border border-[var(--accent)] px-1 text-[9px] leading-[13px] text-[var(--accent-text)]"
+          >
+            AI
+          </span>
+        </button>
       </div>
 
       {/* 文件夹 */}
