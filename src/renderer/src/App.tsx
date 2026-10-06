@@ -206,6 +206,8 @@ export default function App() {
         s.openPreview(null)
         s.openEditor(null)
         s.setSelection([])
+        // 助手面板无更上层浮层时一并收起(预览/编辑器打开时先让 Esc 关它们)
+        if (!s.previewId && !s.editorId) s.closeAgentPanel()
       } else if (matchesShortcut(e, sc.undoDelete)) {
         if (inInput) return
         e.preventDefault()

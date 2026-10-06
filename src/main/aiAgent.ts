@@ -285,7 +285,10 @@ export async function agentRerank(
   cfg: AiConfig,
   onProgress: (phase: string, done: number, total: number) => void
 ): Promise<AgentAssetBrief[]> {
-  const assets = ids.map((id) => getAssetById(id)).filter((a): a is NonNullable<typeof a> => !!a)
+  // 过滤已删除素材(软删/永久删):检索与重排之间素材可能被删,不能让重排把它们重新带回面板
+  const assets = ids
+    .map((id) => getAssetById(id))
+    .filter((a): a is NonNullable<typeof a> => !!a && a.deletedAt == null)
   if (assets.length === 0) return []
   const scores = await rankByVision(query, assets, cfg, onProgress)
   if (scores.size === 0) return [] // 全部批次失败:调用方保留原顺序并提示

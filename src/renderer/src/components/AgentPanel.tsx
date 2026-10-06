@@ -26,7 +26,19 @@ export default function AgentPanel() {
   const [smartSaveFor, setSmartSaveFor] = useState<number | null>(null)
   const [smartName, setSmartName] = useState('')
   const [rerankBusy, setRerankBusy] = useState<number | null>(null)
+  const [rerankProgress, setRerankProgress] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  // 视觉重排进度:主进程经 ai:searchProgress 推送,重排中在按钮下方显示
+  useEffect(() => {
+    const off = window.api.onAiSearchProgress((p) => {
+      if (rerankBusy !== null) setRerankProgress(p.phase)
+    })
+    return () => {
+      off()
+      setRerankProgress('')
+    }
+  }, [rerankBusy])
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -219,19 +231,24 @@ export default function AgentPanel() {
                   </button>
                   {/* AI 视觉重排（里程碑 164）："感觉像 XX"类意图无法结构化，用视觉模型对已有结果重排 */}
                   {m.assets && m.assets.length >= 2 && (
-                    <button
-                      className="flex items-center gap-1 rounded-sm border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text-dim)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent-text)] disabled:opacity-40"
-                      disabled={rerankBusy === i || busy}
-                      title="用视觉模型按你的描述对结果重新排序"
-                      onClick={() => void rerank(i, m)}
-                    >
-                      <Icon
-                        name="rotate"
-                        size={10}
-                        className={rerankBusy === i ? 'animate-spin' : ''}
-                      />
-                      视觉重排
-                    </button>
+                    <span className="flex items-center gap-1.5">
+                      <button
+                        className="flex items-center gap-1 rounded-sm border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text-dim)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent-text)] disabled:opacity-40"
+                        disabled={rerankBusy === i || busy}
+                        title="用视觉模型按你的描述对结果重新排序"
+                        onClick={() => void rerank(i, m)}
+                      >
+                        <Icon
+                          name="rotate"
+                          size={10}
+                          className={rerankBusy === i ? 'animate-spin' : ''}
+                        />
+                        视觉重排
+                      </button>
+                      {rerankBusy === i && rerankProgress && (
+                        <span className="text-[10.5px] text-[var(--text-faint)]">{rerankProgress}</span>
+                      )}
+                    </span>
                   )}
                   {m.smart &&
                     (smartSaveFor === i ? (
