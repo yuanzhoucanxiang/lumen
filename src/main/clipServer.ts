@@ -6,6 +6,7 @@ import { tmpdir } from 'os'
 import { app } from 'electron'
 import { collectFiles, importFiles, isKnownAssetByNameSize } from './importer'
 import { getLibraryPath, loadConfig } from './library'
+import type { AppConfig } from './library'
 import {
   addBoardItems,
   addTagToAssets,
@@ -255,6 +256,39 @@ function placeAssetsOnBoard(boardId: number, ids: string[]): string[] {
  * paths 支持文件或目录(目录递归展开)；标签与文件夹作用于「本次调用涉及的全部素材」——
  * 新导入的 + 跳过的重复文件命中的库内已有素材(幂等重跑不会漏掉已入库文件的标签/归档)。
  */
+/** Agent 可写范围（里程碑 183）：Agent 只能往「Agent 导入」+ 用户在设置页勾选的文件夹（含子文件夹）里写。
+ *  只查不建——不在范围内就直接拒，避免"先建了空文件夹再报 403"这种半完成。
+ *  unrestricted 开关是给"就是想让 agent 整理整个库"的用户留的显式逃生门（默认关）。 */
+function agentFolderAllowed(segments: string[], cfg: AppConfig): boolean {
+  if (segments.length === 0) return true // 未指定 folder：落到「Agent 导入」，永远允许
+  if (cfg.agentScopeUnrestricted === true) return true
+  if (segments.length === 1 && segments[0] === AGENT_DEFAULT_FOLDER) return true
+  const scope = new Set<number>((cfg.agentWriteFolders ?? []).filter((n: number) => Number.isInteger(n)))
+  if (scope.size === 0) return false
+  const folders = listFolders().filter((f) => !f.isSmart)
+  let parentId: number | null = null
+  for (const seg of segments) {
+    const found = folders.find((f) => f.parentId === parentId && f.name === seg)
+    if (!found) return false // 该层还不存在：后面会被新建，但此前没有踏入过范围
+    if (scope.has(found.id)) return true // 进入范围子树，其余层级随便建
+    parentId = found.id
+  }
+  return parentId !== null && scope.has(parentId)
+}
+
+/** 范围拒绝时的统一提示（告诉用户去哪里加） */
+const SCOPE_HINT =
+  '文件夹不在 Agent 可写范围：请在 LUMEN「设置 → Agent 接入 → 可写入文件夹」里勾选它（含子文件夹），或用其他文件夹'
+
+/** 解析 folder 路径为层级数组（/import 与 /folder 共用；空名与超过 5 级在此抛错） */
+function agentFolderSegments(folderRaw: string): { segments: string[]; hadRaw: boolean } {
+  const hadRaw = folderRaw.trim().length > 0
+  const segments = folderRaw.split(/[\\/]+/).map(sanitizeName).filter(Boolean)
+  if (hadRaw && segments.length === 0) throw new Error('folder 名称为空')
+  if (segments.length > 5) throw new Error('folder 层级过深(最多 5 级)')
+  return { segments, hadRaw }
+}
+
 async function importFromPaths(
   payload: AgentImportPayload,
   sendProgress?: (phase: 'prepare' | 'commit', done: number, total: number) => void,
@@ -289,9 +323,9 @@ async function importFromPaths(
 
   // folder 校验提前到导入之前:空名/层级过深在未动库前就报清,避免"已导入但响应 400"的半完成状态
   const folderRaw = payload.folder == null ? '' : String(payload.folder)
-  const folderSegments = folderRaw.split(/[\\/]+/).map(sanitizeName).filter(Boolean)
-  if (folderRaw.trim() && folderSegments.length === 0) throw new Error('folder 名称为空')
-  if (folderSegments.length > 5) throw new Error('folder 层级过深(最多 5 级)')
+  const { segments: folderSegments } = agentFolderSegments(folderRaw)
+  // 可写范围校验（里程碑 183）：也在动库之前，拒绝时不新建任何文件夹
+  if (!agentFolderAllowed(folderSegments, loadConfig())) throw new Error(SCOPE_HINT)
 
   // boardId 校验同样提前:白板不存在立刻报错,不做半截导入
   const boardId = typeof payload.boardId === 'number' && Number.isInteger(payload.boardId) ? payload.boardId : null
@@ -683,9 +717,13 @@ export function startClipServer(
       readBody(req, res)
         .then(async (body) => {
           const payload = JSON.parse(body) as { ids?: string[]; conditions?: unknown; folder?: string }
-          const segs = String(payload.folder ?? '').split(/[\\/]+/).map(sanitizeName).filter(Boolean)
+          const { segments: segs } = agentFolderSegments(String(payload.folder ?? ''))
           if (segs.length === 0) throw new Error('folder required')
-          if (segs.length > 5) throw new Error('folder 层级过深(最多 5 级)')
+          // 可写范围校验同样先于建档（里程碑 183）；与 /import 一致返回 403
+          if (!agentFolderAllowed(segs, loadConfig())) {
+            json(res, 403, { ok: false, error: SCOPE_HINT })
+            return
+          }
           const ids = await resolveAgentIds(payload)
           if (ids.length === 0) {
             json(res, 200, { ok: true, moved: 0 })
@@ -874,6 +912,12 @@ ${note}` : note
           // 危险动作需在设置页显式授权（里程碑 182，"Agent 接入"卡片两个开关）：
           // 请求带了未授权的动作就整批拒绝——不做"先导入再忽略"，避免半个请求悄悄生效
           const agentCfg = loadConfig()
+          // 可写范围（里程碑 183）：目标文件夹不在范围内直接拒——不建文件夹、不导文件
+          const scopeSegments = agentFolderSegments(payload.folder == null ? '' : String(payload.folder)).segments
+          if (!agentFolderAllowed(scopeSegments, agentCfg)) {
+            json(res, 403, { ok: false, error: SCOPE_HINT })
+            return
+          }
           if (payload.move === true && agentCfg.agentAllowMove !== true) {
             json(res, 403, {
               ok: false,

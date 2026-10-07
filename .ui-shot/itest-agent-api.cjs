@@ -89,6 +89,35 @@ async function main() {
     else fail++
   }
 
+  /* ---------- 0. CDP 会话(开头就建:后面的写库用例要先改设置) ---------- */
+  const targets = await getJson('http://127.0.0.1:9333/json/list')
+  const page = targets.find((t) => t.type === 'page' && t.url.includes('localhost:5173') && !t.url.includes('floating'))
+  if (!page) throw new Error('找不到主窗口页面')
+  const ws = new WebSocket(page.webSocketDebuggerUrl, { perMessageDeflate: false })
+  await new Promise((r, j) => { ws.on('open', r); ws.on('error', j) })
+  let id = 0
+  const pending = new Map()
+  ws.on('message', (m) => {
+    const msg = JSON.parse(m.toString())
+    if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id) }
+  })
+  const evalJs = (expression) =>
+    new Promise((resolve, reject) => {
+      const mid = ++id
+      pending.set(mid, (msg) => (msg.error ? reject(new Error(JSON.stringify(msg.error))) : resolve(msg.result)))
+      ws.send(JSON.stringify({ id: mid, method: 'Runtime.evaluate', params: { expression, returnByValue: true, awaitPromise: true } }))
+    })
+  const run = async (expr) => {
+    const r = await evalJs(`(async () => { ${expr} })()`)
+    if (r.exceptionDetails) throw new Error(r.exceptionDetails.text + ' ' + (r.exceptionDetails.exception?.description ?? ''))
+    return r.result.value
+  }
+
+  // 本套件要往多个测试文件夹写(里程碑 183 起 Agent 可写范围默认只含「Agent 导入」),
+  // 故先打开"不限制"逃生门,结束时还原;范围限制本身在 9f 段专门验证
+  const prevScopeCfg = await run(`const s = await window.api.getSettings(); return { u: s.agentScopeUnrestricted === true, f: s.agentWriteFolders ?? [] }`)
+  await run(`await window.api.updateSettings({ agentScopeUnrestricted: true })`)
+
   /* ---------- 1. 鉴权:无鉴权头 -> 403 ---------- */
   const r403 = await request('POST', '/import', JSON.stringify({ paths: ['C:/nonexistent.png'] }), { 'content-type': 'application/json' })
   check('无鉴权头 POST /import 返回 403', r403.status === 403, `status=${r403.status}`)
@@ -414,30 +443,7 @@ async function main() {
   check('同请求的多条记录共享同一 groupKey(可归纳成组)', gk.length > 0 && fromSame.length >= 3,
     `count=${fromSame.length} actions=${fromSame.map((o) => o.action).join(',')}`)
 
-  /* ---------- 6. CDP 会话建立(清理与技能安装断言都走渲染层) ---------- */
-  const targets = await getJson('http://127.0.0.1:9333/json/list')
-  const page = targets.find((t) => t.type === 'page' && t.url.includes('localhost:5173') && !t.url.includes('floating'))
-  if (!page) throw new Error('找不到主窗口页面')
-  const ws = new WebSocket(page.webSocketDebuggerUrl, { perMessageDeflate: false })
-  await new Promise((r, j) => { ws.on('open', r); ws.on('error', j) })
-  let id = 0
-  const pending = new Map()
-  ws.on('message', (m) => {
-    const msg = JSON.parse(m.toString())
-    if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id) }
-  })
-  const evalJs = (expression) =>
-    new Promise((resolve, reject) => {
-      const mid = ++id
-      pending.set(mid, (msg) => (msg.error ? reject(new Error(JSON.stringify(msg.error))) : resolve(msg.result)))
-      ws.send(JSON.stringify({ id: mid, method: 'Runtime.evaluate', params: { expression, returnByValue: true, awaitPromise: true } }))
-    })
-  const run = async (expr) => {
-    const r = await evalJs(`(async () => { ${expr} })()`)
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.text + ' ' + (r.exceptionDetails.exception?.description ?? ''))
-    return r.result.value
-  }
-
+  /* ---------- 6. (CDP 会话已在开头建立,此处起断言都走渲染层) ---------- */
   /* ---------- 7. 技能安装(设置页一键安装走的主进程逻辑) ---------- */
   // 真实 PNG 解码宽高断言(走 CDP 查库)
   const realSize = await run(`
@@ -581,6 +587,53 @@ async function main() {
   check('测试后权限设置已还原(不污染用户配置)', restoredPerm.m === prevPerm.m && restoredPerm.a === prevPerm.a,
     `before=${JSON.stringify(prevPerm)} after=${JSON.stringify(restoredPerm)}`)
 
+  // 9f. 可写范围(里程碑 183):默认只允许「Agent 导入」;勾选后其子文件夹同样放行;范围外一律拒绝
+  const scopeFile = path.join(dupDir, `${tag}-scope.png`)
+  fs.writeFileSync(scopeFile, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 9, 9]))
+  await run(`await window.api.updateSettings({ agentScopeUnrestricted: false })`)
+  const rScopeDenied = await request('POST', '/import', JSON.stringify({ paths: [scopeFile], folder: `${tag}-项目` }))
+  check('范围外文件夹被拒(403 且提示去设置页勾选)',
+    rScopeDenied.status === 403 && String(rScopeDenied.json?.error || '').includes('可写范围'),
+    `status=${rScopeDenied.status} error=${String(rScopeDenied.json?.error).slice(0, 50)}`)
+  const rScopeNoHalf = await request('POST', '/import', JSON.stringify({ paths: [scopeFile] }))
+  check('被拒的范围内导入没有半完成(不带 folder 仍可导,落「Agent 导入」)',
+    rScopeNoHalf.status === 200 && rScopeNoHalf.json?.imported === 1,
+    `status=${rScopeNoHalf.status} imported=${rScopeNoHalf.json?.imported}`)
+  // 建一个"项目夹"并加入范围:它自身与其子文件夹都放行,别的顶层夹仍被拒
+  const scopeRootName = `${tag}-项目夹`
+  const scopeRootFolder = await run(`return await window.api.createFolder(${JSON.stringify(scopeRootName)}, null)`)
+  await run(`await window.api.updateSettings({ agentWriteFolders: [${scopeRootFolder.id}] })`)
+  const scopeFile2 = path.join(dupDir, `${tag}-scope2.png`)
+  fs.writeFileSync(scopeFile2, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 8, 9]))
+  const rScopeOk = await request('POST', '/import', JSON.stringify({ paths: [scopeFile2], folder: scopeRootName }))
+  check('勾选的文件夹放行(范围内导入成功且归档进去)',
+    rScopeOk.status === 200 && rScopeOk.json?.imported === 1 && Number.isInteger(rScopeOk.json?.folderId),
+    `status=${rScopeOk.status} imported=${rScopeOk.json?.imported} folderId=${rScopeOk.json?.folderId}`)
+  const scopeFile3 = path.join(dupDir, `${tag}-scope3.png`)
+  fs.writeFileSync(scopeFile3, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 7, 9]))
+  const rScopeChild = await request('POST', '/import', JSON.stringify({ paths: [scopeFile3], folder: `${scopeRootName}/参考/底片` }))
+  const childFolder = ((await request('GET', '/folders')).json?.folders ?? []).find((f) => f.name === '底片')
+  check('范围内子文件夹自动建且层级正确(父夹=项目夹)',
+    rScopeChild.status === 200 && rScopeChild.json?.imported === 1 && childFolder?.parentId != null,
+    `status=${rScopeChild.status} imported=${rScopeChild.json?.imported} childParent=${childFolder?.parentId}`)
+  const scopeFile4 = path.join(dupDir, `${tag}-scope4.png`)
+  fs.writeFileSync(scopeFile4, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 6, 9]))
+  const rScopeOther = await request('POST', '/import', JSON.stringify({ paths: [scopeFile4], folder: `${tag}-别的夹` }))
+  check('范围外的另一个文件夹仍被拒(403)',
+    rScopeOther.status === 403,
+    `status=${rScopeOther.status} error=${String(rScopeOther.json?.error).slice(0, 40)}`)
+  const rScopeFolderOp = await request('POST', '/folder', JSON.stringify({ ids: [guardId], folder: `${tag}-范围外归档` }))
+  check('/folder 归档到范围外同样被拒(403)', rScopeFolderOp.status === 403,
+    `status=${rScopeFolderOp.status} error=${String(rScopeFolderOp.json?.error).slice(0, 40)}`)
+  const rScopeFolderIn = await request('POST', '/folder', JSON.stringify({ ids: [guardId], folder: scopeRootName }))
+  check('/folder 归档到范围内放行', rScopeFolderIn.status === 200 && rScopeFolderIn.json?.moved === 1,
+    `status=${rScopeFolderIn.status} moved=${rScopeFolderIn.json?.moved}`)
+  // 还原用户原有范围设置(连同 182 的两个开关一起)
+  await run(`await window.api.updateSettings({ agentScopeUnrestricted: ${prevScopeCfg.u}, agentWriteFolders: ${JSON.stringify(prevScopeCfg.f)} })`)
+  const restoredScope = await run(`const s = await window.api.getSettings(); return { u: s.agentScopeUnrestricted === true, f: s.agentWriteFolders ?? [] }`)
+  check('测试后可写范围设置已还原', restoredScope.u === prevScopeCfg.u && JSON.stringify(restoredScope.f) === JSON.stringify(prevScopeCfg.f),
+    `before=${JSON.stringify(prevScopeCfg)} after=${JSON.stringify(restoredScope)}`)
+
   /* ---------- 8. 清理:软删导入素材 + 删测试标签/文件夹 ---------- */
   // 注意:run() 会把语句包进 async IIFE,这里直接写语句,不要再包一层 (async () => {})
   // 通用清理:标签/文件夹/素材都按 agentapi- 前缀匹配(含历史被中断测试留下的同类垃圾);
@@ -590,6 +643,9 @@ async function main() {
     const ids = all.filter((a) => a.name.startsWith('agentapi-')).map((a) => a.id)
     if (ids.length > 0) await window.api.deleteAssets(ids, false)
     if (Number.isInteger(${JSON.stringify(nestedId)}) ) await window.api.deleteFolder(${JSON.stringify(nestedId)})
+    // 可写范围用例建的深层子夹(名字不含前缀,需按 id 先删子后删父)
+    if (Number.isInteger(${JSON.stringify(childFolder?.id ?? null)})) await window.api.deleteFolder(${JSON.stringify(childFolder?.id ?? null)})
+    if (Number.isInteger(${JSON.stringify(childFolder?.parentId ?? null)})) await window.api.deleteFolder(${JSON.stringify(childFolder?.parentId ?? null)})
     const tags = await window.api.listTags()
     const tids = tags.filter((x) => x.name.includes('agentapi-')).map((x) => x.id)
     for (const tid of tids) await window.api.deleteTag(tid)

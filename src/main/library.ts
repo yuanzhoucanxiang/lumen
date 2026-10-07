@@ -31,6 +31,11 @@ export interface AppConfig {
    *  - agentAllowAutoTag：允许 Agent 触发 AI 自动打标签（会把图片缩略图发给所配置的模型） */
   agentAllowMove?: boolean
   agentAllowAutoTag?: boolean
+  /** Agent 可写文件夹（里程碑 183）：勾选的文件夹及其子文件夹允许 Agent 归档/导入进去。
+   *  为空 = 只允许写「Agent 导入」专属文件夹 */
+  agentWriteFolders?: number[]
+  /** true = 不限制 Agent 可写文件夹（显式逃生门，默认关） */
+  agentScopeUnrestricted?: boolean
   /** 浮动白板窗状态(位置/尺寸/最小化),重开保持与上次一致 */
   floatingWindow?: { x: number; y: number; width: number; height: number; minimized: boolean }
 }
@@ -122,6 +127,11 @@ export function loadConfig(): AppConfig {
       // Agent 危险权限：缺省即 false（旧配置文件升级上来也一律先关着）
       agentAllowMove: raw.agentAllowMove === true,
       agentAllowAutoTag: raw.agentAllowAutoTag === true,
+      // 可写范围：缺省为空 = 只允许写「Agent 导入」；只收整数（防脏数据绕开校验）
+      agentWriteFolders: Array.isArray(raw.agentWriteFolders)
+        ? raw.agentWriteFolders.filter((n: unknown): n is number => Number.isInteger(n)).slice(0, 50)
+        : [],
+      agentScopeUnrestricted: raw.agentScopeUnrestricted === true,
       floatingWindow: raw.floatingWindow
     }
     if (!keyMigrated && typeof raw.aiApiKey === 'string' && raw.aiApiKey && !raw.aiApiKey.startsWith(ENC_PREFIX)) {

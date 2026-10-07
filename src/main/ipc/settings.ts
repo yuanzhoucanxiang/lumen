@@ -17,6 +17,8 @@ function maskedSettings(): Record<string, unknown> {
     aiAutoOnImport: cfg.aiAutoOnImport ?? false,
     agentAllowMove: cfg.agentAllowMove === true,
     agentAllowAutoTag: cfg.agentAllowAutoTag === true,
+    agentWriteFolders: cfg.agentWriteFolders ?? [],
+    agentScopeUnrestricted: cfg.agentScopeUnrestricted === true,
     aiProfiles: (cfg.aiProfiles ?? []).map((p) => ({
       name: p.name,
       baseUrl: p.baseUrl,
@@ -45,6 +47,8 @@ export function registerSettingsIpc(getWindow: () => BrowserWindow | null): void
         aiAutoOnImport?: boolean
         agentAllowMove?: boolean
         agentAllowAutoTag?: boolean
+        agentWriteFolders?: number[]
+        agentScopeUnrestricted?: boolean
       }
     ) => {
       const cfg = loadConfig()
@@ -65,6 +69,11 @@ export function registerSettingsIpc(getWindow: () => BrowserWindow | null): void
       // Agent 危险权限（里程碑 182）：只接受布尔，缺省保持原值
       if (patch.agentAllowMove !== undefined) cfg.agentAllowMove = !!patch.agentAllowMove
       if (patch.agentAllowAutoTag !== undefined) cfg.agentAllowAutoTag = !!patch.agentAllowAutoTag
+      // 可写范围（里程碑 183）：只收整数文件夹 id，最多 50 个（脏值一律丢弃，不写进配置）
+      if (Array.isArray(patch.agentWriteFolders)) {
+        cfg.agentWriteFolders = [...new Set(patch.agentWriteFolders.filter((n): n is number => Number.isInteger(n)))].slice(0, 50)
+      }
+      if (patch.agentScopeUnrestricted !== undefined) cfg.agentScopeUnrestricted = !!patch.agentScopeUnrestricted
       saveConfig(cfg)
       syncWatchers((count) => getWindow()?.webContents.send('clip:imported', count))
       return maskedSettings()

@@ -305,6 +305,10 @@ export interface AppSettings {
   /** Agent 危险权限（里程碑 182，默认关）：移动导入（删源文件）/ AI 自动打标签（图片外发） */
   agentAllowMove?: boolean
   agentAllowAutoTag?: boolean
+  /** Agent 可写文件夹 id（里程碑 183，空 = 只允许写「Agent 导入」） */
+  agentWriteFolders?: number[]
+  /** true = 不限制 Agent 可写文件夹 */
+  agentScopeUnrestricted?: boolean
 }
 
 /** AI 处理进度（主进程推送） */

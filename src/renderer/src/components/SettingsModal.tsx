@@ -73,6 +73,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
   const [aiKeyInput, setAiKeyInput] = useState('')
   const [aiTesting, setAiTesting] = useState(false)
   const [tags, setTags] = useState<Tag[]>([])
+  /** 素材库文件夹（Agent 可写范围选择用；里程碑 183） */
+  const allFolders = useLibraryStore((s) => s.folders)
   const [tagSearch, setTagSearch] = useState('')
   const [restoreOpen, setRestoreOpen] = useState(false)
   /** 服务商档案（里程碑 179） */
@@ -237,6 +239,24 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh-CN'))
 
   if (!settings) return null
+
+  // 可写范围的可选文件夹（里程碑 183）：普通文件夹按层级缩进展示，智能文件夹不参与
+  const folderById = new Map(allFolders.map((f) => [f.id, f]))
+  const depthOf = (f: { parentId: number | null }): number => {
+    let d = 0
+    let p = f.parentId
+    while (p != null && d < 10) {
+      const parent = folderById.get(p)
+      if (!parent) break
+      d++
+      p = parent.parentId
+    }
+    return d
+  }
+  const scopeFolderList = allFolders
+    .filter((f) => !f.isSmart)
+    .map((f) => ({ id: f.id, name: f.name, depth: depthOf(f) }))
+  const scopeIds = settings.agentWriteFolders ?? []
 
   return (
     <div
@@ -728,6 +748,54 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
                 </span>
               </span>
             </label>
+
+            <div className="mt-2 border-t border-[var(--border)] pt-2">
+              <label className="flex cursor-pointer items-start gap-2 text-[11.5px]">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={settings.agentScopeUnrestricted === true}
+                  onChange={(e) => void update({ agentScopeUnrestricted: e.target.checked })}
+                />
+                <span>
+                  不限制可写文件夹（允许 Agent 整理整个素材库）
+                  <span className="block text-[10.5px] leading-[1.5] text-[var(--text-faint)]">
+                    不勾选时：Agent 只能把素材写进「Agent 导入」和下面勾选的文件夹
+                  </span>
+                </span>
+              </label>
+              {settings.agentScopeUnrestricted !== true && (
+                <div className="mt-1.5">
+                  <div className="mb-1 text-[11px] text-[var(--text-dim)]">可写入文件夹（含子文件夹）</div>
+                  <div className="max-h-40 overflow-y-auto rounded-md border border-[var(--border)] p-1.5">
+                    {scopeFolderList.length === 0 ? (
+                      <div className="text-[10.5px] text-[var(--text-faint)]">素材库里还没有普通文件夹</div>
+                    ) : (
+                      scopeFolderList.map((f) => (
+                        <label key={f.id} className="flex cursor-pointer items-center gap-2 py-[3px] text-[11.5px]">
+                          <input
+                            type="checkbox"
+                            checked={scopeIds.includes(f.id)}
+                            onChange={(e) =>
+                              void update({
+                                agentWriteFolders: e.target.checked
+                                  ? [...scopeIds, f.id]
+                                  : scopeIds.filter((x) => x !== f.id)
+                              })
+                            }
+                          />
+                          <span style={{ paddingLeft: f.depth * 10 }}>{f.name}</span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                  <div className="mt-1 text-[10.5px] leading-[1.5] text-[var(--text-faint)]">
+                    一个都没勾时，Agent 只能写入自带的「Agent 导入」文件夹。勾了父文件夹就不用再勾子文件夹；
+                    范围外的归档/导入请求会被拒绝并提示来此处添加。
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           <div className="mt-1.5 text-[10.5px] leading-[1.5] text-[var(--text-faint)]">
             安装到 ~/.agents/skills/lumen（检测到 Claude Code 时同步写入 ~/.claude/skills/lumen）；
