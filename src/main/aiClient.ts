@@ -5,10 +5,37 @@
  * - mapWithConcurrency():通用并发池(限流防 API 限流)。
  */
 
+import { app } from 'electron'
+
 export interface AiConfig {
   baseUrl: string
   apiKey: string
   model: string
+  /** 会话标识（里程碑 184）：OpenCode Go/Zen 用它做路由优化，同一轮对话应保持稳定。
+   *  缺省时按进程生成一个稳定 id（同一次启动内的所有请求复用）。 */
+  sessionId?: string
+}
+
+/** 进程级稳定会话 id：同一轮对话/同一次批处理复用，便于服务端做路由与缓存亲和 */
+const processSessionId = `lumen-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+
+/** 非 OpenAI 官方网关的附加头。
+ *  OpenCode Go/Zen 要求 `x-opencode-session`（官方文档："Send a stable session ID in
+ *  x-opencode-session for each conversation so we can optimize routing"），并建议客户端带自己的
+ *  User-Agent 而不是通用 SDK 名——缺这个头会直接 400 MissingSessionID（里程碑 184）。 */
+function extraHeaders(cfg: AiConfig): Record<string, string> {
+  const out: Record<string, string> = {}
+  let host = ''
+  try {
+    host = new URL(normalizeAiBaseUrl(cfg.baseUrl)).hostname.toLowerCase()
+  } catch {
+    return out
+  }
+  out['User-Agent'] = `LUMEN/${app.getVersion()}`
+  if (host === 'opencode.ai' || host.endsWith('.opencode.ai')) {
+    out['x-opencode-session'] = cfg.sessionId?.trim() || processSessionId
+  }
+  return out
 }
 
 /** 校验/归一 AI Base URL：仅 http(s)；远程必须 https，回环/局域网地址允许 http（Ollama/LM Studio 等本地推理）。
@@ -90,7 +117,8 @@ export async function chat(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${cfg.apiKey}`
+        Authorization: `Bearer ${cfg.apiKey}`,
+        ...extraHeaders(cfg)
       },
       body: JSON.stringify({
         model: cfg.model,
@@ -173,7 +201,8 @@ export async function chatStream(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${cfg.apiKey}`
+        Authorization: `Bearer ${cfg.apiKey}`,
+        ...extraHeaders(cfg)
       },
       body: JSON.stringify({
         model: cfg.model,

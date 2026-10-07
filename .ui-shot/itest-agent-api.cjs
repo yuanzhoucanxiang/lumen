@@ -114,9 +114,13 @@ async function main() {
   }
 
   // 本套件要往多个测试文件夹写(里程碑 183 起 Agent 可写范围默认只含「Agent 导入」),
-  // 故先打开"不限制"逃生门,结束时还原;范围限制本身在 9f 段专门验证
-  const prevScopeCfg = await run(`const s = await window.api.getSettings(); return { u: s.agentScopeUnrestricted === true, f: s.agentWriteFolders ?? [] }`)
-  await run(`await window.api.updateSettings({ agentScopeUnrestricted: true })`)
+  // 还要断言两个危险动作"未授权即拒绝"(里程碑 182)。这些设置是全局的、用户随时可能改
+  // (实测踩到:用户自己开了 move/autoTag 并勾了可写文件夹 → 早期断言全挂),
+  // 故开头把被测状态**明确置成测试需要的值**,结束时把用户原值原样还原。
+  const prevPermCfg = await run(
+    `const s = await window.api.getSettings(); return { m: s.agentAllowMove === true, a: s.agentAllowAutoTag === true, u: s.agentScopeUnrestricted === true, f: s.agentWriteFolders ?? [] }`
+  )
+  await run(`await window.api.updateSettings({ agentAllowMove: false, agentAllowAutoTag: false, agentScopeUnrestricted: true })`)
 
   /* ---------- 1. 鉴权:无鉴权头 -> 403 ---------- */
   const r403 = await request('POST', '/import', JSON.stringify({ paths: ['C:/nonexistent.png'] }), { 'content-type': 'application/json' })
@@ -570,8 +574,7 @@ async function main() {
   check('内容相同仅改名 -> 仍跳过(sha256 命中)', rRenamed.json?.imported === 0 && rRenamed.json?.skipped === 1,
     `imported=${rRenamed.json?.imported} skipped=${rRenamed.json?.skipped}`)
 
-  // 9e. 危险动作权限:授权后 move 才生效;autoTag 授权后放行(用重复文件,不触发真实模型调用);最后还原设置
-  const prevPerm = await run(`const s = await window.api.getSettings(); return { m: s.agentAllowMove === true, a: s.agentAllowAutoTag === true }`)
+  // 9e. 危险动作权限:授权后 move/autoTag 才生效(用户原值在结尾统一还原)
   await run(`await window.api.updateSettings({ agentAllowMove: true })`)
   const rMoveOk = await request('POST', '/import', JSON.stringify({ paths: [moveSrc], move: true }))
   check('授权后 move=true 生效(导入成功且源文件删除)',
@@ -582,10 +585,6 @@ async function main() {
   check('授权后 autoTag 请求放行(对重复文件无新导入,不触发模型调用)',
     rAutoAllowed.status === 200 && rAutoAllowed.json?.imported === 0 && rAutoAllowed.json?.skipped === 1,
     `status=${rAutoAllowed.status} imported=${rAutoAllowed.json?.imported} skipped=${rAutoAllowed.json?.skipped}`)
-  await run(`await window.api.updateSettings({ agentAllowMove: ${prevPerm.m}, agentAllowAutoTag: ${prevPerm.a} })`)
-  const restoredPerm = await run(`const s = await window.api.getSettings(); return { m: s.agentAllowMove === true, a: s.agentAllowAutoTag === true }`)
-  check('测试后权限设置已还原(不污染用户配置)', restoredPerm.m === prevPerm.m && restoredPerm.a === prevPerm.a,
-    `before=${JSON.stringify(prevPerm)} after=${JSON.stringify(restoredPerm)}`)
 
   // 9f. 可写范围(里程碑 183):默认只允许「Agent 导入」;勾选后其子文件夹同样放行;范围外一律拒绝
   const scopeFile = path.join(dupDir, `${tag}-scope.png`)
@@ -628,11 +627,16 @@ async function main() {
   const rScopeFolderIn = await request('POST', '/folder', JSON.stringify({ ids: [guardId], folder: scopeRootName }))
   check('/folder 归档到范围内放行', rScopeFolderIn.status === 200 && rScopeFolderIn.json?.moved === 1,
     `status=${rScopeFolderIn.status} moved=${rScopeFolderIn.json?.moved}`)
-  // 还原用户原有范围设置(连同 182 的两个开关一起)
-  await run(`await window.api.updateSettings({ agentScopeUnrestricted: ${prevScopeCfg.u}, agentWriteFolders: ${JSON.stringify(prevScopeCfg.f)} })`)
-  const restoredScope = await run(`const s = await window.api.getSettings(); return { u: s.agentScopeUnrestricted === true, f: s.agentWriteFolders ?? [] }`)
-  check('测试后可写范围设置已还原', restoredScope.u === prevScopeCfg.u && JSON.stringify(restoredScope.f) === JSON.stringify(prevScopeCfg.f),
-    `before=${JSON.stringify(prevScopeCfg)} after=${JSON.stringify(restoredScope)}`)
+  // 还原用户原有设置(两个授权开关 + 可写范围,含勾选的文件夹列表)
+  await run(
+    `await window.api.updateSettings({ agentAllowMove: ${prevPermCfg.m}, agentAllowAutoTag: ${prevPermCfg.a}, agentScopeUnrestricted: ${prevPermCfg.u}, agentWriteFolders: ${JSON.stringify(prevPermCfg.f)} })`
+  )
+  const restoredAll = await run(
+    `const s = await window.api.getSettings(); return { m: s.agentAllowMove === true, a: s.agentAllowAutoTag === true, u: s.agentScopeUnrestricted === true, f: s.agentWriteFolders ?? [] }`
+  )
+  check('测试后所有 Agent 权限设置已还原(不污染用户配置)',
+    restoredAll.m === prevPermCfg.m && restoredAll.a === prevPermCfg.a && restoredAll.u === prevPermCfg.u && JSON.stringify(restoredAll.f) === JSON.stringify(prevPermCfg.f),
+    `before=${JSON.stringify(prevPermCfg)} after=${JSON.stringify(restoredAll)}`)
 
   /* ---------- 8. 清理:软删导入素材 + 删测试标签/文件夹 ---------- */
   // 注意:run() 会把语句包进 async IIFE,这里直接写语句,不要再包一层 (async () => {})

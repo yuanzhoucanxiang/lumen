@@ -69,7 +69,11 @@ export function registerAiIpc(getWindow: () => BrowserWindow | null): void {
   // 测试连通性：用户在设置页填完 key 后点「测试连接」。
   // baseUrl 与 settings:update 同一校验：主进程不向任意地址携带凭据发请求
   ipcMain.handle('ai:testKey', async (_e, cfg: { baseUrl: string; apiKey: string; model: string }) => {
-    return testAiConnection({ ...cfg, baseUrl: normalizeAiBaseUrl(String(cfg?.baseUrl ?? '')) })
+    // 输入框为空时回退到已保存的 Key（里程碑 184）：渲染层拿不到明文 Key，
+    // 若直接用空串，"Key 已保存、输入框留空再点测试连接"会带着空 Bearer 发出去，
+    // 服务端回 401 → 界面误报"API Key 无效或没有权限"（用户配置 OpenCode Go 时踩到）
+    const key = String(cfg?.apiKey ?? '').trim() || loadConfig().aiApiKey || ''
+    return testAiConnection({ ...cfg, apiKey: key, baseUrl: normalizeAiBaseUrl(String(cfg?.baseUrl ?? '')) })
   })
 
   // AI 智能搜索：自然语言找图（语义扩展 -> SQL 候选 -> 视觉精排）
