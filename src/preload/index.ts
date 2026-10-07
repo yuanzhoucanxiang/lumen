@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { Asset, AssetQuery, AgentAssetBrief, AgentChatTurn, AgentReply, AgentSearchResult, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSearchProgress, AiSuggestionItem, AppSettings, Board, BoardItem, BoardItemPatch, DbBackupInfo, DupeGroup, ExportOptions, Folder, ImportResult, LibraryInfo, NewBoardItem, Tag, TagGroup, UpdateStatus, ZipBackupInfo } from '../shared/types'
+import type { Asset, AssetQuery, AgentAssetBrief, AgentChatTurn, AgentOpView, AgentReply, AgentSearchResult, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope, AiSearchProgress, AiSuggestionItem, AppSettings, Board, BoardItem, BoardItemPatch, DbBackupInfo, DupeGroup, ExportOptions, Folder, ImportResult, LibraryInfo, NewBoardItem, Tag, TagGroup, UpdateStatus, ZipBackupInfo } from '../shared/types'
 
 const api = {
   /* 库管理 */
@@ -115,6 +115,11 @@ const api = {
   /** 找图助手：按条件给全部命中素材打标签（可撤销写操作） */
   agentTag: (conditions: unknown, tag: string): Promise<{ tagged: number }> =>
     ipcRenderer.invoke('ai:agentTag', conditions, tag),
+  /** Agent 操作记录（含能否回退） */
+  agentOpsList: (limit?: number): Promise<AgentOpView[]> => ipcRenderer.invoke('ai:agentOps', limit),
+  /** 回退一条 Agent 操作记录 */
+  agentUndoOp: (id: number): Promise<{ ok: boolean; message: string }> =>
+    ipcRenderer.invoke('ai:agentUndo', id),
   /** 找图助手：对话回复的流式增量(累积文本) */
   onAgentDelta: (cb: (p: { text: string }) => void): (() => void) => {
     const h = (_e: Electron.IpcRendererEvent, p: { text: string }) => cb(p)

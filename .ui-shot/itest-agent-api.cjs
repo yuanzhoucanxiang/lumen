@@ -315,6 +315,44 @@ async function main() {
     rPage1.json?.count === 1 && rPage2.json?.count === 1 && rPage1.json.assets[0].id !== rPage2.json.assets[0].id,
     `p1=${rPage1.json?.assets?.[0]?.id} p2=${rPage2.json?.assets?.[0]?.id}`)
 
+  /* ---------- 5h. 新操作端点 /folder /star /note + 操作记录与回退(里程碑 171) ---------- */
+  const rFolder = await request('POST', '/folder', JSON.stringify({ conditions: { keyword: tag }, folder: `${tag}-归档夹` }))
+  check('/folder 按条件归档(moved=全部,回传 folderId)',
+    rFolder.status === 200 && rFolder.json?.moved === beforeCount && Number.isInteger(rFolder.json?.folderId),
+    `moved=${rFolder.json?.moved} folderId=${rFolder.json?.folderId} before=${beforeCount}`)
+  const rStar = await request('POST', '/star', JSON.stringify({ ids: [firstId], star: 4 }))
+  const starNow = (await request('GET', `/asset?id=${firstId}`)).json?.asset?.star
+  check('/star 设置星级(4 星)', rStar.status === 200 && rStar.json?.updated === 1 && starNow === 4, `updated=${rStar.json?.updated} star=${starNow}`)
+  const rStarBad = await request('POST', '/star', JSON.stringify({ ids: [firstId], star: 9 }))
+  check('/star 越界值 400', rStarBad.status === 400, `status=${rStarBad.status}`)
+  const rNote2 = await request('POST', '/note', JSON.stringify({ ids: [firstId], note: 'AI 追加备注测试', mode: 'append' }))
+  const noteNow = (await request('GET', `/asset?id=${firstId}`)).json?.asset?.comment
+  check('/note append 追加备注', rNote2.status === 200 && rNote2.json?.updated === 1 && String(noteNow).includes('AI 追加备注测试'),
+    `comment=${String(noteNow).slice(0, 60)}`)
+
+  const opsList = (await request('GET', '/ops?limit=50')).json?.ops ?? []
+  const actions = new Set(opsList.map((o) => o.action))
+  check('/ops 记录含各动作(folder/star/note/tag)',
+    opsList.length >= 4 && ['folder', 'star', 'note', 'tag'].every((a) => actions.has(a)),
+    `count=${opsList.length} actions=${[...actions].join(',')}`)
+
+  const starOp = opsList.find((o) => o.action === 'star' && !o.undone)
+  const rUndo = starOp ? await request('POST', '/undo', JSON.stringify({ id: starOp.id })) : null
+  const starAfterUndo = (await request('GET', `/asset?id=${firstId}`)).json?.asset?.star
+  check('/undo 回退星级(恢复 0 星)', rUndo?.json?.ok === true && starAfterUndo === 0,
+    `ok=${rUndo?.json?.ok} msg=${rUndo?.json?.message} star=${starAfterUndo}`)
+  const rUndoAgain = starOp ? await request('POST', '/undo', JSON.stringify({ id: starOp.id })) : null
+  check('/undo 重复回退 400(一次性)', rUndoAgain?.status === 400, `status=${rUndoAgain?.status} msg=${rUndoAgain?.json?.message}`)
+  const rUndoBad = await request('POST', '/undo', JSON.stringify({ id: 999999 }))
+  check('/undo 不存在的 id 400', rUndoBad.status === 400, `status=${rUndoBad.status}`)
+  const folderOp = opsList.find((o) => o.action === 'folder' && !o.undone)
+  if (folderOp) await request('POST', '/undo', JSON.stringify({ id: folderOp.id }))
+  const taggedOp = opsList.find((o) => o.action === 'tag' && !o.undone)
+  const rUndoTag = taggedOp ? await request('POST', '/undo', JSON.stringify({ id: taggedOp.id })) : null
+  const tagGone = (await request('GET', `/asset?id=${firstId}`)).json?.asset?.tags ?? []
+  check('/undo 回退打标签(标签消失)', rUndoTag?.json?.ok === true && !tagGone.includes(taggedOp?.tag ?? ''),
+    `msg=${rUndoTag?.json?.message} tags=${tagGone.join(',')}`)
+
   /* ---------- 6. CDP 会话建立(清理与技能安装断言都走渲染层) ---------- */
   const targets = await getJson('http://127.0.0.1:9333/json/list')
   const page = targets.find((t) => t.type === 'page' && t.url.includes('localhost:5173') && !t.url.includes('floating'))

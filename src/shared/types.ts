@@ -197,6 +197,18 @@ export interface AgentReply extends AgentSearchResult {
   raw: string
 }
 
+/** Agent 操作记录（里程碑 171）：写操作审计，面板可查、可一键回退 */
+export interface AgentOpView {
+  id: number
+  ts: number
+  action: string
+  summary: string
+  affected: number
+  undone: boolean
+  /** 能否回退（移动导入的源文件已删 → 不可回退） */
+  undoable: boolean
+}
+
 /** 多轮对话历史项(找图助手上下文) */
 export interface AgentChatTurn {
   role: 'user' | 'assistant'

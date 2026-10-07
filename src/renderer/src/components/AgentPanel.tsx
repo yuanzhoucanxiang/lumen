@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Icon from './Icon'
 import { useLibraryStore, type AgentMsg } from '../stores/libraryStore'
+import type { AgentOpView } from '@shared/types'
 
 /** 空态示例提示（点击直接发送） */
 const EXAMPLES = [
@@ -34,6 +35,10 @@ export default function AgentPanel() {
   const [streamTail, setStreamTail] = useState('')
   /** 看图追问开关:开启后追问附带最近一轮结果的缩略图(上限 6 张) */
   const [attachImages, setAttachImages] = useState(false)
+  /** 视图:对话 / 操作记录(里程碑 171) */
+  const [view, setView] = useState<'chat' | 'ops'>('chat')
+  const [ops, setOps] = useState<AgentOpView[] | null>(null)
+  const [undoing, setUndoing] = useState<number | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // 流式增量订阅:busy 期间显示模型输出尾部
@@ -79,6 +84,42 @@ export default function AgentPanel() {
   const clearChat = () => {
     setSmartSaveFor(null)
     useLibraryStore.getState().agentClearChat()
+  }
+
+  /** 加载操作记录（切到记录视图时） */
+  useEffect(() => {
+    if (view !== 'ops') return
+    let alive = true
+    void (async () => {
+      try {
+        const list = await window.api.agentOpsList(50)
+        if (alive) setOps(list)
+      } catch {
+        if (alive) setOps([])
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [view])
+
+  /** 回退一条操作 */
+  const undo = async (id: number) => {
+    setUndoing(id)
+    try {
+      const r = await window.api.agentUndoOp(id)
+      useLibraryStore.getState().showToast(r.message)
+      if (r.ok) {
+        setOps(await window.api.agentOpsList(50))
+        void useLibraryStore.getState().refreshAll()
+        void useLibraryStore.getState().refreshTags()
+        void useLibraryStore.getState().refreshFolders()
+      }
+    } catch (e) {
+      useLibraryStore.getState().showToast(`回退失败：${String((e as Error)?.message ?? e)}`)
+    } finally {
+      setUndoing(null)
+    }
   }
 
   /** 把本轮全量结果铺进图库（用图库已有能力继续：批量打标签/导出/上板等） */
@@ -167,7 +208,17 @@ export default function AgentPanel() {
           <span className="text-[10px] text-[var(--text-faint)]">对话式找图</span>
         </div>
         <div className="flex items-center gap-1">
-          {messages.length > 0 && (
+          {/* 视图切换:对话 / 操作记录(里程碑 171) */}
+          <button
+            className={`btn-ghost px-1.5 py-1 ${view === 'ops' ? 'text-[var(--accent-text)]' : ''}`}
+            title={view === 'ops' ? '返回对话' : 'Agent 操作记录（可回退）'}
+            aria-label="操作记录"
+            aria-pressed={view === 'ops'}
+            onClick={() => setView((v) => (v === 'ops' ? 'chat' : 'ops'))}
+          >
+            <Icon name={view === 'ops' ? 'arrowLeft' : 'listRows'} size={12} />
+          </button>
+          {view === 'chat' && messages.length > 0 && (
             <button
               className="btn-ghost px-1.5 py-1"
               title="清空对话"
@@ -188,6 +239,59 @@ export default function AgentPanel() {
         </div>
       </header>
 
+      {view === 'ops' ? (
+        /* 操作记录视图（里程碑 171）：Agent 写操作审计 + 一键回退 */
+        <div className="flex-1 space-y-2 overflow-y-auto px-3 py-3" data-testid="agent-ops">
+          <div className="rounded-lg border border-dashed border-[var(--border-strong)] px-3 py-2.5 text-[11px] leading-[1.6] text-[var(--text-dim)]">
+            AI 助手通过本地接口做过的改动都记在这里，点「回退」可撤销（一次性）。
+          </div>
+          {ops === null && (
+            <div className="flex items-center gap-1.5 text-[11.5px] text-[var(--text-faint)]">
+              <Icon name="rotate" size={12} className="animate-spin" />
+              加载中…
+            </div>
+          )}
+          {ops !== null && ops.length === 0 && (
+            <div className="text-[11.5px] text-[var(--text-faint)]">暂无操作记录</div>
+          )}
+          {(ops ?? []).map((op) => (
+            <div
+              key={op.id}
+              className="rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-2.5 py-2 text-[11.5px]"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <span className={`min-w-0 flex-1 leading-[1.6] ${op.undone ? 'text-[var(--text-faint)] line-through' : ''}`}>
+                  {op.summary}
+                </span>
+                {op.undone ? (
+                  <span className="shrink-0 rounded-sm border border-[var(--border)] px-1.5 py-0.5 text-[10px] text-[var(--text-faint)]">
+                    已回退
+                  </span>
+                ) : op.undoable ? (
+                  <button
+                    className="shrink-0 rounded-sm border border-[var(--border)] px-1.5 py-0.5 text-[10px] text-[var(--text-dim)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent-text)] disabled:opacity-40"
+                    disabled={undoing !== null}
+                    onClick={() => void undo(op.id)}
+                  >
+                    {undoing === op.id ? '回退中…' : '回退'}
+                  </button>
+                ) : (
+                  <span className="shrink-0 rounded-sm border border-[var(--border)] px-1.5 py-0.5 text-[10px] text-[var(--text-faint)]" title="移动导入的源文件已删除，无法回退">
+                    不可回退
+                  </span>
+                )}
+              </div>
+              <div className="tnum mt-1 text-[10px] text-[var(--text-faint)]">
+                {new Date(op.ts).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                {' · '}
+                {op.action}
+                {op.affected > 0 ? ` · ${op.affected} 个素材` : ''}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+      <>
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
         {messages.length === 0 && (
           <div className="space-y-3">
@@ -457,6 +561,8 @@ export default function AgentPanel() {
           </button>
         </div>
       </footer>
+      </>
+      )}
     </aside>
   )
 }

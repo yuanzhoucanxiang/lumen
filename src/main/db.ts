@@ -211,6 +211,20 @@ function migrate(d: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_board_items_board_z ON board_items(board_id, z);
     -- (board_id, z) 的最左前缀已覆盖单列 board_id 查询，旧的单列索引只多一份写开销
     DROP INDEX IF EXISTS idx_board_items_board;
+
+    -- Agent 操作记录（里程碑 171）：HTTP Agent（及助手面板沉淀动作）的写操作审计，
+    -- payload 存撤销所需的完整数据（影响到的 ids / 原值映射），面板可一键回退
+    CREATE TABLE IF NOT EXISTS agent_ops (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts INTEGER NOT NULL,
+      action TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      payload TEXT NOT NULL DEFAULT '{}',
+      affected INTEGER NOT NULL DEFAULT 0,
+      undone INTEGER NOT NULL DEFAULT 0,
+      undone_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_ops_ts ON agent_ops(ts DESC);
   `)
   // 增量迁移：为旧库补充新字段
   ensureColumns(d, 'assets', {
