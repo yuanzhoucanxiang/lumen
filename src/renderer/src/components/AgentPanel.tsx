@@ -199,15 +199,15 @@ export default function AgentPanel() {
 
   return (
     <aside
-      className="anim-slide-left fixed right-0 top-0 z-[140] flex h-full w-[384px] flex-col border-l border-[var(--border)] bg-[var(--bg-panel)] shadow-2xl"
+      className="agent-panel anim-slide-left fixed right-0 top-0 z-[140] flex h-full w-[384px] flex-col border-l border-[var(--border)] bg-[var(--bg-panel)] shadow-2xl"
       aria-label="找图助手"
       data-testid="agent-panel"
     >
-      <header className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
+      <header className="agent-panel__header flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
         <div className="flex items-center gap-1.5">
           <Icon name="assistant" size={13} className="text-[var(--accent-text)]" />
           <span className="text-[12px] font-medium">助手</span>
-          <span className="text-[10px] text-[var(--text-faint)]">对话式找图</span>
+          <span className="agent-panel__kicker text-[10px] text-[var(--text-faint)]">对话式找图</span>
         </div>
         <div className="flex items-center gap-1">
           {/* 视图切换:对话 / 操作记录(里程碑 171) */}
@@ -243,8 +243,8 @@ export default function AgentPanel() {
 
       {view === 'ops' ? (
         /* 操作记录视图（里程碑 171）：Agent 写操作审计 + 一键回退 */
-        <div className="flex-1 space-y-2 overflow-y-auto px-3 py-3" data-testid="agent-ops">
-          <div className="rounded-lg border border-dashed border-[var(--border-strong)] px-3 py-2.5 text-[11px] leading-[1.6] text-[var(--text-dim)]">
+        <div className="agent-ops flex-1 space-y-2 overflow-y-auto px-3 py-3" data-testid="agent-ops">
+          <div className="agent-ops__intro rounded-lg border border-dashed border-[var(--border-strong)] px-3 py-2.5 text-[11px] leading-[1.6] text-[var(--text-dim)]">
             AI 助手通过本地接口做过的改动都记在这里，点「回退」可撤销（一次性）。
           </div>
           {ops === null && (
@@ -259,7 +259,7 @@ export default function AgentPanel() {
           {(ops ?? []).map((op) => (
             <div
               key={op.id}
-              className="rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-2.5 py-2 text-[11.5px]"
+              className="agent-op-card rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-2.5 py-2 text-[11.5px]"
             >
               <div className="flex items-start justify-between gap-2">
                 <span className={`min-w-0 flex-1 leading-[1.6] ${op.undone ? 'text-[var(--text-faint)] line-through' : ''}`}>
@@ -318,7 +318,7 @@ export default function AgentPanel() {
               {expandedOps.has(op.id) && op.items.length > 0 && (
                 <div className="mt-1.5 space-y-1 border-t border-[var(--border)] pt-1.5">
                   {op.items.map((it) => (
-                    <div key={it.id} className="flex items-center gap-1.5">
+                    <div key={it.id} className="agent-op-item flex items-center gap-1.5">
                       {(it.assetId ?? it.id) && /^[0-9a-f]{16}$/i.test(it.assetId ?? it.id) ? (
                         <img
                           src={window.api.thumbnailUrl(it.assetId ?? it.id)}
@@ -379,8 +379,8 @@ export default function AgentPanel() {
             <div
               className={
                 m.role === 'user'
-                  ? 'max-w-[85%] rounded-lg rounded-br-sm bg-[var(--accent-soft)] px-2.5 py-1.5 text-[12px] leading-[1.6]'
-                  : 'max-w-[92%] rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-2.5 py-2 text-[12px] leading-[1.6]'
+                  ? 'agent-bubble agent-bubble--user max-w-[85%] rounded-lg rounded-br-sm bg-[var(--accent-soft)] px-2.5 py-1.5 text-[12px] leading-[1.6]'
+                  : 'agent-bubble agent-bubble--assistant max-w-[92%] rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-2.5 py-2 text-[12px] leading-[1.6]'
               }
             >
               <div className={m.error ? 'text-red-400' : ''}>{m.text}</div>
@@ -405,7 +405,7 @@ export default function AgentPanel() {
                   {m.assets.slice(0, 9).map((a) => (
                     <button
                       key={a.id}
-                      className="relative aspect-square overflow-hidden rounded-sm border border-[var(--border)] transition-colors duration-100 hover:border-[var(--accent)]"
+                      className="agent-asset-cell relative aspect-square overflow-hidden rounded-sm border border-[var(--border)] transition-colors duration-100 hover:border-[var(--accent)]"
                       title={`${a.name}（点击预览）`}
                       onClick={() => openPreview(a.id)}
                     >
@@ -579,7 +579,7 @@ export default function AgentPanel() {
         )}
       </div>
 
-      <footer className="border-t border-[var(--border)] p-2">
+      <footer className="agent-panel__composer border-t border-[var(--border)] p-2">
         <div className="flex gap-1.5">
           <input
             ref={inputRef}

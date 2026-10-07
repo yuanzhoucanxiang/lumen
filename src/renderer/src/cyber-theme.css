@@ -340,3 +340,89 @@
     transition-duration: 1ms !important;
   }
 }
+
+/* ============ 助手面板（里程碑 173）：信号终端语言——切角面板 + 信号位 ============ */
+[data-theme='cyber-glitch'] .agent-panel {
+  border-left: 1px solid rgba(112, 229, 244, 0.34);
+  background:
+    linear-gradient(180deg, rgba(99, 231, 244, 0.05) 0, transparent 96px),
+    #09121a;
+  box-shadow: -6px 0 0 rgba(0, 0, 0, 0.35), -1px 0 rgba(241, 91, 156, 0.18);
+}
+
+[data-theme='cyber-glitch'] .agent-panel__header {
+  border-bottom-color: rgba(112, 229, 244, 0.24);
+  background: linear-gradient(90deg, rgba(99, 231, 244, 0.08) 0 5px, transparent 5px), #08101a;
+}
+
+/* 标题栏信号位：终端标签 */
+[data-theme='cyber-glitch'] .agent-panel__kicker {
+  display: none;
+}
+
+[data-theme='cyber-glitch'] .agent-panel__header > div:first-child::after {
+  content: 'ASSIST / CH-02';
+  margin-left: 8px;
+  color: rgba(112, 229, 244, 0.6);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+
+[data-theme='cyber-glitch'] .agent-bubble {
+  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
+}
+
+[data-theme='cyber-glitch'] .agent-bubble--assistant {
+  border-color: rgba(112, 219, 235, 0.22);
+  background: #081019;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.34);
+}
+
+[data-theme='cyber-glitch'] .agent-bubble--user {
+  border: 1px solid rgba(99, 231, 244, 0.45);
+  background: rgba(99, 231, 244, 0.1);
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.3), -1px -1px rgba(241, 91, 156, 0.2);
+}
+
+[data-theme='cyber-glitch'] .agent-asset-cell {
+  border-radius: 0;
+  clip-path: polygon(0 0, calc(100% - 3px) 0, 100% 3px, 100% 100%, 3px 100%, 0 calc(100% - 3px));
+}
+
+[data-theme='cyber-glitch'] .agent-asset-cell:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(99, 231, 244, 0.34);
+}
+
+[data-theme='cyber-glitch'] .agent-panel__composer {
+  border-top-color: rgba(112, 229, 244, 0.2);
+  background: #08101a;
+}
+
+[data-theme='cyber-glitch'] .agent-op-card {
+  border-radius: 0;
+  clip-path: polygon(0 0, calc(100% - 5px) 0, 100% 5px, 100% 100%, 5px 100%, 0 calc(100% - 5px));
+  border-color: rgba(112, 219, 235, 0.2);
+  background: #081019;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.32);
+}
+
+[data-theme='cyber-glitch'] .agent-op-item {
+  border-bottom: 1px dashed rgba(112, 229, 244, 0.14);
+  padding-bottom: 3px;
+}
+
+[data-theme='cyber-glitch'] .agent-op-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+/* 记录视图提示条：终端寄存器标签 */
+[data-theme='cyber-glitch'] .agent-ops__intro::before {
+  content: 'CHANGE REGISTER / CH-02';
+  display: block;
+  margin-bottom: 4px;
+  color: rgba(112, 229, 244, 0.5);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}

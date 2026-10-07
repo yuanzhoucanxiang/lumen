@@ -1634,3 +1634,89 @@
   [data-theme='pixel-glitch'] .archive-masthead::after,
   [data-theme='pixel-glitch'] .archive-masthead__telemetry { display: none; }
 }
+
+/* ============ 助手面板（里程碑 173）：与设置面板/对话框同一窗口化语言 ============ */
+[data-theme='pixel-glitch'] .agent-panel {
+  border-left: 1px solid rgba(239, 240, 235, 0.68);
+  background: #090b0a;
+  box-shadow: -7px 0 0 rgba(0, 0, 0, 0.8);
+  animation: archive-window-in 150ms steps(3, end) both !important;
+}
+
+[data-theme='pixel-glitch'] .agent-panel__header {
+  border-bottom-color: rgba(229, 230, 225, 0.22);
+  background:
+    linear-gradient(90deg, #263b99 0 17%, #506ccf 17% 22%, transparent 22%) 0 0 / 100% 3px no-repeat,
+    linear-gradient(90deg, rgba(63, 95, 200, 0.16) 0 6px, transparent 6px),
+    #090b0a;
+}
+
+/* 标题栏右侧信号区：仿窗口标题带的设备标记 */
+[data-theme='pixel-glitch'] .agent-panel__kicker {
+  display: none;
+}
+
+[data-theme='pixel-glitch'] .agent-panel__header > div:first-child::after {
+  content: 'ASSISTANT / PX–03.1';
+  margin-left: 8px;
+  color: rgba(229, 230, 225, 0.5);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+[data-theme='pixel-glitch'] .agent-bubble {
+  border-radius: 0;
+}
+
+[data-theme='pixel-glitch'] .agent-bubble--assistant {
+  border-color: rgba(229, 230, 225, 0.2);
+  background: #090b0a;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.72);
+}
+
+[data-theme='pixel-glitch'] .agent-bubble--user {
+  border: 1px solid rgba(63, 95, 200, 0.55);
+  background: rgba(63, 95, 200, 0.16);
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.6);
+}
+
+[data-theme='pixel-glitch'] .agent-asset-cell {
+  border-radius: 0;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.7);
+}
+
+[data-theme='pixel-glitch'] .agent-asset-cell:hover {
+  border-color: #f0f0eb;
+}
+
+[data-theme='pixel-glitch'] .agent-panel__composer {
+  border-top-color: rgba(229, 230, 225, 0.22);
+  background: #090b0a;
+}
+
+[data-theme='pixel-glitch'] .agent-op-card {
+  border-radius: 0;
+  border-color: rgba(229, 230, 225, 0.2);
+  background: #090b0a;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.72);
+}
+
+[data-theme='pixel-glitch'] .agent-op-item {
+  border-bottom: 1px dashed rgba(229, 230, 225, 0.12);
+  padding-bottom: 3px;
+}
+
+[data-theme='pixel-glitch'] .agent-op-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+/* 记录视图头部提示条：伪档案台账标签 */
+[data-theme='pixel-glitch'] .agent-ops__intro::before {
+  content: 'CHANGE LOG / TAPE 03';
+  display: block;
+  margin-bottom: 4px;
+  color: rgba(229, 230, 225, 0.5);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}

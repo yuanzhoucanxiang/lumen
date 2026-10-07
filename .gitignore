@@ -21,6 +21,7 @@ Thumbs.db
 
 # 截图走查临时产物
 .ui-shot/*.png
+.ui-shot/theme-shots/
 .ui-shot/*.jpg
 .ui-shot/.userdata/
 .ui-shot/test-export.zip
