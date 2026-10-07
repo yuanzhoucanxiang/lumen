@@ -39,6 +39,8 @@ export default function AgentPanel() {
   const [view, setView] = useState<'chat' | 'ops'>('chat')
   const [ops, setOps] = useState<AgentOpView[] | null>(null)
   const [undoing, setUndoing] = useState<number | null>(null)
+  /** 记录卡片展开的明细(里程碑 172):查看/单独回退每个受影响项 */
+  const [expandedOps, setExpandedOps] = useState<Set<number>>(new Set())
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // 流式增量订阅:busy 期间显示模型输出尾部
@@ -103,11 +105,11 @@ export default function AgentPanel() {
     }
   }, [view])
 
-  /** 回退一条操作 */
-  const undo = async (id: number) => {
+  /** 回退一条操作（itemIds 给了则只回退其中指定项，里程碑 172 逐项回退） */
+  const undo = async (id: number, itemIds?: string[]) => {
     setUndoing(id)
     try {
-      const r = await window.api.agentUndoOp(id)
+      const r = await window.api.agentUndoOp(id, itemIds)
       useLibraryStore.getState().showToast(r.message)
       if (r.ok) {
         setOps(await window.api.agentOpsList(50))
@@ -267,13 +269,14 @@ export default function AgentPanel() {
                   <span className="shrink-0 rounded-sm border border-[var(--border)] px-1.5 py-0.5 text-[10px] text-[var(--text-faint)]">
                     已回退
                   </span>
-                ) : op.undoable ? (
+                ) : op.undoable && op.items.length > 0 ? (
                   <button
                     className="shrink-0 rounded-sm border border-[var(--border)] px-1.5 py-0.5 text-[10px] text-[var(--text-dim)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent-text)] disabled:opacity-40"
                     disabled={undoing !== null}
+                    title={op.items.length > 1 ? '回退这条操作剩余的全部项' : '回退这条操作'}
                     onClick={() => void undo(op.id)}
                   >
-                    {undoing === op.id ? '回退中…' : '回退'}
+                    {undoing === op.id ? '回退中…' : '全部回退'}
                   </button>
                 ) : (
                   <span className="shrink-0 rounded-sm border border-[var(--border)] px-1.5 py-0.5 text-[10px] text-[var(--text-faint)]" title="移动导入的源文件已删除，无法回退">
@@ -281,12 +284,70 @@ export default function AgentPanel() {
                   </span>
                 )}
               </div>
-              <div className="tnum mt-1 text-[10px] text-[var(--text-faint)]">
-                {new Date(op.ts).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                {' · '}
-                {op.action}
-                {op.affected > 0 ? ` · ${op.affected} 个素材` : ''}
+              <div className="tnum mt-1 flex items-center gap-1.5 text-[10px] text-[var(--text-faint)]">
+                <span>
+                  {new Date(op.ts).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  {' · '}
+                  {op.action}
+                  {op.items.length > 0
+                    ? ` · 已回退 ${op.undoneCount}/${op.items.length}`
+                    : op.affected > 0
+                      ? ` · ${op.affected} 个素材`
+                      : ''}
+                </span>
+                {op.items.length > 1 && (
+                  <button
+                    className="flex items-center gap-0.5 text-[10px] text-[var(--text-dim)] transition-colors hover:text-[var(--accent-text)]"
+                    aria-expanded={expandedOps.has(op.id)}
+                    onClick={() =>
+                      setExpandedOps((prev) => {
+                        const next = new Set(prev)
+                        if (next.has(op.id)) next.delete(op.id)
+                        else next.add(op.id)
+                        return next
+                      })
+                    }
+                  >
+                    <Icon name="chevronDown" size={9} className={expandedOps.has(op.id) ? '' : '-rotate-90'} />
+                    {expandedOps.has(op.id) ? '收起明细' : '展开明细'}
+                  </button>
+                )}
               </div>
+
+              {/* 逐项明细（里程碑 172）：每个受影响的素材可单独回退 */}
+              {expandedOps.has(op.id) && op.items.length > 0 && (
+                <div className="mt-1.5 space-y-1 border-t border-[var(--border)] pt-1.5">
+                  {op.items.map((it) => (
+                    <div key={it.id} className="flex items-center gap-1.5">
+                      {(it.assetId ?? it.id) && /^[0-9a-f]{16}$/i.test(it.assetId ?? it.id) ? (
+                        <img
+                          src={window.api.thumbnailUrl(it.assetId ?? it.id)}
+                          alt=""
+                          loading="lazy"
+                          draggable={false}
+                          className="h-6 w-6 shrink-0 rounded-sm border border-[var(--border)] object-cover"
+                        />
+                      ) : (
+                        <span className="h-6 w-6 shrink-0 rounded-sm border border-[var(--border)]" aria-hidden="true" />
+                      )}
+                      <span className={`min-w-0 flex-1 truncate text-[10.5px] ${it.undone ? 'text-[var(--text-faint)] line-through' : ''}`} title={it.name}>
+                        {it.name}
+                      </span>
+                      {!it.undone && op.undoable ? (
+                        <button
+                          className="shrink-0 text-[10px] text-[var(--text-dim)] transition-colors hover:text-[var(--accent-text)] disabled:opacity-40"
+                          disabled={undoing !== null}
+                          onClick={() => void undo(op.id, [it.id])}
+                        >
+                          撤销
+                        </button>
+                      ) : (
+                        <span className="shrink-0 text-[10px] text-[var(--text-faint)]">已撤销</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>

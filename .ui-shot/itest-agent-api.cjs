@@ -353,6 +353,42 @@ async function main() {
   check('/undo 回退打标签(标签消失)', rUndoTag?.json?.ok === true && !tagGone.includes(taggedOp?.tag ?? ''),
     `msg=${rUndoTag?.json?.message} tags=${tagGone.join(',')}`)
 
+  /* ---------- 5i. 逐项明细与逐项回退(里程碑 172) ---------- */
+  // 新打一个覆盖多素材的标签,验证 items 明细 + 部分回退 + 进度
+  const PART_TAG = `${TAG_NAME}-逐项`
+  await request('POST', '/tag', JSON.stringify({ conditions: { keyword: tag }, tag: PART_TAG }))
+  const opsAfterTag = (await request('GET', '/ops?limit=10')).json?.ops ?? []
+  const partOp = opsAfterTag.find((o) => o.action === 'tag' && o.summary.includes('逐项'))
+  check('/ops 记录含逐项明细(items 与素材数一致)',
+    !!partOp && Array.isArray(partOp.items) && partOp.items.length === beforeCount && partOp.items.every((i) => i.id && i.name) && partOp.undoneCount === 0,
+    `items=${partOp?.items?.length} undoneCount=${partOp?.undoneCount} before=${beforeCount}`)
+
+  // 只回退其中 1 项:该项标签消失、其余仍在,记录未完结且进度=1/N
+  const oneItem = partOp?.items?.[0]
+  const rPartUndo = oneItem ? await request('POST', '/undo', JSON.stringify({ id: partOp.id, itemIds: [oneItem.id] })) : null
+  const oneTags = oneItem ? (await request('GET', `/asset?id=${oneItem.id}`)).json?.asset?.tags ?? [] : []
+  const otherId = partOp?.items?.[1]?.id
+  const otherTags = otherId ? (await request('GET', `/asset?id=${otherId}`)).json?.asset?.tags ?? [] : []
+  check('/undo 逐项回退(仅撤销 1 项,其余保留,返回剩余数)',
+    rPartUndo?.json?.ok === true && rPartUndo.json.undoneCount === 1 && rPartUndo.json.remaining === beforeCount - 1 &&
+      !oneTags.includes(PART_TAG) && otherTags.includes(PART_TAG),
+    `undone=${rPartUndo?.json?.undoneCount} remaining=${rPartUndo?.json?.remaining} oneHas=${oneTags.includes(PART_TAG)} otherHas=${otherTags.includes(PART_TAG)}`)
+  const opsMid = (await request('GET', '/ops?limit=10')).json?.ops ?? []
+  const partOpMid = opsMid.find((o) => o.id === partOp?.id)
+  check('记录未完结且进度正确(1/N)', partOpMid?.undone === false && partOpMid?.undoneCount === 1,
+    `undone=${partOpMid?.undone} count=${partOpMid?.undoneCount}/${partOpMid?.items?.length}`)
+
+  // 全部回退剩余项:记录自动完结
+  const rRestUndo = partOp ? await request('POST', '/undo', JSON.stringify({ id: partOp.id })) : null
+  const opsEnd = (await request('GET', '/ops?limit=10')).json?.ops ?? []
+  const partOpEnd = opsEnd.find((o) => o.id === partOp?.id)
+  const otherTagsEnd = otherId ? (await request('GET', `/asset?id=${otherId}`)).json?.asset?.tags ?? [] : []
+  check('/undo 全部回退剩余项后记录自动完结',
+    rRestUndo?.json?.ok === true && rRestUndo.json.remaining === 0 && partOpEnd?.undone === true && !otherTagsEnd.includes(PART_TAG),
+    `remaining=${rRestUndo?.json?.remaining} undone=${partOpEnd?.undone} otherHas=${otherTagsEnd.includes(PART_TAG)}`)
+  const rUndoDone = partOp ? await request('POST', '/undo', JSON.stringify({ id: partOp.id })) : null
+  check('回退已完结记录 400', rUndoDone?.status === 400, `status=${rUndoDone?.status}`)
+
   /* ---------- 6. CDP 会话建立(清理与技能安装断言都走渲染层) ---------- */
   const targets = await getJson('http://127.0.0.1:9333/json/list')
   const page = targets.find((t) => t.type === 'page' && t.url.includes('localhost:5173') && !t.url.includes('floating'))

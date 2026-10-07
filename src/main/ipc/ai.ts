@@ -116,7 +116,7 @@ export function registerAiIpc(getWindow: () => BrowserWindow | null): void {
 
   // Agent 操作记录与回退（里程碑 171）
   ipcMain.handle('ai:agentOps', (_e, limit?: number) => listAgentOps(typeof limit === 'number' ? limit : 30))
-  ipcMain.handle('ai:agentUndo', (_e, id: number) => undoAgentOp(id))
+  ipcMain.handle('ai:agentUndo', (_e, id: number, itemIds?: string[]) => undoAgentOp(id, itemIds))
 
   // AI 视觉重排：对助手已检索到的素材按查询意图做视觉相关性重排（复用 aiSearch 的视觉精排管线）
   ipcMain.handle(

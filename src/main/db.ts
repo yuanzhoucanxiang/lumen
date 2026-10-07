@@ -227,6 +227,10 @@ function migrate(d: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_agent_ops_ts ON agent_ops(ts DESC);
   `)
   // 增量迁移：为旧库补充新字段
+  ensureColumns(d, 'agent_ops', {
+    // 逐项回退状态(里程碑 172):JSON 数组,记录该操作下已单独回退的 item id
+    undone_items: "TEXT NOT NULL DEFAULT '[]'"
+  })
   ensureColumns(d, 'assets', {
     hash: "TEXT NOT NULL DEFAULT ''",
     edited: 'INTEGER NOT NULL DEFAULT 0',

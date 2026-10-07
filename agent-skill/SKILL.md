@@ -79,8 +79,8 @@ curl -s -X POST http://127.0.0.1:45678/import \
 - `POST /star` — 星级：`{"star":0-5,"ids":[...]}` 或带 `conditions`。
 - `POST /board` — 上板：`{"boardId":N,"ids":[...]}`，把已有素材追加到白板（自动流式排布）。
 - `POST /note` — 备注：`{"note":"...","mode":"append","ids":[...]}`（mode 缺省为改写），给已有素材写/追加备注。
-- `GET /ops` — **操作记录**：列出你做过的写操作（含能否回退）。改动用户素材后建议主动向用户汇报；用户可在 LUMEN 助手面板一键回退。
-- `POST /undo` — 回退：`{"id":N}` 撤销一条操作记录（一次性，移动导入不可回退）。
+- `GET /ops` — **操作记录**：列出你做过的写操作（**含逐项明细 `items[]`** 与能否回退）。改动用户素材后建议主动向用户汇报；用户可在 LUMEN 助手面板查看并**逐项或整条回退**。
+- `POST /undo` — 回退：`{"id":N}` 撤销整条记录，或 `{"id":N,"itemIds":["资产id",...]}` **只撤销其中几项**；响应含 `undoneCount/remaining`（进度）。一次性，移动导入不可回退。
 - `GET /stats` — 库汇总（只读）：素材总数、回收站数、标签/文件夹数、Agent 导入文件夹张数（`agentImported`）。汇报时用它说"库内共 X 张，Agent 收纳了 Y 张"。
 - `GET /tags` — 列出现有标签（含 id/name/count）。打标签前可先看看有没有语义相近的既有标签，优先复用，避免同义标签泛滥。
 - `GET /folders` — 列出现有文件夹（含 id/name/parentId/count）。同理优先归入既有文件夹。

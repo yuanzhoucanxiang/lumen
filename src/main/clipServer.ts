@@ -23,7 +23,8 @@ import {
 } from './repository'
 import { aiProcessBatch } from './aiRename'
 import { agentMatchedIds } from './aiAgent'
-import { listAgentOps, logAgentOp, undoAgentOp } from './agentOps'
+import { itemsFromAssetIds, listAgentOps, logAgentOp, undoAgentOp } from './agentOps'
+import type { AgentOpItem } from './agentOps'
 import { logger } from './logger'
 import { guardedFetch, readBodyCapped } from './netGuard'
 import type { ImportFileDetail, NewBoardItem } from '../shared/types'
@@ -389,14 +390,14 @@ async function importFromPaths(
       folderSegments.length > 0
         ? `导入 ${importedIds.length} 个素材`
         : `导入 ${importedIds.length} 个素材，归入「${AGENT_DEFAULT_FOLDER}」`
-    logAgentOp('import', summary, { assetIds: importedIds, undoable: payload.move !== true }, importedIds.length)
+    logAgentOp('import', summary, { items: itemsFromAssetIds(importedIds), undoable: payload.move !== true }, importedIds.length)
   }
   // ②显式 folder(作用于新导入 + 命中的库内已有素材)
   if (applyIds.length > 0 && folderSegments.length > 0 && folderId !== null) {
     logAgentOp(
       'folder',
       `把 ${applyIds.length} 个素材归入文件夹「${folderSegments.join('/')}」`,
-      { assetIds: applyIds, folderId, folderName: folderSegments.join('/') },
+      { items: itemsFromAssetIds(applyIds), folderId, folderName: folderSegments.join('/') },
       applyIds.length
     )
   }
@@ -404,13 +405,19 @@ async function importFromPaths(
   if (applyIds.length > 0 && Array.isArray(payload.tags) && payload.tags.length > 0) {
     const tagNames = (payload.tags as unknown[]).map(sanitizeName).filter(Boolean)
     for (const t of tagNames) {
-      logAgentOp('tag', `给 ${applyIds.length} 个素材打标签「${t}」`, { assetIds: applyIds, tag: t }, applyIds.length)
+      logAgentOp('tag', `给 ${applyIds.length} 个素材打标签「${t}」`, { items: itemsFromAssetIds(applyIds), tag: t }, applyIds.length)
     }
   }
   // ④上板
   if (boardItemIds.length > 0 && boardId !== null) {
     const bn = listBoards().find((b) => b.id === boardId)?.name ?? `#${boardId}`
-    logAgentOp('board', `把 ${boardItemIds.length} 个素材放上白板「${bn}」`, { itemIds: boardItemIds, boardId }, boardItemIds.length)
+    // 画布元素 id 与素材一一对应(placeAssetsOnBoard 同步生成),逐项记录供面板展示与逐项回退
+    const boardItems = boardItemIds.map((itemId, i) => ({
+      id: itemId,
+      name: getAssetById(importedIds[i])?.name ?? itemId,
+      assetId: importedIds[i]
+    }))
+    logAgentOp('board', `把 ${boardItemIds.length} 个素材放上白板「${bn}」`, { items: boardItems, boardId }, boardItemIds.length)
   }
 
   // AI 自动打标签:后台队列执行,不阻塞响应;完成/跳过/失败经 agent:notify 推送
@@ -592,7 +599,7 @@ export function startClipServer(
             return
           }
           addTagToAssets(ids, tag)
-          logAgentOp('tag', `给 ${ids.length} 个素材打标签「${tag}」`, { assetIds: ids, tag }, ids.length)
+          logAgentOp('tag', `给 ${ids.length} 个素材打标签「${tag}」`, { items: itemsFromAssetIds(ids), tag }, ids.length)
           if (ids.length > 0) onImported?.(0, 'agent')
           json(res, 200, { ok: true, tagged: ids.length })
         })
@@ -612,7 +619,7 @@ export function startClipServer(
           const ids = await resolveAgentIds(payload)
           const removed = ids.length > 0 ? removeTagFromAssets(ids, tag) : 0
           if (removed > 0) {
-            logAgentOp('untag', `摘除 ${removed} 个素材的「${tag}」标签`, { assetIds: ids, tag }, removed)
+            logAgentOp('untag', `摘除 ${removed} 个素材的「${tag}」标签`, { items: itemsFromAssetIds(ids), tag }, removed)
             onImported?.(0, 'agent')
           }
           json(res, 200, { ok: true, removed })
@@ -639,7 +646,7 @@ export function startClipServer(
           const fid = resolveFolderId(segs)
           const name = segs.join('/')
           addToFolder(ids, fid)
-          logAgentOp('folder', `把 ${ids.length} 个素材归入文件夹「${name}」`, { assetIds: ids, folderId: fid, folderName: name }, ids.length)
+          logAgentOp('folder', `把 ${ids.length} 个素材归入文件夹「${name}」`, { items: itemsFromAssetIds(ids), folderId: fid, folderName: name }, ids.length)
           onImported?.(0, 'agent')
           json(res, 200, { ok: true, moved: ids.length, folderId: fid })
         })
@@ -657,20 +664,18 @@ export function startClipServer(
           const star = Number(payload.star)
           if (!Number.isInteger(star) || star < 0 || star > 5) throw new Error('star must be integer 0-5')
           const ids = await resolveAgentIds(payload)
-          const prev: Record<string, number> = {}
-          let n = 0
+          const starItems: AgentOpItem[] = []
           for (const id of ids) {
             const a = getAssetById(id)
             if (!a || a.deletedAt != null) continue
-            prev[id] = a.star
             updateAsset(id, { star })
-            n++
+            starItems.push({ id, name: a.name, prev: a.star })
           }
-          if (n > 0) {
-            logAgentOp('star', `设置 ${n} 个素材为 ${star} 星`, { prev }, n)
+          if (starItems.length > 0) {
+            logAgentOp('star', `设置 ${starItems.length} 个素材为 ${star} 星`, { items: starItems }, starItems.length)
             onImported?.(0, 'agent')
           }
-          json(res, 200, { ok: true, updated: n })
+          json(res, 200, { ok: true, updated: starItems.length })
         })
         .catch((err: Error) => {
           if (!res.headersSent) json(res, 400, { ok: false, error: err.message })
@@ -693,7 +698,12 @@ export function startClipServer(
           const itemIds = placeAssetsOnBoard(bid, ids)
           if (itemIds.length > 0) {
             const bn = listBoards().find((b) => b.id === bid)?.name ?? `#${bid}`
-            logAgentOp('board', `把 ${itemIds.length} 个素材放上白板「${bn}」`, { itemIds, boardId: bid }, itemIds.length)
+            const boardItems: AgentOpItem[] = itemIds.map((itemId, i) => ({
+              id: itemId,
+              name: getAssetById(ids[i])?.name ?? itemId,
+              assetId: ids[i]
+            }))
+            logAgentOp('board', `把 ${itemIds.length} 个素材放上白板「${bn}」`, { items: boardItems, boardId: bid }, itemIds.length)
           }
           json(res, 200, { ok: true, added: itemIds.length })
         })
@@ -717,20 +727,19 @@ export function startClipServer(
           if (!note) throw new Error('note required')
           const append = payload.mode === 'append'
           const ids = await resolveAgentIds(payload)
-          const prev: Record<string, string> = {}
-          let n = 0
+          const noteItems: AgentOpItem[] = []
           for (const id of ids) {
             const a = getAssetById(id)
             if (!a || a.deletedAt != null) continue
-            prev[id] = a.comment
-            updateAsset(id, { comment: append && a.comment ? `${a.comment}\n${note}` : note })
-            n++
+            updateAsset(id, { comment: append && a.comment ? `${a.comment}
+${note}` : note })
+            noteItems.push({ id, name: a.name, prev: a.comment })
           }
-          if (n > 0) {
-            logAgentOp('note', `${append ? '追加' : '改写'} ${n} 个素材的备注`, { prev }, n)
+          if (noteItems.length > 0) {
+            logAgentOp('note', `${append ? '追加' : '改写'} ${noteItems.length} 个素材的备注`, { items: noteItems }, noteItems.length)
             onImported?.(0, 'agent')
           }
-          json(res, 200, { ok: true, updated: n })
+          json(res, 200, { ok: true, updated: noteItems.length })
         })
         .catch((err: Error) => {
           if (!res.headersSent) json(res, 400, { ok: false, error: err.message })
@@ -750,12 +759,13 @@ export function startClipServer(
     if (req.method === 'POST' && url.pathname === '/undo') {
       readBody(req, res)
         .then(async (body) => {
-          const payload = JSON.parse(body) as { id?: number }
+          const payload = JSON.parse(body) as { id?: number; itemIds?: string[] }
           const id = Number(payload.id)
           if (!Number.isInteger(id)) throw new Error('id required')
-          const r = undoAgentOp(id)
+          const itemIds = Array.isArray(payload.itemIds) ? payload.itemIds.filter((x) => typeof x === 'string') : undefined
+          const r = undoAgentOp(id, itemIds)
           if (r.ok) onImported?.(0, 'agent')
-          json(res, r.ok ? 200 : 400, { ok: r.ok, message: r.message })
+          json(res, r.ok ? 200 : 400, { ok: r.ok, message: r.message, undoneCount: r.undoneCount, remaining: r.remaining })
         })
         .catch((err: Error) => {
           if (!res.headersSent) json(res, 400, { ok: false, error: err.message })

@@ -12,7 +12,7 @@ import { assetPaths, listTags, libraryStats, queryAssets, getAssetById, addTagTo
 import { logger } from './logger'
 import { chat, chatStream } from './aiClient'
 import { extractJson, rankByVision } from './aiSearch'
-import { logAgentOp } from './agentOps'
+import { itemsFromAssetIds, logAgentOp } from './agentOps'
 import type { AiConfig, ChatTurn } from './aiClient'
 import type {
   AgentAssetBrief,
@@ -178,7 +178,7 @@ export function agentTagByConditions(raw: unknown, tag: string): { tagged: numbe
   if (rows.length === 0) return { tagged: 0 }
   const ids = rows.map((a) => a.id)
   addTagToAssets(ids, name)
-  logAgentOp('tag', `给 ${ids.length} 个素材打标签「${name}」`, { assetIds: ids, tag: name }, ids.length)
+  logAgentOp('tag', `给 ${ids.length} 个素材打标签「${name}」`, { items: itemsFromAssetIds(ids), tag: name }, ids.length)
   logger.info('[aiAgent]', `按条件打标签「${name}」: ${rows.length} 个素材`)
   return { tagged: rows.length }
 }

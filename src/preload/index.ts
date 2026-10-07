@@ -117,9 +117,9 @@ const api = {
     ipcRenderer.invoke('ai:agentTag', conditions, tag),
   /** Agent 操作记录（含能否回退） */
   agentOpsList: (limit?: number): Promise<AgentOpView[]> => ipcRenderer.invoke('ai:agentOps', limit),
-  /** 回退一条 Agent 操作记录 */
-  agentUndoOp: (id: number): Promise<{ ok: boolean; message: string }> =>
-    ipcRenderer.invoke('ai:agentUndo', id),
+  /** 回退一条 Agent 操作记录（itemIds 缺省 = 全部；给了则只回退其中指定项） */
+  agentUndoOp: (id: number, itemIds?: string[]): Promise<{ ok: boolean; message: string; remaining?: number }> =>
+    ipcRenderer.invoke('ai:agentUndo', id, itemIds),
   /** 找图助手：对话回复的流式增量(累积文本) */
   onAgentDelta: (cb: (p: { text: string }) => void): (() => void) => {
     const h = (_e: Electron.IpcRendererEvent, p: { text: string }) => cb(p)

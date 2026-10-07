@@ -197,7 +197,17 @@ export interface AgentReply extends AgentSearchResult {
   raw: string
 }
 
-/** Agent 操作记录（里程碑 171）：写操作审计，面板可查、可一键回退 */
+/** Agent 操作记录中的单个受影响项（里程碑 172：逐项展示与逐项回退） */
+export interface AgentOpItemView {
+  /** 回退目标 id：素材 id 或画布元素 id（board） */
+  id: string
+  name: string
+  /** board 项对应素材 id（面板缩略图用） */
+  assetId?: string
+  undone: boolean
+}
+
+/** Agent 操作记录（里程碑 171/172）：写操作审计，面板可查、可逐项/整条回退 */
 export interface AgentOpView {
   id: number
   ts: number
@@ -207,6 +217,10 @@ export interface AgentOpView {
   undone: boolean
   /** 能否回退（移动导入的源文件已删 → 不可回退） */
   undoable: boolean
+  /** 逐个受影响的素材/元素（面板展开可见，可单条回退） */
+  items: AgentOpItemView[]
+  /** 已回退项数（与 items.length 比较可显示进度） */
+  undoneCount: number
 }
 
 /** 多轮对话历史项(找图助手上下文) */

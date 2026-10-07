@@ -127,7 +127,7 @@ LUMEN 运行时在本机 `127.0.0.1:45678` 提供 HTTP 接口（仅监听回环�
 | `GET /asset?id=` | 单素材详情（含备注/来源/标签） |
 | `POST /tag` / `POST /untag` | 按 `ids` 或 `conditions` 给命中素材打标签 / 摘标签（幂等可逆） |
 | `POST /folder` / `POST /star` / `POST /board` / `POST /note` | 归档到文件夹 / 设星级 / 追加到白板 / 写备注（均支持 `ids` 或 `conditions` 定位） |
-| `GET /ops` / `POST /undo` | Agent 操作记录（含可否回退）与一键回退；助手面板可查看与回退 |
+| `GET /ops` / `POST /undo` | Agent 操作记录（逐项明细，含可否回退）与回退（整条或 `itemIds` 逐项）；助手面板可查看并逐项回退 |
 | `GET /boards` | 列出现有白板（id/name），配合 `boardId` 使用 |
 | `GET /stats` | 库汇总（只读）：素材总数、回收站数、标签/文件夹数、Agent 来源素材数 |
 | `GET /tags` / `GET /folders` | 列出现有标签 / 文件夹 |
