@@ -9,7 +9,7 @@
  */
 import { listTags, libraryStats, queryAssets, getAssetById, addTagToAssets } from './repository'
 import { logger } from './logger'
-import { chat } from './aiClient'
+import { chat, chatStream } from './aiClient'
 import { extractJson, rankByVision } from './aiSearch'
 import type { AiConfig, ChatTurn } from './aiClient'
 import type {
@@ -237,12 +237,14 @@ function buildPrompt(message: string): string {
 
 /**
  * 一轮对话：模型 → JSON 指令 → 条件映射 → 查库 → 回复。
- * 失败兜底：模型输出无法解析为 JSON 时自动重试一次（附严格格式提醒）；仍失败则把原文当回复返回，不抛错打断对话。
+ * onDelta 提供时走流式(SSE,增量经回调推送供 UI 实时显示);失败兜底：解析失败自动重试一次,
+ * 仍失败则把原文当回复返回,不抛错打断对话。
  */
 export async function agentChatTurn(
   message: string,
   history: ChatTurn[],
-  cfg: AiConfig
+  cfg: AiConfig,
+  onDelta?: (accumulated: string) => void
 ): Promise<AgentReply> {
   const trimmed = message.trim()
   if (!trimmed) {
@@ -251,7 +253,9 @@ export async function agentChatTurn(
 
   const prompt = buildPrompt(trimmed)
   // maxTokens 给足:推理型模型思考链与正文共享预算
-  let content = await chat(cfg, prompt, undefined, 1500, 90_000, 0.2, history)
+  let content = onDelta
+    ? await chatStream(cfg, prompt, (acc) => onDelta(acc), 1500, 90_000, 0.2, history)
+    : await chat(cfg, prompt, undefined, 1500, 90_000, 0.2, history)
   let obj = extractJson(content)
 
   if (!obj) {

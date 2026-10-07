@@ -37,6 +37,36 @@ export function cleanAgentError(e: unknown): string {
     .replace(/^Error:\s*/, '')
 }
 
+/** 助手对话持久化(里程碑 167):localStorage 存档,应用重启后对话还在 */
+const AGENT_CHAT_KEY = 'lumen.agentChat'
+
+function hydrateAgentChat(): { messages: AgentMsg[]; history: AgentChatTurn[] } {
+  try {
+    const raw = localStorage.getItem(AGENT_CHAT_KEY)
+    if (raw) {
+      const p = JSON.parse(raw) as { messages?: AgentMsg[]; history?: AgentChatTurn[] }
+      const messages = Array.isArray(p.messages)
+        ? p.messages.filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.text === 'string')
+        : []
+      const history = Array.isArray(p.history)
+        ? p.history.filter((h) => h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
+        : []
+      return { messages, history }
+    }
+  } catch {
+    /* 损坏的存档按空对话处理 */
+  }
+  return { messages: [], history: [] }
+}
+
+function persistAgentChat(messages: AgentMsg[], history: AgentChatTurn[]): void {
+  try {
+    localStorage.setItem(AGENT_CHAT_KEY, JSON.stringify({ messages, history }))
+  } catch {
+    /* localStorage 不可用时静默(对话仅本次会话有效) */
+  }
+}
+
 export type ViewType =
   | { type: 'all' }
   | { type: 'starred' }
@@ -273,7 +303,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   editorId: null,
   aiDialogOpen: false,
   agentPanelOpen: false,
-  agentMessages: [],
+  agentMessages: hydrateAgentChat().messages,
   agentHistory: [],
   agentBusy: false,
   toast: null,
@@ -652,12 +682,19 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   toggleAgentPanel: () => set((s) => ({ agentPanelOpen: !s.agentPanelOpen })),
   closeAgentPanel: () => set({ agentPanelOpen: false }),
 
-  agentClearChat: () => set({ agentMessages: [], agentHistory: [] }),
+  agentClearChat: () => {
+    set({ agentMessages: [], agentHistory: [] })
+    persistAgentChat([], [])
+  },
 
   agentApplyRerank: (msgIndex, assets) =>
-    set((s) => ({
-      agentMessages: s.agentMessages.map((m, i) => (i === msgIndex ? { ...m, assets } : m))
-    })),
+    set((s) => {
+      const next = {
+        agentMessages: s.agentMessages.map((m, i) => (i === msgIndex ? { ...m, assets } : m))
+      }
+      persistAgentChat(next.agentMessages, s.agentHistory)
+      return next
+    }),
 
   agentSend: async (text) => {
     const q = text.trim()
@@ -702,6 +739,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       }))
     } finally {
       set({ agentBusy: false })
+      // 对话持久化(里程碑 167):每轮结束后写存档
+      const s = get()
+      persistAgentChat(s.agentMessages, s.agentHistory)
     }
   },
 

@@ -134,3 +134,92 @@ export async function mapWithConcurrency<T, R>(
   await Promise.all(workers)
   return results
 }
+
+/**
+ * 流式版 chat(SSE):边生成边经 onDelta 回调吐出增量(找图助手用,让等待可感知)。
+ * - 解析 OpenAI 兼容 SSE(data: {...choices[].delta.content});reasoning_content 增量忽略
+ * - 流式不可用(无 body)或整条流未产出任何 content 时,回退非流式 chat 重发一次
+ * - 超时语义与 chat 一致:整个流式过程共享一个计时器
+ */
+export async function chatStream(
+  cfg: AiConfig,
+  text: string,
+  onDelta: (delta: string, accumulated: string) => void,
+  maxTokens = 300,
+  timeoutMs = 60_000,
+  temperature = 0.3,
+  history?: ChatTurn[]
+): Promise<string> {
+  const url = `${normalizeAiBaseUrl(cfg.baseUrl)}/chat/completions`
+  const messages: Record<string, unknown>[] = (history ?? []).map((h) => ({
+    role: h.role,
+    content: h.content
+  }))
+  messages.push({ role: 'user', content: text })
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${cfg.apiKey}`
+      },
+      body: JSON.stringify({
+        model: cfg.model,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+        stream: true
+      }),
+      signal: controller.signal
+    })
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => '')
+      throw new Error(friendlyApiError(resp.status, errText))
+    }
+    if (!resp.body) {
+      // 极端环境无流式 body:回退非流式
+      return await chat(cfg, text, undefined, maxTokens, timeoutMs, temperature, history)
+    }
+    const reader = resp.body.getReader()
+    const decoder = new TextDecoder()
+    let buf = ''
+    let acc = ''
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      const lines = buf.split('\n')
+      buf = lines.pop() ?? ''
+      for (const line of lines) {
+        const t = line.trim()
+        if (!t.startsWith('data:')) continue
+        const payload = t.slice(5).trim()
+        if (!payload || payload === '[DONE]') continue
+        try {
+          const j = JSON.parse(payload) as { choices?: { delta?: { content?: string } }[] }
+          const delta = j.choices?.[0]?.delta?.content
+          if (typeof delta === 'string' && delta) {
+            acc += delta
+            onDelta(delta, acc)
+          }
+        } catch {
+          /* 心跳/注释行等无法解析的 SSE 数据:忽略 */
+        }
+      }
+    }
+    if (!acc) {
+      // 整条流没吐出任何 content(推理型模型可能只流 reasoning):回退非流式重发
+      return await chat(cfg, text, undefined, maxTokens, timeoutMs, temperature, history)
+    }
+    return acc
+  } catch (e) {
+    if (controller.signal.aborted) {
+      throw new Error(`请求超时(${Math.round(timeoutMs / 1000)}s),请检查网络或稍后重试`)
+    }
+    throw e
+  } finally {
+    clearTimeout(timer)
+  }
+}

@@ -22,6 +22,7 @@ export default function AgentPanel() {
   const closeAgentPanel = useLibraryStore((s) => s.closeAgentPanel)
   const messages = useLibraryStore((s) => s.agentMessages)
   const busy = useLibraryStore((s) => s.agentBusy)
+  const tags = useLibraryStore((s) => s.tags)
   const [input, setInput] = useState('')
   const [smartSaveFor, setSmartSaveFor] = useState<number | null>(null)
   const [smartName, setSmartName] = useState('')
@@ -29,7 +30,18 @@ export default function AgentPanel() {
   const [tagName, setTagName] = useState('')
   const [rerankBusy, setRerankBusy] = useState<number | null>(null)
   const [rerankProgress, setRerankProgress] = useState('')
+  /** 模型流式输出的尾部预览(等待时让"AI 在说话"可感知) */
+  const [streamTail, setStreamTail] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  // 流式增量订阅:busy 期间显示模型输出尾部
+  useEffect(() => {
+    const off = window.api.onAgentDelta((p) => setStreamTail(p.text.slice(-80)))
+    return () => {
+      off()
+      setStreamTail('')
+    }
+  }, [])
 
   // 视觉重排进度:主进程经 ai:searchProgress 推送,重排中在按钮下方显示
   useEffect(() => {
@@ -198,6 +210,21 @@ export default function AgentPanel() {
             >
               <div className={m.error ? 'text-red-400' : ''}>{m.text}</div>
 
+              {/* 错误重试（里程碑 167）：网络/服务抖动后一键重发上一次提问 */}
+              {m.error && m.role === 'assistant' && (() => {
+                const lastUser = [...messages.slice(0, i)].reverse().find((x) => x.role === 'user')?.text
+                return lastUser ? (
+                  <button
+                    className="mt-1.5 flex items-center gap-1 rounded-sm border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text-dim)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent-text)] disabled:opacity-40"
+                    disabled={busy}
+                    onClick={() => send(lastUser)}
+                  >
+                    <Icon name="rotate" size={10} />
+                    重试
+                  </button>
+                ) : null
+              })()}
+
               {m.assets && m.assets.length > 0 && (
                 <div className="mt-2 grid grid-cols-3 gap-1">
                   {m.assets.slice(0, 9).map((a) => (
@@ -277,6 +304,7 @@ export default function AgentPanel() {
                           className="field-input w-[132px] px-1.5 py-0.5 text-[11px]"
                           placeholder="标签名称"
                           aria-label="标签名称"
+                          list="agent-tag-suggestions"
                           value={tagName}
                           autoFocus
                           onChange={(e) => setTagName(e.target.value)}
@@ -285,6 +313,11 @@ export default function AgentPanel() {
                             if (e.key === 'Escape') setTagFor(null)
                           }}
                         />
+                        <datalist id="agent-tag-suggestions">
+                          {tags.map((t) => (
+                            <option key={t.id} value={t.name} />
+                          ))}
+                        </datalist>
                         <button
                           className="rounded-sm border border-[var(--accent)] px-2 py-0.5 text-[11px] text-[var(--accent-text)] disabled:opacity-40"
                           disabled={!tagName.trim()}
@@ -360,7 +393,13 @@ export default function AgentPanel() {
         {busy && (
           <div className="flex items-center gap-1.5 text-[11.5px] text-[var(--text-faint)]">
             <Icon name="rotate" size={12} className="animate-spin" />
-            正在理解你的描述…
+            {streamTail ? (
+              <span className="mono min-w-0 flex-1 truncate" title={streamTail}>
+                {streamTail}
+              </span>
+            ) : (
+              '正在理解你的描述…'
+            )}
           </div>
         )}
       </div>

@@ -423,8 +423,24 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
                 className="field-input w-full text-[12px]"
                 value={settings.aiModel || ''}
                 placeholder="glm-4v"
+                list="ai-model-presets"
                 onChange={(e) => void update({ aiModel: e.target.value })}
               />
+              {/* 常见视觉模型预设(可自由输入,不限于列表) */}
+              <datalist id="ai-model-presets">
+                {[
+                  'glm-4v-flash',
+                  'glm-4v-plus',
+                  'glm-4v',
+                  'qwen-vl-max',
+                  'qwen-vl-plus',
+                  'qwen2.5-vl-7b-instruct',
+                  'llava',
+                  'moondream'
+                ].map((m) => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
             </div>
             <div>
               <label className="mb-0.5 block text-[11px] text-[var(--text-dim)]">

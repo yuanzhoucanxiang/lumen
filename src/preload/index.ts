@@ -115,6 +115,12 @@ const api = {
   /** 找图助手：按条件给全部命中素材打标签（可撤销写操作） */
   agentTag: (conditions: unknown, tag: string): Promise<{ tagged: number }> =>
     ipcRenderer.invoke('ai:agentTag', conditions, tag),
+  /** 找图助手：对话回复的流式增量(累积文本) */
+  onAgentDelta: (cb: (p: { text: string }) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: { text: string }) => cb(p)
+    ipcRenderer.on('ai:agentDelta', h)
+    return () => ipcRenderer.removeListener('ai:agentDelta', h)
+  },
 
   /* 标签 */
   listTags: (): Promise<Tag[]> => ipcRenderer.invoke('tags:list'),
