@@ -15,6 +15,8 @@ function maskedSettings(): Record<string, unknown> {
     aiHasKey: !!cfg.aiApiKey,
     aiKeyTail: cfg.aiApiKey ? cfg.aiApiKey.slice(-4) : '',
     aiAutoOnImport: cfg.aiAutoOnImport ?? false,
+    agentAllowMove: cfg.agentAllowMove === true,
+    agentAllowAutoTag: cfg.agentAllowAutoTag === true,
     aiProfiles: (cfg.aiProfiles ?? []).map((p) => ({
       name: p.name,
       baseUrl: p.baseUrl,
@@ -41,6 +43,8 @@ export function registerSettingsIpc(getWindow: () => BrowserWindow | null): void
         aiApiKey?: string
         aiModel?: string
         aiAutoOnImport?: boolean
+        agentAllowMove?: boolean
+        agentAllowAutoTag?: boolean
       }
     ) => {
       const cfg = loadConfig()
@@ -58,6 +62,9 @@ export function registerSettingsIpc(getWindow: () => BrowserWindow | null): void
       if (patch.aiApiKey !== undefined) cfg.aiApiKey = String(patch.aiApiKey).trim()
       if (patch.aiModel !== undefined) cfg.aiModel = String(patch.aiModel).trim().slice(0, 100)
       if (patch.aiAutoOnImport !== undefined) cfg.aiAutoOnImport = !!patch.aiAutoOnImport
+      // Agent 危险权限（里程碑 182）：只接受布尔，缺省保持原值
+      if (patch.agentAllowMove !== undefined) cfg.agentAllowMove = !!patch.agentAllowMove
+      if (patch.agentAllowAutoTag !== undefined) cfg.agentAllowAutoTag = !!patch.agentAllowAutoTag
       saveConfig(cfg)
       syncWatchers((count) => getWindow()?.webContents.send('clip:imported', count))
       return maskedSettings()

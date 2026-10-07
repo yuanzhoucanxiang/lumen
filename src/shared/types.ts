@@ -302,6 +302,9 @@ export interface AppSettings {
   aiAutoOnImport?: boolean
   /** 已保存的服务商档案（脱敏：仅 hasKey + 末 4 位；里程碑 179） */
   aiProfiles?: { name: string; baseUrl: string; model: string; hasKey: boolean; keyTail: string }[]
+  /** Agent 危险权限（里程碑 182，默认关）：移动导入（删源文件）/ AI 自动打标签（图片外发） */
+  agentAllowMove?: boolean
+  agentAllowAutoTag?: boolean
 }
 
 /** AI 处理进度（主进程推送） */

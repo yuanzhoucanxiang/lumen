@@ -26,6 +26,11 @@ export interface AppConfig {
   aiProfiles?: { name: string; baseUrl: string; apiKey: string; model: string }[]
   /** 导入后自动执行 AI 处理（改名+打标签） */
   aiAutoOnImport?: boolean
+  /** Agent 权限（里程碑 182）：默认都不允许，需用户在设置 → Agent 接入显式打开。
+   *  - agentAllowMove：允许 Agent 移动导入（会把源文件从原位置删掉）
+   *  - agentAllowAutoTag：允许 Agent 触发 AI 自动打标签（会把图片缩略图发给所配置的模型） */
+  agentAllowMove?: boolean
+  agentAllowAutoTag?: boolean
   /** 浮动白板窗状态(位置/尺寸/最小化),重开保持与上次一致 */
   floatingWindow?: { x: number; y: number; width: number; height: number; minimized: boolean }
 }
@@ -114,6 +119,9 @@ export function loadConfig(): AppConfig {
         : [],
       aiModel: raw.aiModel ?? 'glm-4v',
       aiAutoOnImport: raw.aiAutoOnImport ?? false,
+      // Agent 危险权限：缺省即 false（旧配置文件升级上来也一律先关着）
+      agentAllowMove: raw.agentAllowMove === true,
+      agentAllowAutoTag: raw.agentAllowAutoTag === true,
       floatingWindow: raw.floatingWindow
     }
     if (!keyMigrated && typeof raw.aiApiKey === 'string' && raw.aiApiKey && !raw.aiApiKey.startsWith(ENC_PREFIX)) {

@@ -118,6 +118,21 @@ export function addTagToAssets(assetIds: string[], name: string): void {
   for (const id of assetIds) ins.run(id, tag.id)
 }
 
+/** 这批素材里已经带该标签的 id 集合。
+ *  Agent 操作记录用（里程碑 182）：只把"本次真正新加上标签"的素材记进记录，
+ *  回退时就不会摘掉用户原本就有的标签。 */
+export function assetsHavingTag(assetIds: string[], name: string): Set<string> {
+  const having = new Set<string>()
+  const trimmed = name.trim()
+  if (!trimmed || assetIds.length === 0) return having
+  const db = getDb()
+  const tag = db.prepare('SELECT id FROM tags WHERE name = ?').get(trimmed) as { id: number } | undefined
+  if (!tag) return having
+  const q = db.prepare('SELECT 1 FROM asset_tags WHERE tag_id = ? AND asset_id = ?')
+  for (const id of assetIds) if (q.get(tag.id, id)) having.add(id)
+  return having
+}
+
 /** 从一批素材上移除某个标签（标签不存在返回 0；可逆——重新 add 即可）。
  *  供 Agent HTTP /untag 使用（里程碑 169）。 */
 export function removeTagFromAssets(assetIds: string[], name: string): number {

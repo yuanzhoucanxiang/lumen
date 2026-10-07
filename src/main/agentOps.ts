@@ -9,6 +9,8 @@
  *
  * 设计要点：
  * - payload 存「实际影响项与原值」，而非原始请求——回退精确，不受条件检索结果随时间变化影响
+ * - **只记「本次真正改动的项」**（里程碑 182）：素材原本就带该标签 / 已在该文件夹的，不进记录，
+ *   回退时也就不会把用户原有的整理摘掉；star/note 另存 next，用户事后改过的值回退时不动
  * - undone_items 单独一列记录已逐项回退的 item id（payload 保持原始审计数据不被改写）
  * - 移动导入（源文件已删）标记不可回退
  * - 回退本身不写新记录（避免递归噪音）
@@ -38,6 +40,8 @@ export interface AgentOpItem {
   assetId?: string
   /** star / note：改动前的原值 */
   prev?: unknown
+  /** star / note：本次操作设成的值（回退时用来判断"用户事后有没有自己改过"）。里程碑 182 */
+  next?: unknown
 }
 
 export type AgentOp = AgentOpView
@@ -188,23 +192,41 @@ export function undoAgentOp(
         break
       }
       case 'star': {
+        // 只覆盖"还是本次操作设的那个值"的素材：用户事后自己改过星级就不动它（里程碑 182）
         let n = 0
+        let kept = 0
         for (const t of targets) {
-          if (!getAssetById(t.id)) continue
+          const a = getAssetById(t.id)
+          if (!a) continue
+          const setTo = typeof t.next === 'number' ? t.next : null
+          if (setTo !== null && a.star !== setTo) {
+            kept++
+            continue
+          }
           updateAsset(t.id, { star: typeof t.prev === 'number' ? t.prev : 0 })
           n++
         }
         message = `已恢复 ${n} 个素材的原星级`
+        if (kept > 0) message += `（${kept} 个已被后续修改，保持不动）`
         break
       }
       case 'note': {
+        // 同理：用户事后重写过备注就不再覆盖（里程碑 182）
         let n = 0
+        let kept = 0
         for (const t of targets) {
-          if (!getAssetById(t.id)) continue
+          const a = getAssetById(t.id)
+          if (!a) continue
+          const setTo = typeof t.next === 'string' ? t.next : null
+          if (setTo !== null && a.comment !== setTo) {
+            kept++
+            continue
+          }
           updateAsset(t.id, { comment: typeof t.prev === 'string' ? t.prev : '' })
           n++
         }
         message = `已恢复 ${n} 个素材的原备注`
+        if (kept > 0) message += `（${kept} 个已被后续修改，保持不动）`
         break
       }
       case 'board': {

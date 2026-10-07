@@ -8,7 +8,7 @@
  * 只读——本模块不写库，写操作（打标签/存智能文件夹）留待后续版本。
  */
 import { readFileSync } from 'fs'
-import { assetPaths, findSimilarByHash, listTags, libraryStats, queryAssets, getAssetById, addTagToAssets } from './repository'
+import { assetPaths, assetsHavingTag, findSimilarByHash, listTags, libraryStats, queryAssets, getAssetById, addTagToAssets } from './repository'
 import { getDb } from './db'
 import { computeDHash } from './importer'
 import { logger } from './logger'
@@ -231,9 +231,14 @@ export function agentTagByConditions(raw: unknown, tag: string): { tagged: numbe
   const rows = queryAssets(built.query)
   if (rows.length === 0) return { tagged: 0 }
   const ids = rows.map((a) => a.id)
+  // 只记"本次真正新加上该标签"的素材：原本就带的回退时不摘（里程碑 182）
+  const already = assetsHavingTag(ids, name)
+  const changed = ids.filter((id) => !already.has(id))
   addTagToAssets(ids, name)
-  logAgentOp('tag', `给 ${ids.length} 个素材打标签「${name}」`, { items: itemsFromAssetIds(ids), tag: name }, ids.length)
-  logger.info('[aiAgent]', `按条件打标签「${name}」: ${rows.length} 个素材`)
+  if (changed.length > 0) {
+    logAgentOp('tag', `给 ${changed.length} 个素材打标签「${name}」`, { items: itemsFromAssetIds(changed), tag: name }, changed.length)
+  }
+  logger.info('[aiAgent]', `按条件打标签「${name}」: ${rows.length} 个素材（新加 ${changed.length}）`)
   return { tagged: rows.length }
 }
 

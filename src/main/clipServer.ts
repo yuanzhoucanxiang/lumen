@@ -10,6 +10,8 @@ import {
   addBoardItems,
   addTagToAssets,
   addToFolder,
+  assetsHavingTag,
+  assetsInFolder,
   createFolder,
   findSimilar,
   getAssetById,
@@ -351,11 +353,19 @@ async function importFromPaths(
 
   // 幂等应用标签:新导入 + 命中的库内已有素材(显式标签是 agent 的指令,作用于涉及的全部素材)
   const applyIds = [...new Set([...importedIds, ...(result.matchedIds ?? [])])]
+  // 变更前的状态快照——必须在下面 addTagToAssets/addToFolder **之前**取,
+  // 否则"哪些是本次新加的"就看不出来了(里程碑 182:只记本次真正改动的项)
+  const tagPre = new Map<string, Set<string>>()
+  let folderPre = new Set<string>()
+  const tags = Array.isArray(payload.tags)
+    ? payload.tags
+    : payload.tags == null
+      ? []
+      : [payload.tags]
+  const tagNames = (tags as unknown[]).slice(0, MAX_TAGS_PER_CALL).map(sanitizeName).filter(Boolean)
   if (applyIds.length > 0) {
-    // tags 兼容单个字符串形式;逐个消毒过滤(可能为任意 JSON 值)
-    const rawTags = Array.isArray(payload.tags) ? payload.tags : payload.tags == null ? [] : [payload.tags]
-    const tags = rawTags.slice(0, MAX_TAGS_PER_CALL).map(sanitizeName).filter(Boolean)
-    for (const t of tags) addTagToAssets(applyIds, t)
+    for (const t of tagNames) tagPre.set(t, assetsHavingTag(applyIds, t))
+    for (const t of tagNames) addTagToAssets(applyIds, t)
   }
 
   // 归档:显式 folder 优先(作用于涉及的全部素材,幂等);
@@ -364,6 +374,7 @@ async function importFromPaths(
   let folderId: number | null = null
   if (applyIds.length > 0 && folderSegments.length > 0) {
     folderId = resolveFolderId(folderSegments)
+    folderPre = assetsInFolder(applyIds, folderId)
     addToFolder(applyIds, folderId)
   } else if (importedIds.length > 0) {
     folderId = resolveFolderId([AGENT_DEFAULT_FOLDER])
@@ -395,20 +406,26 @@ async function importFromPaths(
     logAgentOp('import', summary, { items: itemsFromAssetIds(importedIds), undoable: payload.move !== true }, importedIds.length, gk)
   }
   // ②显式 folder(作用于新导入 + 命中的库内已有素材)
+  //   只记"本次真正新归档进去的"：已经在目标文件夹里的素材不入记录，回退时不会把用户原有归属移出去(里程碑 182)
   if (applyIds.length > 0 && folderSegments.length > 0 && folderId !== null) {
-    logAgentOp(
-      'folder',
-      `把 ${applyIds.length} 个素材归入文件夹「${folderSegments.join('/')}」`,
-      { items: itemsFromAssetIds(applyIds), folderId, folderName: folderSegments.join('/') },
-      applyIds.length,
-      gk
-    )
+    const changedFolderIds = applyIds.filter((id) => !folderPre.has(id))
+    if (changedFolderIds.length > 0) {
+      logAgentOp(
+        'folder',
+        `把 ${changedFolderIds.length} 个素材归入文件夹「${folderSegments.join('/')}」`,
+        { items: itemsFromAssetIds(changedFolderIds), folderId, folderName: folderSegments.join('/') },
+        changedFolderIds.length,
+        gk
+      )
+    }
   }
-  // ③标签(每个标签一条)
-  if (applyIds.length > 0 && Array.isArray(payload.tags) && payload.tags.length > 0) {
-    const tagNames = (payload.tags as unknown[]).map(sanitizeName).filter(Boolean)
+  // ③标签(每个标签一条;同样只记本次真正新加上的——快照在应用之前取,见上文 tagPre)
+  if (applyIds.length > 0) {
     for (const t of tagNames) {
-      logAgentOp('tag', `给 ${applyIds.length} 个素材打标签「${t}」`, { items: itemsFromAssetIds(applyIds), tag: t }, applyIds.length, gk)
+      const already = tagPre.get(t) ?? new Set<string>()
+      const changedTagIds = applyIds.filter((id) => !already.has(id))
+      if (changedTagIds.length === 0) continue
+      logAgentOp('tag', `给 ${changedTagIds.length} 个素材打标签「${t}」`, { items: itemsFromAssetIds(changedTagIds), tag: t }, changedTagIds.length, gk)
     }
   }
   // ④上板
@@ -620,10 +637,16 @@ export function startClipServer(
             json(res, 200, { ok: true, tagged: 0 })
             return
           }
+          // 只把"本次真正新加上该标签"的素材记进操作记录：原本就带这个标签的不记，
+          // 回退时才不会摘掉用户原有的标签（里程碑 182）
+          const already = assetsHavingTag(ids, tag)
+          const changed = ids.filter((id) => !already.has(id))
           addTagToAssets(ids, tag)
-          logAgentOp('tag', `给 ${ids.length} 个素材打标签「${tag}」`, { items: itemsFromAssetIds(ids), tag }, ids.length)
+          if (changed.length > 0) {
+            logAgentOp('tag', `给 ${changed.length} 个素材打标签「${tag}」`, { items: itemsFromAssetIds(changed), tag }, changed.length)
+          }
           if (ids.length > 0) onImported?.(0, 'agent')
-          json(res, 200, { ok: true, tagged: ids.length })
+          json(res, 200, { ok: true, tagged: ids.length, changed: changed.length })
         })
         .catch((err: Error) => {
           if (!res.headersSent) json(res, 400, { ok: false, error: err.message })
@@ -639,9 +662,12 @@ export function startClipServer(
           const tag = sanitizeName(String(payload.tag ?? ''))
           if (!tag) throw new Error('tag required')
           const ids = await resolveAgentIds(payload)
+          const had = assetsHavingTag(ids, tag)
           const removed = ids.length > 0 ? removeTagFromAssets(ids, tag) : 0
           if (removed > 0) {
-            logAgentOp('untag', `摘除 ${removed} 个素材的「${tag}」标签`, { items: itemsFromAssetIds(ids), tag }, removed)
+            // 只记"本次真正摘掉标签"的素材，回退时才对得上（里程碑 182）
+            const changed = ids.filter((id) => had.has(id))
+            logAgentOp('untag', `摘除 ${changed.length} 个素材的「${tag}」标签`, { items: itemsFromAssetIds(changed), tag }, changed.length)
             onImported?.(0, 'agent')
           }
           json(res, 200, { ok: true, removed })
@@ -667,10 +693,15 @@ export function startClipServer(
           }
           const fid = resolveFolderId(segs)
           const name = segs.join('/')
+          // 只记"本次真正新归档进去"的素材（原本就在这个文件夹里的不记，回退才不会移走用户的原有归属）。里程碑 182
+          const alreadyIn = assetsInFolder(ids, fid)
+          const changed = ids.filter((id) => !alreadyIn.has(id))
           addToFolder(ids, fid)
-          logAgentOp('folder', `把 ${ids.length} 个素材归入文件夹「${name}」`, { items: itemsFromAssetIds(ids), folderId: fid, folderName: name }, ids.length)
+          if (changed.length > 0) {
+            logAgentOp('folder', `把 ${changed.length} 个素材归入文件夹「${name}」`, { items: itemsFromAssetIds(changed), folderId: fid, folderName: name }, changed.length)
+          }
           onImported?.(0, 'agent')
-          json(res, 200, { ok: true, moved: ids.length, folderId: fid })
+          json(res, 200, { ok: true, moved: ids.length, changed: changed.length, folderId: fid })
         })
         .catch((err: Error) => {
           if (!res.headersSent) json(res, 400, { ok: false, error: err.message })
@@ -687,17 +718,23 @@ export function startClipServer(
           if (!Number.isInteger(star) || star < 0 || star > 5) throw new Error('star must be integer 0-5')
           const ids = await resolveAgentIds(payload)
           const starItems: AgentOpItem[] = []
+          let unchanged = 0
           for (const id of ids) {
             const a = getAssetById(id)
             if (!a || a.deletedAt != null) continue
+            // 星级本来就等于目标值 → 不算改动，不写记录（回退才有意义）。里程碑 182
+            if (a.star === star) {
+              unchanged++
+              continue
+            }
             updateAsset(id, { star })
-            starItems.push({ id, name: a.name, prev: a.star })
+            starItems.push({ id, name: a.name, prev: a.star, next: star })
           }
           if (starItems.length > 0) {
             logAgentOp('star', `设置 ${starItems.length} 个素材为 ${star} 星`, { items: starItems }, starItems.length)
             onImported?.(0, 'agent')
           }
-          json(res, 200, { ok: true, updated: starItems.length })
+          json(res, 200, { ok: true, updated: starItems.length, unchanged })
         })
         .catch((err: Error) => {
           if (!res.headersSent) json(res, 400, { ok: false, error: err.message })
@@ -753,9 +790,12 @@ export function startClipServer(
           for (const id of ids) {
             const a = getAssetById(id)
             if (!a || a.deletedAt != null) continue
-            updateAsset(id, { comment: append && a.comment ? `${a.comment}
-${note}` : note })
-            noteItems.push({ id, name: a.name, prev: a.comment })
+            const nextComment = append && a.comment ? `${a.comment}
+${note}` : note
+            // 备注没变化 → 不算改动，不写记录；next 记下来，用户事后重写过备注时回退不动它。里程碑 182
+            if (nextComment === a.comment) continue
+            updateAsset(id, { comment: nextComment })
+            noteItems.push({ id, name: a.name, prev: a.comment, next: nextComment })
           }
           if (noteItems.length > 0) {
             logAgentOp('note', `${append ? '追加' : '改写'} ${noteItems.length} 个素材的备注`, { items: noteItems }, noteItems.length)
@@ -831,6 +871,23 @@ ${note}` : note })
       readBody(req, res)
         .then(async (body) => {
           const payload = JSON.parse(body) as AgentImportPayload
+          // 危险动作需在设置页显式授权（里程碑 182，"Agent 接入"卡片两个开关）：
+          // 请求带了未授权的动作就整批拒绝——不做"先导入再忽略"，避免半个请求悄悄生效
+          const agentCfg = loadConfig()
+          if (payload.move === true && agentCfg.agentAllowMove !== true) {
+            json(res, 403, {
+              ok: false,
+              error: 'move 未授权：移动导入会删除源文件，需在 LUMEN 设置 → Agent 接入 打开「允许移动导入」'
+            })
+            return
+          }
+          if (payload.autoTag === true && agentCfg.agentAllowAutoTag !== true) {
+            json(res, 403, {
+              ok: false,
+              error: 'autoTag 未授权：自动打标签会把图片缩略图发送给所配置的 AI 服务，需在 LUMEN 设置 → Agent 接入 打开「允许 AI 自动打标签」'
+            })
+            return
+          }
           const task = importQueue.then(() => importFromPaths(payload, sendProgress, notify))
           importQueue = task.catch(() => undefined) // 单批失败不让队列卡死
           const r = await task

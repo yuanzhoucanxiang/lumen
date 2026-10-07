@@ -693,6 +693,42 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
               )}
             </div>
           )}
+          <div className="mt-3 border-t border-[var(--border)] pt-2.5">
+            <div className="mb-1 text-[11px] font-medium text-[var(--text-dim)]">Agent 权限（默认关闭）</div>
+            <div className="mb-1.5 text-[10.5px] leading-[1.5] text-[var(--text-faint)]">
+              Agent 平时只能查询、复制导入、补打标签与归档。下面两件事会动到源文件或把图片送出本机，
+              需要您显式授权；关着时 Agent 带这两个参数请求会被拒绝。LUMEN 里的标签/星级只是本机的整理信息，
+              不会改动素材文件本身，也不会替代其它工具里的权威记录。
+            </div>
+            <label className="mb-1 flex cursor-pointer items-start gap-2 text-[11.5px]">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={settings.agentAllowMove === true}
+                onChange={(e) => void update({ agentAllowMove: e.target.checked })}
+              />
+              <span>
+                允许移动导入（把源文件从原位置删除）
+                <span className="block text-[10.5px] leading-[1.5] text-[var(--text-faint)]">
+                  关闭时请用复制导入；源文件在数据库确认落库之后才会删
+                </span>
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-2 text-[11.5px]">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={settings.agentAllowAutoTag === true}
+                onChange={(e) => void update({ agentAllowAutoTag: e.target.checked })}
+              />
+              <span>
+                允许 AI 自动打标签（会把图片缩略图发送给所配置的模型）
+                <span className="block text-[10.5px] leading-[1.5] text-[var(--text-faint)]">
+                  按量计费的服务商可能因此产生费用
+                </span>
+              </span>
+            </label>
+          </div>
           <div className="mt-1.5 text-[10.5px] leading-[1.5] text-[var(--text-faint)]">
             安装到 ~/.agents/skills/lumen（检测到 Claude Code 时同步写入 ~/.claude/skills/lumen）；
             用了其他 AI 工具可打开技能文件夹手动复制。LUMEN 更新后可重新安装获取新版技能。

@@ -141,6 +141,8 @@ function migrate(d: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_assets_hash_size ON assets(hash, size);
     CREATE INDEX IF NOT EXISTS idx_assets_name_size ON assets(name, size);
     CREATE INDEX IF NOT EXISTS idx_assets_deleted ON assets(deleted_at);
+    -- 注意：sha256 的索引不在这里建——存量库里该列由下面的 ensureColumns 补，
+    -- 建在这个位置会先于加列执行（"no such column: sha256"）。见 ensureColumns 之后的补建。
 
     CREATE TABLE IF NOT EXISTS tags (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -245,7 +247,10 @@ function migrate(d: Database.Database): void {
     name_pinyin_init: "TEXT NOT NULL DEFAULT ''",
     // 导入来源(里程碑 159):'' = 用户手动;agent/clip/watcher/startup/screenshot;
     // 支撑来源统计与筛选("这个月 AI 生成了多少张")
-    source: "TEXT NOT NULL DEFAULT ''"
+    source: "TEXT NOT NULL DEFAULT ''",
+    // 文件内容 SHA-256(里程碑 182):查重的最终判据(精确到字节)。
+    // 导入时算好写入;本条之前的存量素材为空,查重核实按需现算(见 importer.assetSha256)
+    sha256: "TEXT NOT NULL DEFAULT ''"
   })
   ensureColumns(d, 'folders', {
     is_smart: 'INTEGER NOT NULL DEFAULT 0',
@@ -256,6 +261,9 @@ function migrate(d: Database.Database): void {
     priority: 'INTEGER NOT NULL DEFAULT 0',
     excluded: 'INTEGER NOT NULL DEFAULT 0'
   })
+  // sha256 列补好之后再建索引（里程碑 182）。作用：查重的"内容精确命中"一步走索引，
+  // 避免每次导入都对 assets 全表扫 sha256。
+  d.exec('CREATE INDEX IF NOT EXISTS idx_assets_sha256_size ON assets(sha256, size)')
   ensureColumns(d, 'board_items', {
     note_font: "TEXT NOT NULL DEFAULT ''",
     note_color: "TEXT NOT NULL DEFAULT ''",

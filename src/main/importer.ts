@@ -1,7 +1,8 @@
 import { existsSync } from 'fs'
 import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'fs/promises'
+import { createReadStream } from 'fs'
 import { basename, dirname, extname, join } from 'path'
-import { randomUUID } from 'crypto'
+import { randomUUID, createHash } from 'crypto'
 import { spawn } from 'child_process'
 import { cpus } from 'os'
 import { app } from 'electron'
@@ -120,70 +121,115 @@ export async function collectFiles(paths: string[], acc: string[] = []): Promise
 }
 
 /**
- * 查重:判断文件是否已在库中或已被删除。
- * - ① name+size 命中活跃记录:绝大多数正常重复的快速路径
- * - ② hash+size 命中活跃记录:AI 改名后 name 变但内容不变 -> 命中(防重复)
- * - ③ tombstone(仅 checkTombstone):之前删过的文件不再自动重导入
- *   图片走 hash+size,非图片回退 name+size
+ * 文件内容 SHA-256（流式，不整文件进内存）。导入与查重核实共用。
+ * 用 sha256 作判重终审：dHash 是"长得像"，同名同大小只是"形似"，
+ * 两者都不能证明是同一个文件——GIR 连续样张这类画面相似的图会被 dHash 误判。里程碑 182
  */
-function isDuplicate(
-  name: string,
-  size: number,
-  hash: string,
-  checkTombstone: boolean
-): boolean {
-  const db = getDb()
-  // ① 快速路径:name+size 活跃记录(零额外开销)
-  if (
-    stmt(
-      db,
-      'SELECT 1 FROM assets WHERE name = ? AND size = ? AND deleted_at IS NULL LIMIT 1'
-    ).get(name, size)
-  )
-    return true
-  // ② 哈希路径:hash+size 活跃记录(AI 改名后防重复);走 idx_assets_hash_size 索引
-  if (hash) {
-    if (
-      stmt(
-        db,
-        'SELECT 1 FROM assets WHERE hash = ? AND size = ? AND deleted_at IS NULL LIMIT 1'
-      ).get(hash, size)
-    )
-      return true
-    // tombstone:已删除的图片(仅监控/启动同步检查)
-    if (checkTombstone) {
-      if (stmt(db, 'SELECT 1 FROM deleted_files WHERE hash = ? AND size = ? LIMIT 1').get(hash, size))
-        return true
-    }
+async function sha256File(path: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const h = createHash('sha256')
+    const s = createReadStream(path)
+    s.on('data', (c) => h.update(c))
+    s.on('end', () => resolve(h.digest('hex')))
+    s.on('error', reject)
+  })
+}
+
+/** 库内已有素材的内容哈希（本次会话内存缓存；存量记录没存列时按需现算，不回写数据库）。
+ *  查重发生在"阶段 A 不写数据库"期间，故缓存只在内存。 */
+const assetShaCache = new Map<string, string>()
+
+/** 库内素材的**原始导入文件**路径（刻意不含编辑版）。查重要比的是"导入时那份字节"，
+ *  编辑过的素材回退到未编辑原图，才能和导入时写入的 sha256 对上。
+ *  这里不引 repository/assetPaths：本模块与 repository 已有反向依赖，避免形成循环。 */
+function storedOriginalPath(id: string): string | null {
+  const row = stmt(getDb(), 'SELECT rel_dir, ext FROM assets WHERE id = ?').get(id) as
+    | { rel_dir: string; ext: string }
+    | undefined
+  if (!row) return null
+  return join(getLibraryPath(), row.rel_dir, `${id}.${row.ext || 'file'}`)
+}
+
+async function assetSha256(id: string): Promise<string> {
+  const hit = assetShaCache.get(id)
+  if (hit) return hit
+  const row = getDb().prepare('SELECT sha256 FROM assets WHERE id = ?').get(id) as { sha256?: string } | undefined
+  if (!row) return ''
+  if (row.sha256) {
+    assetShaCache.set(id, row.sha256)
+    return row.sha256
   }
-  // ③ 无 hash 的 tombstone 回退(视频/PSD/字体):按 name+size
-  if (checkTombstone) {
-    if (stmt(db, 'SELECT 1 FROM deleted_files WHERE name = ? AND size = ? LIMIT 1').get(name, size))
-      return true
+  const p = storedOriginalPath(id)
+  if (!p) return ''
+  try {
+    const h = await sha256File(p)
+    if (h) assetShaCache.set(id, h)
+    return h
+  } catch {
+    return ''
   }
-  return false
 }
 
 /**
- * 查重命中时反查库内活跃素材的 id（与 isDuplicate 同一套判定条件，只找活跃记录、不含 tombstone）。
- * 跳过的重复文件靠它回填 matchedId，Agent 渠道据此对库内已有素材幂等补打标签/归档。
+ * 查重：判断文件是否已在库中或已被删除，并给出命中素材 id。
+ * - ⓪ sha256 精确命中活跃记录（新导入素材都带内容哈希，一步定案）
+ * - ① name+size 候选活跃记录 → **sha256 核实内容**才判重（同名同大小的不同文件不再误判）
+ * - ② dHash+size 候选活跃记录（AI 改名后 name 变但画面不变）→ 同样要 sha256 核实
+ * - ③ tombstone（仅 checkTombstone）：之前删过的文件不再自动重导入
+ *   图片走 hash+size，非图片回退 name+size（删除后无文件可比，只能沿用旧判据）
+ *
+ * 核实失败（读不到文件/算不出哈希）时**不判重**——宁可多导入一份，也不能悄悄吞掉一张图。
  */
-function findActiveMatchId(name: string, size: number, hash: string): string | null {
+async function classifyExisting(
+  name: string,
+  size: number,
+  dhash: string,
+  srcSha: string,
+  checkTombstone: boolean
+): Promise<{ dup: boolean; matchedId: string | null }> {
   const db = getDb()
-  const byName = stmt(db, 'SELECT id FROM assets WHERE name = ? AND size = ? AND deleted_at IS NULL LIMIT 1').get(name, size) as
-    | { id: string }
-    | undefined
-  if (byName) return byName.id
-  if (hash) {
-    const byHash = stmt(db, 'SELECT id FROM assets WHERE hash = ? AND size = ? AND deleted_at IS NULL LIMIT 1').get(hash, size) as
+  // ⓪ 内容精确命中（新导入素材都写了 sha256，这一步就够）
+  if (srcSha) {
+    const exact = stmt(db, 'SELECT id FROM assets WHERE sha256 = ? AND deleted_at IS NULL LIMIT 1').get(srcSha) as
       | { id: string }
       | undefined
-    if (byHash) return byHash.id
+    if (exact) return { dup: true, matchedId: exact.id }
   }
-  return null
+  // ① name+size 候选 → 内容核实（主要覆盖升级前导入、sha256 列为空的存量素材）
+  const byName = stmt(
+    db,
+    'SELECT id, sha256 FROM assets WHERE name = ? AND size = ? AND deleted_at IS NULL LIMIT 8'
+  ).all(name, size) as { id: string; sha256: string }[]
+  for (const c of byName) {
+    const stored = c.sha256 || (await assetSha256(c.id))
+    if (srcSha && stored && stored === srcSha) return { dup: true, matchedId: c.id }
+  }
+  // ② dHash+size 候选（改名/跨目录同名不同内容时的兜底）→ 内容核实
+  if (dhash) {
+    const byHash = stmt(
+      db,
+      'SELECT id, sha256 FROM assets WHERE hash = ? AND size = ? AND deleted_at IS NULL LIMIT 8'
+    ).all(dhash, size) as { id: string; sha256: string }[]
+    for (const c of byHash) {
+      const stored = c.sha256 || (await assetSha256(c.id))
+      if (srcSha && stored && stored === srcSha) return { dup: true, matchedId: c.id }
+    }
+    // tombstone：已删除的图片（仅监控/启动同步检查）
+    if (checkTombstone) {
+      if (stmt(db, 'SELECT 1 FROM deleted_files WHERE hash = ? AND size = ? LIMIT 1').get(dhash, size))
+        return { dup: true, matchedId: null }
+    }
+  }
+  // ③ 无 hash 的 tombstone 回退（视频/PSD/字体）：按 name+size
+  if (checkTombstone) {
+    if (stmt(db, 'SELECT 1 FROM deleted_files WHERE name = ? AND size = ? LIMIT 1').get(name, size))
+      return { dup: true, matchedId: null }
+  }
+  return { dup: false, matchedId: null }
 }
 
-/** 只读查重:name+size 是否命中活跃素材(validate 试运行渠道用,不解码不算哈希) */
+/** 只读查重:name+size 是否命中活跃素材(validate 试运行渠道用,不解码不算哈希)。
+ *  试运行只做"预估"，不读文件内容，故这里保持粗判据（宁可少报跳过，不误报跳过）。 */
 export function isKnownAssetByNameSize(name: string, size: number): boolean {
   return !!stmt(
     getDb(),
@@ -247,6 +293,10 @@ interface PreparedAsset {
   mtimeMs?: number
   sourceUrl?: string
   exif?: string
+  /** 文件内容 SHA-256（里程碑 182，查重终审判据） */
+  sha256?: string
+  /** 移动导入：提交成功后要删的源文件路径（失败则保留，绝不提前删） */
+  moveSource?: string
 }
 
 /** 提取图片主色调：降采样后统计量化颜色，返回最多 4 个 [r,g,b] */
@@ -499,10 +549,18 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
     const kind = assetKindOf(ext)
     const checkTombstone = !!opts.checkTombstone
 
-    // 快速预检:name+size 活跃记录命中 -> 直接 skip(避免给正常重复文件算缩略图)
-    // 仅图片需要预算哈希做二次查重(AI 改名后 name 变但内容不变)
-    if (isDuplicate(name, st.size, '', false)) {
-      return { status: 'skip', filePath, name, matchedId: findActiveMatchId(name, st.size, '') ?? undefined }
+    // 文件内容哈希(里程碑 182):查重的终审判据,同时写进素材记录供以后核实
+    let srcSha = ''
+    try {
+      srcSha = await sha256File(filePath)
+    } catch (e) {
+      logger.debug('[importer]', `内容哈希计算失败 ${name}: ${(e as Error).message}`)
+    }
+
+    // 快速预检:name+size 有候选 -> sha256 核实内容才判重(同名同大小的不同文件不再被吞)
+    const quick = await classifyExisting(name, st.size, '', srcSha, false)
+    if (quick.dup) {
+      return { status: 'skip', filePath, name, matchedId: quick.matchedId ?? undefined }
     }
 
     // 图片:从源文件预算缩略图 + 哈希(与已存储哈希同源:512 缩略图 -> dHash),
@@ -525,9 +583,10 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
         logger.debug('[importer]', `预算缩略图失败 ${name}: ${(e as Error).message}`)
       }
     }
-    // 二次查重(含哈希 + 可选 tombstone):AI 改名后 hash 命中活跃记录;已删除文件命中 tombstone
-    if (isDuplicate(name, st.size, preHash, checkTombstone)) {
-      return { status: 'skip', filePath, name, matchedId: findActiveMatchId(name, st.size, preHash) ?? undefined }
+    // 二次查重(dHash 候选 + 可选 tombstone):命中候选后仍要 sha256 核实,避免相似画面误判
+    const second = await classifyExisting(name, st.size, preHash, srcSha, checkTombstone)
+    if (second.dup) {
+      return { status: 'skip', filePath, name, matchedId: second.matchedId ?? undefined }
     }
 
     const id = randomUUID().replace(/-/g, '').slice(0, 16)
@@ -538,7 +597,9 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
     const originalName = `${id}.${ext || 'file'}`
     const targetPath = join(absDir, originalName)
     await copyFile(filePath, targetPath)
-    if (opts.move) await rm(filePath, { force: true })
+    // 移动导入的源文件不在这里删（本函数属"不写数据库"的阶段 A）：
+    // 提交失败时源文件已消失、库里也没记录 = 两头落空。改由 importFiles 在事务提交成功后删。里程碑 182
+    const moveSource = opts.move ? filePath : ''
 
     let width = 0
     let height = 0
@@ -643,7 +704,9 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
       hash,
       mtimeMs: st.mtimeMs,
       sourceUrl: opts.sourceUrl,
-      exif: exifJson
+      exif: exifJson,
+      sha256: srcSha,
+      moveSource
     }
   } catch (e) {
     logger.error('[importer]', `导入失败 ${filePath}: ${(e as Error).message}`)
@@ -660,8 +723,8 @@ async function commitBatch(records: PreparedAsset[], source = ''): Promise<void>
   const db = getDb()
   const insert = stmt(
     db,
-    `INSERT INTO assets (id, name, ext, rel_dir, size, width, height, colors, color_count, hash, star, comment, url, created_at, imported_at, exif, name_pinyin, name_pinyin_init, source)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO assets (id, name, ext, rel_dir, size, width, height, colors, color_count, hash, star, comment, url, created_at, imported_at, exif, name_pinyin, name_pinyin_init, source, sha256)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?, ?, ?, ?, ?)`
   )
   const now = Date.now()
   const run = db.transaction((recs: PreparedAsset[]) => {
@@ -670,7 +733,7 @@ async function commitBatch(records: PreparedAsset[], source = ''): Promise<void>
       insert.run(
         r.id, r.name, r.ext, r.relDir, r.size, r.width, r.height,
         JSON.stringify(r.colors), r.colors ? r.colors.length : 0, r.hash, r.sourceUrl ?? '', r.mtimeMs, now, r.exif ?? '',
-        py.full, py.initial, source
+        py.full, py.initial, source, r.sha256 ?? ''
       )
     }
   })
@@ -737,6 +800,18 @@ export async function importFiles(paths: string[], opts: ImportOptions = {}): Pr
       await commitBatch(okRecords, opts.source ?? '')
       result.imported = okRecords.length
       result.importedIds = okRecords.map((r) => r.id!)
+      // 移动导入的源文件此刻才删：数据库已确认落库，删源文件不会再"两头落空"（里程碑 182）。
+      // 若在提交后、删除前崩溃，只是源文件多留一份（宁可重复，不可丢失）。
+      if (opts.move) {
+        for (const r of okRecords) {
+          if (!r.moveSource) continue
+          try {
+            await rm(r.moveSource, { force: true })
+          } catch (e) {
+            logger.warn('[importer]', `移动导入:源文件删除失败 ${r.moveSource}: ${(e as Error).message}`)
+          }
+        }
+      }
     } catch (e) {
       // 事务失败（DB 磁盘满/损坏等极端情况）：整批算失败，已复制文件保留待重试
       logger.error('[importer]', `事务提交失败，${okRecords.length} 条记录回滚: ${(e as Error).message}`)

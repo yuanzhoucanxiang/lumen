@@ -183,12 +183,13 @@ async function main() {
   const strTagOk = ((await request('GET', '/tags')).json?.tags ?? []).some((t) => t.name === TAG_STR && t.count >= 1)
   check('tags 传单个字符串也生效(补到已有素材)', rStrTag.status === 200 && strTagOk, `status=${rStrTag.status} skipped=${rStrTag.json?.skipped}`)
 
-  // move=true:导入后源文件被删除
+  // move=true 现需显式授权(里程碑 182):未授权 -> 403 且源文件纹丝不动;
+  // 授权后的完整路径在 9e 权限段验证(那里会跑完再还原设置)
   const moveSrc = path.join(dupDir, `${tag}-move-src.png`)
   fs.writeFileSync(moveSrc, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 8, 7, 7]))
-  const rMove = await request('POST', '/import', JSON.stringify({ paths: [moveSrc], move: true }))
-  check('move=true 导入后删除源文件', rMove.status === 200 && rMove.json?.imported === 1 && !fs.existsSync(moveSrc),
-    `imported=${rMove.json?.imported} srcGone=${!fs.existsSync(moveSrc)}`)
+  const rMoveDenied = await request('POST', '/import', JSON.stringify({ paths: [moveSrc], move: true }))
+  check('move 未授权返回 403 且源文件保留', rMoveDenied.status === 403 && fs.existsSync(moveSrc),
+    `status=${rMoveDenied.status} srcKept=${fs.existsSync(moveSrc)}`)
 
   /* ---------- 5c. 真实图片管线 + /clip 通道 + 并发串行化 + 路径上限 ---------- */
   // 真实 1x1 PNG:覆盖缩略图/宽高解码管线(此前测试全是假字节,宽高恒 0)
@@ -275,7 +276,12 @@ async function main() {
   const autoPng = path.join(dupDir, `${tag}-auto.png`)
   fs.writeFileSync(autoPng, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 7, 3, 3]))
   const rAuto = await request('POST', '/import', JSON.stringify({ paths: [autoPng], autoTag: true }))
-  check('autoTag=true 响应标记后台任务已启动', rAuto.status === 200 && rAuto.json?.autoTagStarted === true, `autoTagStarted=${rAuto.json?.autoTagStarted}`)
+  // autoTag 会把缩略图发给所配置的模型(外部调用 + 可能计费),故默认关闭,未授权整批拒绝(里程碑 182)
+  check('autoTag 未授权返回 403(默认不把图片发给外部模型)', rAuto.status === 403 && String(rAuto.json?.error || '').includes('autoTag'),
+    `status=${rAuto.status} error=${String(rAuto.json?.error).slice(0, 60)}`)
+  const rAutoNoHalf = await request('POST', '/import', JSON.stringify({ paths: [autoPng] }))
+  check('被拒的 autoTag 请求没有半完成(同文件随后首导 imported=1)', rAutoNoHalf.status === 200 && rAutoNoHalf.json?.imported === 1,
+    `imported=${rAutoNoHalf.json?.imported}`)
 
   /* ---------- 5g. HTTP /tag /untag /asset /assets source+offset(里程碑 169) ---------- */
   // 条件命中数先行统计(本轮测试已导入多个同前缀素材,tagged 应等于条件命中数而非固定值)
@@ -473,6 +479,107 @@ async function main() {
   const skillMd = path.join(os.homedir(), '.agents', 'skills', 'lumen', 'SKILL.md')
   const skillOk = fs.existsSync(skillMd) && fs.readFileSync(skillMd, 'utf-8').includes('/import')
   check('技能文件已落到 ~/.agents/skills/lumen 且含 /import 文档', skillOk, `SKILL.md=${skillMd}`)
+
+  /* ---------- 9. 里程碑 182:回退只撤本次改动 / 精确查重 / 危险动作权限 ---------- */
+  // 9a. 素材先由"用户"打上标签(走渲染层 IPC,不经 Agent 通道 -> 不产生操作记录)
+  const PRE_TAG = `${tag}-原有标签`
+  const guardPng = path.join(dupDir, `${tag}-guard.png`)
+  fs.writeFileSync(guardPng, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 2, 2, 2]))
+  const rGuard = await request('POST', '/import', JSON.stringify({ paths: [guardPng] }))
+  const guardId = rGuard.json?.importedIds?.[0]
+  await run(`await window.api.addTagToAssets([${JSON.stringify(guardId)}], ${JSON.stringify(PRE_TAG)})`)
+  const opsBeforeGuard = ((await request('GET', '/ops?limit=100')).json?.ops ?? []).length
+  const rTagExisting = await request('POST', '/tag', JSON.stringify({ ids: [guardId], tag: PRE_TAG }))
+  const opsAfterGuard = ((await request('GET', '/ops?limit=100')).json?.ops ?? []).length
+  check('已有标签的素材再 /tag:changed=0 且不新增操作记录', rTagExisting.json?.changed === 0 && opsAfterGuard === opsBeforeGuard,
+    `changed=${rTagExisting.json?.changed} ops ${opsBeforeGuard}->${opsAfterGuard}`)
+  // 再打一个新标签(产生记录),回退它 -> 用户原有的标签必须还在
+  const NEW_TAG = `${tag}-新增标签`
+  await request('POST', '/tag', JSON.stringify({ ids: [guardId], tag: NEW_TAG }))
+  const opsTagNew = ((await request('GET', '/ops?limit=30')).json?.ops ?? []).find(
+    (o) => o.action === 'tag' && (o.items ?? []).some((it) => it.id === guardId)
+  )
+  const rUndoNewTag = opsTagNew ? await request('POST', '/undo', JSON.stringify({ id: opsTagNew.id })) : null
+  const guardTags = (await request('GET', `/asset?id=${guardId}`)).json?.asset?.tags ?? []
+  check('回退新标签后原有标签仍在(不再摘掉用户的整理)',
+    rUndoNewTag?.json?.ok === true && guardTags.includes(PRE_TAG) && !guardTags.includes(NEW_TAG),
+    `tags=${JSON.stringify(guardTags)}`)
+
+  // 9b. 归档同理:先在文件夹里的素材,回退 Agent 的归档不会把它移出
+  const PRE_FOLDER = `${tag}-原有夹`
+  const rPreFolder = await request('POST', '/folder', JSON.stringify({ ids: [guardId], folder: PRE_FOLDER }))
+  const preFolderId = rPreFolder.json?.folderId
+  const opsBeforeFolder = ((await request('GET', '/ops?limit=100')).json?.ops ?? []).length
+  const rFolderAgain = await request('POST', '/folder', JSON.stringify({ ids: [guardId], folder: PRE_FOLDER }))
+  const opsAfterFolder = ((await request('GET', '/ops?limit=100')).json?.ops ?? []).length
+  check('已在该文件夹的素材再 /folder:changed=0 且不新增记录',
+    rFolderAgain.json?.changed === 0 && opsAfterFolder === opsBeforeFolder,
+    `changed=${rFolderAgain.json?.changed} ops ${opsBeforeFolder}->${opsAfterFolder}`)
+  // 再归档到另一个文件夹(产生记录),回退它 -> 原有文件夹归属必须还在
+  const NEW_FOLDER = `${tag}-新增夹`
+  await request('POST', '/folder', JSON.stringify({ ids: [guardId], folder: NEW_FOLDER }))
+  const opsFolderNew = ((await request('GET', '/ops?limit=30')).json?.ops ?? []).find(
+    (o) => o.action === 'folder' && (o.items ?? []).some((it) => it.id === guardId)
+  )
+  const rUndoFolder = opsFolderNew ? await request('POST', '/undo', JSON.stringify({ id: opsFolderNew.id })) : null
+  const inFolders = await run(`
+    const all = await window.api.queryAssets({ folderId: ${JSON.stringify(preFolderId)}, limit: 5000 })
+    return all.map((x) => x.id)
+  `)
+  check('回退新归档后原有文件夹归属仍在', rUndoFolder?.json?.ok === true && (inFolders ?? []).includes(guardId),
+    `该夹内=${JSON.stringify((inFolders ?? []).slice(0, 3))} 含目标=${(inFolders ?? []).includes(guardId)}`)
+
+  // 9c. 备注回退不覆盖用户后来重写的备注
+  const undoPng = path.join(dupDir, `${tag}-undo-note.png`)
+  fs.writeFileSync(undoPng, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 2, 5, 5]))
+  const rUndoNote = await request('POST', '/import', JSON.stringify({ paths: [undoPng] }))
+  const undoNoteId = rUndoNote.json?.importedIds?.[0]
+  const AGENT_NOTE = `agent 写的备注 ${tag}`
+  const USER_NOTE = `用户后来重写的备注 ${tag}`
+  await request('POST', '/note', JSON.stringify({ ids: [undoNoteId], note: AGENT_NOTE }))
+  const noteOp = ((await request('GET', '/ops?limit=30')).json?.ops ?? []).find(
+    (o) => o.action === 'note' && (o.items ?? []).some((it) => it.id === undoNoteId)
+  )
+  await run(`await window.api.updateAsset(${JSON.stringify(undoNoteId)}, { comment: ${JSON.stringify(USER_NOTE)} })`)
+  const rUndoNoteBack = noteOp ? await request('POST', '/undo', JSON.stringify({ id: noteOp.id })) : null
+  const noteAfterUndo = (await request('GET', `/asset?id=${undoNoteId}`)).json?.asset?.comment
+  check('回退备注不覆盖用户后来的修改(消息提示保持不动)',
+    rUndoNoteBack?.json?.ok === true && noteAfterUndo === USER_NOTE && String(rUndoNoteBack.json.message).includes('保持不动'),
+    `comment=${String(noteAfterUndo).slice(0, 40)} msg=${String(rUndoNoteBack?.json?.message)}`)
+
+  // 9d. 精确查重:同名同大小但内容不同 -> 两张都入库;内容完全相同(含改名)-> 仍然跳过
+  const d1 = fs.mkdtempSync(path.join(os.tmpdir(), 'lumen-agent-sha-a-'))
+  const d2 = fs.mkdtempSync(path.join(os.tmpdir(), 'lumen-agent-sha-b-'))
+  const sameName = `${tag}-same.png`
+  const head = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+  fs.writeFileSync(path.join(d1, sameName), Buffer.concat([head, Buffer.alloc(64, 1)]))
+  fs.writeFileSync(path.join(d2, sameName), Buffer.concat([head, Buffer.alloc(64, 2)]))
+  const rShaA = await request('POST', '/import', JSON.stringify({ paths: [path.join(d1, sameName)] }))
+  const rShaB = await request('POST', '/import', JSON.stringify({ paths: [path.join(d2, sameName)] }))
+  check('同名同大小但内容不同 -> 第二张不被误判重复', rShaA.json?.imported === 1 && rShaB.json?.imported === 1 && rShaA.json?.skipped === 0 && rShaB.json?.skipped === 0,
+    `a=${rShaA.json?.imported}/${rShaA.json?.skipped} b=${rShaB.json?.imported}/${rShaB.json?.skipped}`)
+  const renamedCopy = path.join(d2, `${tag}-renamed-copy.png`)
+  fs.copyFileSync(path.join(d2, sameName), renamedCopy)
+  const rRenamed = await request('POST', '/import', JSON.stringify({ paths: [renamedCopy] }))
+  check('内容相同仅改名 -> 仍跳过(sha256 命中)', rRenamed.json?.imported === 0 && rRenamed.json?.skipped === 1,
+    `imported=${rRenamed.json?.imported} skipped=${rRenamed.json?.skipped}`)
+
+  // 9e. 危险动作权限:授权后 move 才生效;autoTag 授权后放行(用重复文件,不触发真实模型调用);最后还原设置
+  const prevPerm = await run(`const s = await window.api.getSettings(); return { m: s.agentAllowMove === true, a: s.agentAllowAutoTag === true }`)
+  await run(`await window.api.updateSettings({ agentAllowMove: true })`)
+  const rMoveOk = await request('POST', '/import', JSON.stringify({ paths: [moveSrc], move: true }))
+  check('授权后 move=true 生效(导入成功且源文件删除)',
+    rMoveOk.status === 200 && rMoveOk.json?.imported === 1 && !fs.existsSync(moveSrc),
+    `status=${rMoveOk.status} imported=${rMoveOk.json?.imported} srcGone=${!fs.existsSync(moveSrc)}`)
+  await run(`await window.api.updateSettings({ agentAllowAutoTag: true })`)
+  const rAutoAllowed = await request('POST', '/import', JSON.stringify({ paths: [autoPng], autoTag: true }))
+  check('授权后 autoTag 请求放行(对重复文件无新导入,不触发模型调用)',
+    rAutoAllowed.status === 200 && rAutoAllowed.json?.imported === 0 && rAutoAllowed.json?.skipped === 1,
+    `status=${rAutoAllowed.status} imported=${rAutoAllowed.json?.imported} skipped=${rAutoAllowed.json?.skipped}`)
+  await run(`await window.api.updateSettings({ agentAllowMove: ${prevPerm.m}, agentAllowAutoTag: ${prevPerm.a} })`)
+  const restoredPerm = await run(`const s = await window.api.getSettings(); return { m: s.agentAllowMove === true, a: s.agentAllowAutoTag === true }`)
+  check('测试后权限设置已还原(不污染用户配置)', restoredPerm.m === prevPerm.m && restoredPerm.a === prevPerm.a,
+    `before=${JSON.stringify(prevPerm)} after=${JSON.stringify(restoredPerm)}`)
 
   /* ---------- 8. 清理:软删导入素材 + 删测试标签/文件夹 ---------- */
   // 注意:run() 会把语句包进 async IIFE,这里直接写语句,不要再包一层 (async () => {})

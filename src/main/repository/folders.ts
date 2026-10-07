@@ -90,6 +90,17 @@ export function addToFolder(assetIds: string[], folderId: number): void {
   for (const id of assetIds) ins.run(id, folderId)
 }
 
+/** 这批素材里已经在该文件夹内的 id 集合。
+ *  Agent 操作记录用（里程碑 182）：只把"本次真正新归档进去"的素材记进记录，
+ *  回退时就不会把用户原本就归在这个文件夹里的素材移出去。 */
+export function assetsInFolder(assetIds: string[], folderId: number): Set<string> {
+  const inside = new Set<string>()
+  if (assetIds.length === 0 || !Number.isInteger(folderId)) return inside
+  const q = getDb().prepare('SELECT 1 FROM asset_folders WHERE folder_id = ? AND asset_id = ?')
+  for (const id of assetIds) if (q.get(folderId, id)) inside.add(id)
+  return inside
+}
+
 export function removeFromFolder(assetIds: string[], folderId: number): void {
   const del = stmt(getDb(), 'DELETE FROM asset_folders WHERE asset_id = ? AND folder_id = ?')
   for (const id of assetIds) del.run(id, folderId)
