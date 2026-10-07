@@ -300,6 +300,8 @@ export interface AppSettings {
   aiKeyTail?: string
   /** 导入后自动执行 AI 处理 */
   aiAutoOnImport?: boolean
+  /** 已保存的服务商档案（脱敏：仅 hasKey + 末 4 位；里程碑 179） */
+  aiProfiles?: { name: string; baseUrl: string; model: string; hasKey: boolean; keyTail: string }[]
 }
 
 /** AI 处理进度（主进程推送） */

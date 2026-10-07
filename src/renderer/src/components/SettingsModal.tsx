@@ -75,6 +75,9 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
   const [tags, setTags] = useState<Tag[]>([])
   const [tagSearch, setTagSearch] = useState('')
   const [restoreOpen, setRestoreOpen] = useState(false)
+  /** 服务商档案（里程碑 179） */
+  const [profileName, setProfileName] = useState('')
+  const [profileDeletePending, setProfileDeletePending] = useState<string | null>(null)
   const [skillInstalling, setSkillInstalling] = useState(false)
   const [skillStatus, setSkillStatus] = useState<{ installed: boolean; upToDate: boolean } | null>(null)
 
@@ -164,6 +167,43 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
       useLibraryStore.getState().showToast(r.ok ? '连接成功' : `连接失败:${r.message}`)
     } finally {
       setAiTesting(false)
+    }
+  }
+
+  /** 保存当前 AI 配置为服务商档案（同名更新） */
+  const saveProfile = async () => {
+    try {
+      setSettings(await window.api.aiProfileSave(profileName.trim()))
+      setProfileName('')
+      useLibraryStore.getState().showToast('已保存该服务商配置')
+    } catch (e) {
+      useLibraryStore.getState().showToast(`保存失败：${(e as Error).message}`)
+    }
+  }
+
+  /** 切换到已保存的服务商（不用重填 Key） */
+  const activateProfile = async (name: string) => {
+    try {
+      setSettings(await window.api.aiProfileActivate(name))
+      setAiKeyInput('')
+      useLibraryStore.getState().showToast(`已切换到「${name}」`)
+    } catch (e) {
+      useLibraryStore.getState().showToast(`切换失败：${(e as Error).message}`)
+    }
+  }
+
+  /** 删除档案（两次点击确认，防误删带 Key 的配置） */
+  const deleteProfile = async (name: string) => {
+    if (profileDeletePending !== name) {
+      setProfileDeletePending(name)
+      return
+    }
+    setProfileDeletePending(null)
+    try {
+      setSettings(await window.api.aiProfileDelete(name))
+      useLibraryStore.getState().showToast(`已删除「${name}」`)
+    } catch (e) {
+      useLibraryStore.getState().showToast(`删除失败：${(e as Error).message}`)
     }
   }
 
@@ -441,7 +481,63 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
                   </button>
                 ))}
               </div>
+              <div className="mt-1.5 flex gap-1.5">
+                <input
+                  className="field-input min-w-0 flex-1 text-[12px]"
+                  placeholder="服务商名称（留空按 Base URL 自动命名）"
+                  aria-label="服务商档案名称"
+                  value={profileName}
+                  onChange={(e) => setProfileName(e.target.value)}
+                />
+                <button className="btn-ghost shrink-0" onClick={() => void saveProfile()}>
+                  保存当前配置
+                </button>
+              </div>
             </div>
+            {(settings.aiProfiles?.length ?? 0) > 0 && (
+              <div>
+                <label className="mb-0.5 block text-[11px] text-[var(--text-dim)]">
+                  已保存的服务商（点击切换，不用重填 Key）
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {(settings.aiProfiles ?? []).map((p) => {
+                    const active =
+                      (settings.aiBaseUrl || '').startsWith(p.baseUrl) && (settings.aiModel || '') === p.model
+                    return (
+                      <span
+                        key={p.name}
+                        className={`flex items-center gap-1 rounded-sm border px-2 py-0.5 text-[11px] ${
+                          active
+                            ? 'border-[var(--accent)] text-[var(--accent-text)]'
+                            : 'border-[var(--border)] text-[var(--text-dim)]'
+                        }`}
+                      >
+                        <button
+                          className="flex items-center gap-1 transition-colors duration-100 hover:text-[var(--accent-text)]"
+                          title={`${p.baseUrl} · ${p.model}${p.hasKey ? ` · Key ···${p.keyTail}` : ' · 无 Key'}`}
+                          onClick={() => void activateProfile(p.name)}
+                        >
+                          {active && <Icon name="check" size={10} />}
+                          {p.name}
+                        </button>
+                        <button
+                          className={`flex text-[10px] transition-colors duration-100 ${
+                            profileDeletePending === p.name
+                              ? 'text-red-400'
+                              : 'text-[var(--text-faint)] hover:text-red-400'
+                          }`}
+                          aria-label={`删除服务商 ${p.name}`}
+                          title={profileDeletePending === p.name ? '再点一次确认删除' : '删除该服务商档案'}
+                          onClick={() => void deleteProfile(p.name)}
+                        >
+                          {profileDeletePending === p.name ? '确认删除' : '×'}
+                        </button>
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
             <div>
               <label className="mb-0.5 block text-[11px] text-[var(--text-dim)]">Base URL</label>
               <input

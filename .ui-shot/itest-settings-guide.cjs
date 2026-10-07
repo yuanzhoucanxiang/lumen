@@ -111,6 +111,21 @@ async function main() {
     check(`${theme} 设置中心不越界`, hub.exists && hub.fits && hub.width >= 780 && hub.height >= 560, JSON.stringify(hub))
     check(`${theme} 偏好设置完整`, hub.navCount === 2 && hub.prefsScrollable && hub.hasTheme && hub.hasAi)
 
+    // 服务商档案（里程碑 179）：保存/删除往返，且不得改动当前生效配置（安全测试：不激活）
+    // 注意:run() 自带 async IIFE 包裹,这里直接写语句并 return(勿再包一层)
+    const prof = await run(`
+      const before = await window.api.getSettings()
+      const saved = await window.api.aiProfileSave('itest-档案')
+      const has = (saved.aiProfiles ?? []).some((p) => p.name === 'itest-档案')
+      const after = await window.api.aiProfileDelete('itest-档案')
+      const gone = !(after.aiProfiles ?? []).some((p) => p.name === 'itest-档案')
+      const now = await window.api.getSettings()
+      const sameActive =
+        now.aiBaseUrl === before.aiBaseUrl && now.aiModel === before.aiModel && now.aiKeyTail === before.aiKeyTail
+      return { has, gone, sameActive }
+    `)
+    check(`${theme} 服务商档案保存/删除往返且不影响当前配置`, prof.has && prof.gone && prof.sameActive, JSON.stringify(prof))
+
     // AI 优先标签选择器：三主题断言区块渲染；首个主题做真实勾选/取消 IPC 链路（结束后恢复原状）
     const aiPriority = await run(`return (() => {
       const pool = document.querySelector('.ai-priority-pool')

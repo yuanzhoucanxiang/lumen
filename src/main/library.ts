@@ -22,6 +22,8 @@ export interface AppConfig {
   aiBaseUrl?: string
   aiApiKey?: string
   aiModel?: string
+  /** 已保存的服务商档案（里程碑 179）：多套 Base URL+Key+模型，一键互切不用重填 Key */
+  aiProfiles?: { name: string; baseUrl: string; apiKey: string; model: string }[]
   /** 导入后自动执行 AI 处理（改名+打标签） */
   aiAutoOnImport?: boolean
   /** 浮动白板窗状态(位置/尺寸/最小化),重开保持与上次一致 */
@@ -102,6 +104,14 @@ export function loadConfig(): AppConfig {
       importMode: raw.importMode ?? 'copy',
       aiBaseUrl: raw.aiBaseUrl ?? 'https://open.bigmodel.cn/api/paas/v4',
       aiApiKey: decryptKey(raw.aiApiKey ?? ''),
+      aiProfiles: Array.isArray(raw.aiProfiles)
+        ? raw.aiProfiles.slice(0, 20).map((p: { name?: string; baseUrl?: string; apiKey?: string; model?: string }) => ({
+            name: String(p.name ?? '').slice(0, 60),
+            baseUrl: String(p.baseUrl ?? ''),
+            apiKey: decryptKey(String(p.apiKey ?? '')),
+            model: String(p.model ?? '')
+          }))
+        : [],
       aiModel: raw.aiModel ?? 'glm-4v',
       aiAutoOnImport: raw.aiAutoOnImport ?? false,
       floatingWindow: raw.floatingWindow
@@ -136,6 +146,12 @@ export function saveConfig(cfg: AppConfig): void {
   const out: AppConfig = { ...cfg }
   // Key 只以密文落盘（safeStorage 不可用时退回明文，行为与旧版一致）；已是密文则不再二次加密
   if (out.aiApiKey && !out.aiApiKey.startsWith(ENC_PREFIX)) out.aiApiKey = encryptKey(out.aiApiKey)
+  // 服务商档案的 Key 同样只以密文落盘
+  if (Array.isArray(out.aiProfiles)) {
+    out.aiProfiles = out.aiProfiles.map((p) =>
+      p.apiKey && !p.apiKey.startsWith(ENC_PREFIX) ? { ...p, apiKey: encryptKey(p.apiKey) } : p
+    )
+  }
   writeFileSync(configPath(), JSON.stringify(out, null, 2), 'utf-8')
   // 写透:缓存持有调用方传入的明文形态,磁盘与内存同源
   cachedConfig = cfg

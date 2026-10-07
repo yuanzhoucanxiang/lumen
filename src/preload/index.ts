@@ -69,6 +69,10 @@ const api = {
 
   /* 设置 */
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
+  /* 服务商档案（里程碑 179）：保存当前配置 / 一键切换 / 删除（Key 永不出主进程） */
+  aiProfileSave: (name: string): Promise<AppSettings> => ipcRenderer.invoke('ai:profileSave', name),
+  aiProfileActivate: (name: string): Promise<AppSettings> => ipcRenderer.invoke('ai:profileActivate', name),
+  aiProfileDelete: (name: string): Promise<AppSettings> => ipcRenderer.invoke('ai:profileDelete', name),
   updateSettings: (patch: Partial<AppSettings>): Promise<AppSettings> =>
     ipcRenderer.invoke('settings:update', patch),
   chooseWatchDir: (): Promise<string | null> => ipcRenderer.invoke('settings:chooseWatchDir'),
