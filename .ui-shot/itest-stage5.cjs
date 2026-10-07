@@ -36,7 +36,7 @@ function rawPost(port, body, headers) {
 }
 
 async function main() {
-  const CLIP_PORT = 45678
+  const CLIP_PORT = Number(process.env.LUMEN_CLIP_PORT) || 45678
   let pass = 0
   let fail = 0
   const check = (name, ok, detail) => {

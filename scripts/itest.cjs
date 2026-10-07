@@ -83,7 +83,7 @@ async function main() {
     shell: true,
     detached: process.platform !== 'win32',
     // 测试逃生门:用户正式版 LUMEN 持有单实例锁时,dev 仍可启动(里程碑 105)
-    env: { ...process.env, LUMEN_ALLOW_MULTI: '1' }
+    env: { ...process.env, LUMEN_ALLOW_MULTI: '1', LUMEN_CLIP_PORT: '45679' }
   })
   let failed = 0
   try {
@@ -91,7 +91,7 @@ async function main() {
     ok('dev 已就绪')
     for (const f of files) {
       console.log(`\n----- 运行 ${f} -----`)
-      const r = spawn('node', [join(ROOT, '.ui-shot', f)], { cwd: ROOT, stdio: 'inherit', shell: true })
+      const r = spawn('node', [join(ROOT, '.ui-shot', f)], { cwd: ROOT, stdio: 'inherit', shell: true, env: { ...process.env, LUMEN_CLIP_PORT: '45679' } })
       const code = await new Promise((resolve) => r.on('exit', resolve))
       if (code !== 0) {
         console.error(`  ✗ ${f} 失败 (exit ${code})`)

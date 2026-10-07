@@ -69,7 +69,7 @@ function makeUniquePng(W, H) {
   ])
 }
 
-const PORT = 45678
+const PORT = Number(process.env.LUMEN_CLIP_PORT) || 45678
 const AUTH = { 'x-lumen-client': 'lumen-clip/1', 'content-type': 'application/json' }
 
 /** 端口守卫:45678 被正式版 LUMEN 占用时,HTTP 请求会打到那个实例(并发写库风险 + 断言失真)。

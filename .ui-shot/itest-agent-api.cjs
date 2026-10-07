@@ -17,7 +17,7 @@ const os = require('os')
 const path = require('path')
 const { execSync } = require('child_process')
 
-const PORT = 45678
+const PORT = Number(process.env.LUMEN_CLIP_PORT) || 45678
 const AUTH = { 'x-lumen-client': 'lumen-clip/1', 'content-type': 'application/json' }
 
 /**
@@ -276,6 +276,44 @@ async function main() {
   fs.writeFileSync(autoPng, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 7, 3, 3]))
   const rAuto = await request('POST', '/import', JSON.stringify({ paths: [autoPng], autoTag: true }))
   check('autoTag=true 响应标记后台任务已启动', rAuto.status === 200 && rAuto.json?.autoTagStarted === true, `autoTagStarted=${rAuto.json?.autoTagStarted}`)
+
+  /* ---------- 5g. HTTP /tag /untag /asset /assets source+offset(里程碑 169) ---------- */
+  // 条件命中数先行统计(本轮测试已导入多个同前缀素材,tagged 应等于条件命中数而非固定值)
+  const beforeCount = (await request('GET', `/assets?q=${encodeURIComponent(tag)}&limit=500`)).json?.count ?? 0
+  const BATCH_TAG2 = `${TAG_NAME}-HTTP`
+  const rHttpTag = await request('POST', '/tag', JSON.stringify({ conditions: { keyword: tag }, tag: BATCH_TAG2 }))
+  const httpTagCheck = await request('GET', `/assets?tag=${encodeURIComponent(BATCH_TAG2)}&limit=500`)
+  check('/tag 按条件打标签(命中全部条件素材)', rHttpTag.status === 200 && rHttpTag.json?.tagged === beforeCount && httpTagCheck.json?.count === beforeCount,
+    `tagged=${rHttpTag.json?.tagged} before=${beforeCount} queryCount=${httpTagCheck.json?.count}`)
+  const firstId = rImport.json?.importedIds?.[0]
+  const rHttpTagIds = await request('POST', '/tag', JSON.stringify({ ids: [firstId], tag: `${BATCH_TAG2}-单` }))
+  check('/tag 按 ids 打标签(命中 1)', rHttpTagIds.status === 200 && rHttpTagIds.json?.tagged === 1, `tagged=${rHttpTagIds.json?.tagged}`)
+  const rHttpUntag = await request('POST', '/untag', JSON.stringify({ conditions: { keyword: tag }, tag: BATCH_TAG2 }))
+  const untagCheck = await request('GET', `/assets?tag=${encodeURIComponent(BATCH_TAG2)}&limit=500`)
+  check('/untag 按条件摘标签(全部摘除,查询归 0)', rHttpUntag.json?.removed === beforeCount && untagCheck.json?.count === 0,
+    `removed=${rHttpUntag.json?.removed} left=${untagCheck.json?.count}`)
+  const rHttpTagBad = await request('POST', '/tag', JSON.stringify({ conditions: { keyword: tag } }))
+  check('/tag 缺 tag 名返回 400', rHttpTagBad.status === 400, `status=${rHttpTagBad.status}`)
+
+  const rAsset = await request('GET', `/asset?id=${firstId}`)
+  const rAsset404 = await request('GET', '/asset?id=0000000000000000')
+  const rAssetBad = await request('GET', '/asset?id=not-an-id')
+  check('/asset 返回详情(含 source/标签)',
+    rAsset.status === 200 && rAsset.json?.asset?.id === firstId && rAsset.json.asset.source === 'agent' && Array.isArray(rAsset.json.asset.tags),
+    `body=${rAsset.raw.slice(0, 140)}`)
+  check('/asset 404(不存在)与非法 id 404', rAsset404.status === 404 && rAssetBad.status === 404,
+    `404=${rAsset404.status} bad=${rAssetBad.status}`)
+
+  const rSrcAgent = await request('GET', `/assets?q=${encodeURIComponent(tag)}&source=agent&limit=500`)
+  const rSrcManual = await request('GET', `/assets?q=${encodeURIComponent(tag)}&source=manual&limit=500`)
+  // 本轮有 1 个素材来自 /clip（剪藏不标 source => 手动导入），故 agent = 总数-1、manual = 1
+  check('/assets source=agent 命中全部减剪藏那 1 个', rSrcAgent.json?.count === beforeCount - 1, `count=${rSrcAgent.json?.count} before=${beforeCount}`)
+  check('/assets source=manual 命中剪藏导入的 1 个', rSrcManual.json?.count === 1, `count=${rSrcManual.json?.count}`)
+  const rPage1 = await request('GET', `/assets?q=${encodeURIComponent(tag)}&limit=1&offset=0`)
+  const rPage2 = await request('GET', `/assets?q=${encodeURIComponent(tag)}&limit=1&offset=1`)
+  check('/assets offset 分页(两页不重不漏)',
+    rPage1.json?.count === 1 && rPage2.json?.count === 1 && rPage1.json.assets[0].id !== rPage2.json.assets[0].id,
+    `p1=${rPage1.json?.assets?.[0]?.id} p2=${rPage2.json?.assets?.[0]?.id}`)
 
   /* ---------- 6. CDP 会话建立(清理与技能安装断言都走渲染层) ---------- */
   const targets = await getJson('http://127.0.0.1:9333/json/list')

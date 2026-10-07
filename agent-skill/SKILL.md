@@ -71,7 +71,10 @@ curl -s -X POST http://127.0.0.1:45678/import \
 
 其他端点（均需带同样的鉴权头）：
 
-- `GET /assets` — 查询素材（只读）。参数：`q`=关键词（搜名称和备注，含拼音，比如用 prompt 片段找图）、`ext`=逗号分隔扩展名、`tag`=标签名、`limit`≤500。响应含 `count/truncated/assets`（窄列：id/name/ext/宽高/大小/标签）。**生成或导入前先查一下库里有没有，避免重复劳动**。
+- `GET /assets` — 查询素材（只读）。参数：`q`=关键词（搜名称和备注，含拼音，比如用 prompt 片段找图）、`ext`=逗号分隔扩展名、`tag`=标签名、`source`=来源（manual/agent/clip/watcher/screenshot）、`limit`≤500、`offset` 分页。响应含 `count/truncated/assets`（窄列：id/name/ext/宽高/大小/来源/标签）。**生成或导入前先查一下库里有没有，避免重复劳动**。
+- `GET /asset?id=xxx` — 单素材详情：含 `comment`（生成信息存档在这里，可读回 prompt）、来源、标签。
+- `POST /tag` — 打标签：body `{"tag":"标签名","conditions":{...}}` 或 `{"tag":"...","ids":["..."]}`，给全部命中素材打标签（幂等）。
+- `POST /untag` — 摘标签：参数同上，从命中素材上移除该标签（可逆）。
 - `GET /stats` — 库汇总（只读）：素材总数、回收站数、标签/文件夹数、Agent 导入文件夹张数（`agentImported`）。汇报时用它说"库内共 X 张，Agent 收纳了 Y 张"。
 - `GET /tags` — 列出现有标签（含 id/name/count）。打标签前可先看看有没有语义相近的既有标签，优先复用，避免同义标签泛滥。
 - `GET /folders` — 列出现有文件夹（含 id/name/parentId/count）。同理优先归入既有文件夹。

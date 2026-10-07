@@ -118,4 +118,21 @@ export function addTagToAssets(assetIds: string[], name: string): void {
   for (const id of assetIds) ins.run(id, tag.id)
 }
 
+/** 从一批素材上移除某个标签（标签不存在返回 0；可逆——重新 add 即可）。
+ *  供 Agent HTTP /untag 使用（里程碑 169）。 */
+export function removeTagFromAssets(assetIds: string[], name: string): number {
+  const trimmed = name.trim()
+  if (!trimmed || assetIds.length === 0) return 0
+  const tag = getDb()
+    .prepare('SELECT id FROM tags WHERE name = ?')
+    .get(trimmed) as { id: number } | undefined
+  if (!tag) return 0
+  const del = stmt(getDb(), 'DELETE FROM asset_tags WHERE tag_id = ? AND asset_id = ?')
+  let removed = 0
+  for (const id of assetIds) {
+    if (del.run(tag.id, id).changes > 0) removed++
+  }
+  return removed
+}
+
 /* ---------------- 文件夹 ---------------- */

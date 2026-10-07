@@ -152,6 +152,14 @@ export function agentSearchFull(raw: unknown): Asset[] {
   return queryAssets(built.query)
 }
 
+/** 条件命中的素材 id 列表（Agent HTTP /tag /untag 按条件批量打/摘标签共用）。
+ *  条件写了标签但全部未命中时返回空（与检索守卫一致，防退化成全库）。 */
+export function agentMatchedIds(raw: unknown): string[] {
+  const built = buildAgentQuery(raw)
+  if (!built) return []
+  return queryAssets(built.query).map((a) => a.id)
+}
+
 /**
  * 按条件给全部命中素材打标签（里程碑 166）——助手的可撤销写操作（标签可随时移除）。
  * 与检索同一条 buildAgentQuery 路径（含标签名→tagId、未命中标签回空等全部守卫）。

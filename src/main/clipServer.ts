@@ -18,14 +18,18 @@ import {
   listFolders,
   listTags,
   queryAssets,
+  removeTagFromAssets,
   updateAsset
 } from './repository'
 import { aiProcessBatch } from './aiRename'
+import { agentMatchedIds } from './aiAgent'
 import { logger } from './logger'
 import { guardedFetch, readBodyCapped } from './netGuard'
 import type { ImportFileDetail, NewBoardItem } from '../shared/types'
 
-const PORT = 45678
+/** 端口可配置(里程碑 169):默认 45678(浏览器剪藏扩展硬编码);测试场景经 LUMEN_CLIP_PORT
+ *  换端口,避开用户正在运行的正式版(否则 dev 绑定失败,HTTP 测试全打到正式版上) */
+const PORT = Number(process.env.LUMEN_CLIP_PORT) || 45678
 const MAX_BODY = 80 * 1024 * 1024 // 80MB
 const MAX_IMAGE_BYTES = 80 * 1024 * 1024 // imageUrl 下载上限,与请求体一致
 
@@ -151,6 +155,8 @@ interface AgentImportPayload {
 /** 标签名/文件夹名上限:防 agent 批量生成超长或超量名称污染库 */
 const MAX_TAGS_PER_CALL = 32
 const MAX_NAME_LEN = 120
+/** /assets source 筛选的合法值('' = 手动导入) */
+const SOURCES_HTTP = new Set(['manual', 'agent', 'clip', 'watcher', 'screenshot', 'startup'])
 /** Agent 导入专属文件夹:未显式指定 folder 时,新导入素材自动归入,与用户自己的素材区分 */
 const AGENT_DEFAULT_FOLDER = 'Agent 导入'
 
@@ -411,6 +417,18 @@ async function importFromPaths(
 // 排队执行保证任意时刻只有一个导入批次在跑(单个失败不阻断后续)。
 let importQueue: Promise<unknown> = Promise.resolve()
 
+/** /tag /untag 的目标素材解析:优先 ids(≤1000),否则 conditions 条件命中(agentMatchedIds 含全部守卫) */
+async function resolveAgentIds(payload: { ids?: unknown; conditions?: unknown }): Promise<string[]> {
+  if (Array.isArray(payload.ids)) {
+    const ids = payload.ids.filter((x): x is string => typeof x === 'string' && /^[0-9a-f]{16}$/i.test(x))
+    return [...new Set(ids)].slice(0, 1000)
+  }
+  if (payload.conditions && typeof payload.conditions === 'object') {
+    return agentMatchedIds(payload.conditions)
+  }
+  return []
+}
+
 /** 启动本机接收服务（仅监听本机回环地址，需携带客户端鉴权头）。
  *  服务对象:①浏览器剪藏扩展(/clip) ②本机 AI Agent(/import /tags /folders /assets /stats)——
  *  鉴权模型一致:网页 JS 无法携带自定义头,本机原生程序不在威胁模型内。
@@ -455,14 +473,19 @@ export function startClipServer(
       return
     }
 
-    // Agent 查询素材(只读):q=关键词(搜名称+备注,含拼音) / ext=逗号分隔扩展名 / tag=标签名 / limit≤500
+    // Agent 查询素材(只读):q=关键词(搜名称+备注,含拼音) / ext=逗号分隔扩展名 / tag=标签名 / source=来源 / limit≤500 / offset 分页
     if (req.method === 'GET' && url.pathname === '/assets') {
       const q = url.searchParams
       const keyword = (q.get('q') ?? '').trim().slice(0, 100)
       const limitRaw = Number(q.get('limit') ?? 50)
       const limit = Math.min(Math.max(Number.isFinite(limitRaw) ? Math.floor(limitRaw) : 50, 1), 500)
+      const offsetRaw = Number(q.get('offset') ?? 0)
+      const offset = Math.min(Math.max(Number.isFinite(offsetRaw) ? Math.floor(offsetRaw) : 0, 0), 100000)
       const exts = (q.get('ext') ?? '').split(',').map((s) => s.trim().toLowerCase().replace(/^\./, '')).filter(Boolean)
       const tagName = (q.get('tag') ?? '').trim()
+      // source 参数归一：'' 与 'manual' 都表示手动导入（列值为 ''）；其余白名单直通；非法值忽略
+      const sourceRaw = q.get('source')
+      const source = sourceRaw === null ? undefined : sourceRaw === '' || sourceRaw === 'manual' ? '' : SOURCES_HTTP.has(sourceRaw) ? sourceRaw : undefined
       const tagRow = tagName ? listTags().find((x) => x.name.toLowerCase() === tagName.toLowerCase()) : undefined
       if (tagName && !tagRow) {
         // 指定的标签不存在:直接回空结果(避免空 tagIds 的语义歧义)
@@ -473,7 +496,9 @@ export function startClipServer(
         keyword: keyword || undefined,
         exts: exts.length > 0 ? exts : undefined,
         tagIds: tagRow ? [tagRow.id] : undefined,
-        limit: limit + 1
+        source,
+        limit: limit + 1,
+        offset
       })
       const truncated = rows.length > limit
       const assets = rows.slice(0, limit).map((a) => ({
@@ -489,6 +514,74 @@ export function startClipServer(
         tags: a.tagNames ?? []
       }))
       json(res, 200, { ok: true, count: assets.length, truncated, assets })
+      return
+    }
+
+    // 单素材详情(只读):含备注(生成信息存档在这里)/来源/标签,供 agent 读回 prompt 等
+    if (req.method === 'GET' && url.pathname === '/asset') {
+      const id = (url.searchParams.get('id') ?? '').trim()
+      const a = /^[0-9a-f]{16}$/i.test(id) ? getAssetById(id) : null
+      if (!a || a.deletedAt != null) {
+        json(res, 404, { ok: false, error: 'asset not found' })
+        return
+      }
+      json(res, 200, {
+        ok: true,
+        asset: {
+          id: a.id,
+          name: a.name,
+          ext: a.ext,
+          width: a.width,
+          height: a.height,
+          size: a.size,
+          star: a.star,
+          importedAt: a.importedAt,
+          source: a.source,
+          comment: a.comment,
+          url: a.url,
+          tags: a.tagNames ?? []
+        }
+      })
+      return
+    }
+
+    // 打标签:按 ids 或 conditions 给素材打标签(可撤销——/untag 摘除)
+    if (req.method === 'POST' && url.pathname === '/tag') {
+      readBody(req, res)
+        .then(async (body) => {
+          const payload = JSON.parse(body) as { ids?: string[]; conditions?: unknown; tag?: string }
+          const tag = sanitizeName(String(payload.tag ?? ''))
+          if (!tag) throw new Error('tag required')
+          const ids = await resolveAgentIds(payload)
+          if (ids.length === 0) {
+            json(res, 200, { ok: true, tagged: 0 })
+            return
+          }
+          addTagToAssets(ids, tag)
+          if (ids.length > 0) onImported?.(0, 'agent')
+          json(res, 200, { ok: true, tagged: ids.length })
+        })
+        .catch((err: Error) => {
+          if (!res.headersSent) json(res, 400, { ok: false, error: err.message })
+        })
+      return
+    }
+
+    // 摘标签:按 ids 或 conditions 移除标签(可逆——重新 /tag 即可)
+    if (req.method === 'POST' && url.pathname === '/untag') {
+      readBody(req, res)
+        .then(async (body) => {
+          const payload = JSON.parse(body) as { ids?: string[]; conditions?: unknown; tag?: string }
+          const tag = sanitizeName(String(payload.tag ?? ''))
+          if (!tag) throw new Error('tag required')
+          const ids = await resolveAgentIds(payload)
+          const removed = ids.length > 0 ? removeTagFromAssets(ids, tag) : 0
+          if (removed > 0) onImported?.(0, 'agent')
+          json(res, 200, { ok: true, removed })
+        })
+        .catch((err: Error) => {
+          if (!res.headersSent) json(res, 400, { ok: false, error: err.message })
+        })
       return
     }
 
