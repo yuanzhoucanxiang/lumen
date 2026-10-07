@@ -7,6 +7,16 @@ import type { AppSettings, Tag } from '@shared/types'
 import UserGuide from './UserGuide'
 import RestoreDialog from './RestoreDialog'
 
+/** AI 提供商预置（里程碑 178）：一键填 Base URL + 建议模型（OpenCode Go/Zen 为 OpenAI 兼容网关） */
+const AI_PROVIDERS: { name: string; baseUrl: string; models: string[] }[] = [
+  { name: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', models: ['glm-4v-flash', 'glm-4v-plus'] },
+  { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', models: ['deepseek-flash', 'deepseek-v4-pro'] },
+  { name: 'OpenCode Go', baseUrl: 'https://opencode.ai/zen/go/v1', models: ['glm-5.3-flash', 'grok-4.7', 'kimi-k3', 'deepseek-v4-pro', 'minimax-m3', 'qwen3.8-max', 'mimo-v2.6-pro'] },
+  { name: 'OpenCode Zen', baseUrl: 'https://opencode.ai/zen/v1', models: ['gpt-5.5', 'claude-opus-5', 'gemini-3.1-pro', 'grok-4.7'] },
+  { name: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-vl-max', 'qwen-vl-plus'] },
+  { name: '本地 Ollama', baseUrl: 'http://127.0.0.1:11434/v1', models: ['llava', 'moondream'] }
+]
+
 type SettingsPage = 'preferences' | 'guide'
 
 /** 快捷键录制按钮：点击后按新键位保存，Esc 取消 */
@@ -409,13 +419,43 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           </div>
           <div className="space-y-2">
             <div>
+              <label className="mb-0.5 block text-[11px] text-[var(--text-dim)]">快速选择服务商</label>
+              <div className="flex flex-wrap gap-1.5">
+                {AI_PROVIDERS.map((p) => (
+                  <button
+                    key={p.name}
+                    className={`rounded-sm border px-2 py-0.5 text-[11px] transition-colors duration-100 ${
+                      (settings.aiBaseUrl || '').startsWith(p.baseUrl)
+                        ? 'border-[var(--accent)] text-[var(--accent-text)]'
+                        : 'border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--accent)] hover:text-[var(--accent-text)]'
+                    }`}
+                    title={p.baseUrl}
+                    onClick={() =>
+                      void update({
+                        aiBaseUrl: p.baseUrl,
+                        ...(p.models.includes(settings.aiModel || '') ? {} : { aiModel: p.models[0] })
+                      })
+                    }
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
               <label className="mb-0.5 block text-[11px] text-[var(--text-dim)]">Base URL</label>
               <input
                 className="field-input w-full text-[12px]"
                 value={settings.aiBaseUrl || ''}
                 placeholder="https://open.bigmodel.cn/api/paas/v4"
+                list="ai-baseurl-presets"
                 onChange={(e) => void update({ aiBaseUrl: e.target.value })}
               />
+              <datalist id="ai-baseurl-presets">
+                {AI_PROVIDERS.map((p) => (
+                  <option key={p.baseUrl} value={p.baseUrl} />
+                ))}
+              </datalist>
             </div>
             <div>
               <label className="mb-0.5 block text-[11px] text-[var(--text-dim)]">模型</label>
@@ -428,16 +468,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
               />
               {/* 常见视觉模型预设(可自由输入,不限于列表) */}
               <datalist id="ai-model-presets">
-                {[
-                  'glm-4v-flash',
-                  'glm-4v-plus',
-                  'glm-4v',
-                  'qwen-vl-max',
-                  'qwen-vl-plus',
-                  'qwen2.5-vl-7b-instruct',
-                  'llava',
-                  'moondream'
-                ].map((m) => (
+                {[...new Set(AI_PROVIDERS.flatMap((p) => p.models))].map((m) => (
                   <option key={m} value={m} />
                 ))}
               </datalist>

@@ -279,6 +279,39 @@ async function main() {
     if (Number.isInteger(${JSON.stringify(smartMade.f2)})) await window.api.deleteFolder(${JSON.stringify(smartMade.f2)})
   `)
 
+  /* ---------- 3a. 以图搜图（里程碑 178）：dHash 相似检索 ---------- */
+  // 夹具用"有结构的图案"（教训：纯色图的 dHash 恒为零，无法区分相似/不相似）
+  const sharp = require('sharp')
+  const mk = async (name, svg) => {
+    const p = path.join(tmpDir, name)
+    await sharp(Buffer.from(svg)).png().toFile(p)
+    return p
+  }
+  const simA = await mk(`${tag}-simA.png`, '<svg width="256" height="256"><rect width="256" height="256" fill="#fff"/><rect x="0" y="0" width="160" height="256" fill="#000"/></svg>')
+  const simB = await mk(`${tag}-simB.png`, '<svg width="256" height="256"><rect width="256" height="256" fill="#fff"/><rect x="0" y="0" width="150" height="256" fill="#000"/></svg>')
+  const simC = await mk(`${tag}-simC.png`, '<svg width="256" height="256"><rect width="256" height="256" fill="#fff"/><rect x="0" y="0" width="256" height="150" fill="#000"/></svg>')
+  await request('POST', '/import', JSON.stringify({ paths: [simA, simB, simC] }))
+  const simIds = await run(`return (await window.api.queryAssets({ limit: 5000 })).filter((a) => a.name.startsWith(${JSON.stringify(tag + '-sim')})).map((a) => ({ id: a.id, name: a.name }))`)
+  const idA = simIds.find((x) => x.name.includes('simA'))?.id
+  const idB = simIds.find((x) => x.name.includes('simB'))?.id
+  const idC = simIds.find((x) => x.name.includes('simC'))?.id
+  check('以图搜图夹具就位(三张图案图)', !!idA && !!idB && !!idC, JSON.stringify(simIds.map((x) => x.name)))
+
+  const sim = await run(`return await window.api.agentSimilar({ assetId: ${JSON.stringify(idA)} })`)
+  const hitB = sim.assets.find((a) => a.id === idB)
+  const hitC = sim.assets.find((a) => a.id === idC)
+  check('agentSimilar 命中相似图 B(高相似度)', !!hitB && (hitB.matchPct ?? 0) >= 80, `B=${JSON.stringify(hitB)}`)
+  check('agentSimilar 不命中结构不同的 C', !hitC, `C=${JSON.stringify(hitC)} matchPct=${hitC?.matchPct}`)
+  check('agentSimilar 结果不含参考图自身', !sim.assets.some((a) => a.id === idA), `total=${sim.total}`)
+
+  const dataUrl = 'data:image/png;base64,' + fs.readFileSync(simA).toString('base64')
+  const sim2 = await run(`return await window.api.agentSimilar({ dataUrl: ${JSON.stringify(dataUrl)} })`)
+  const selfHit = sim2.assets.find((a) => a.id === idA)
+  check('agentSimilar 支持外部图片 dataUrl(自匹配 100%)', !!selfHit && selfHit.matchPct === 100, `self=${JSON.stringify(selfHit)}`)
+
+  const simEmpty = await run(`return await window.api.agentSimilar({})`)
+  check('agentSimilar 空来源返回空', simEmpty.total === 0, JSON.stringify(simEmpty))
+
   /* ---------- 3. 关闭面板 ---------- */
   await run(`
     const btn = [...document.querySelectorAll('button')].find((b) => (b.getAttribute('title') || '').includes('助手：对话式找图'))

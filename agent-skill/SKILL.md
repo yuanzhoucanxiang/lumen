@@ -72,6 +72,7 @@ curl -s -X POST http://127.0.0.1:45678/import \
 其他端点（均需带同样的鉴权头）：
 
 - `GET /assets` — 查询素材（只读）。参数：`q`=关键词（搜名称和备注，含拼音，比如用 prompt 片段找图）、`ext`=逗号分隔扩展名、`tag`=标签名、`source`=来源（manual/agent/clip/watcher/screenshot）、`limit`≤500、`offset` 分页。响应含 `count/truncated/assets`（窄列：id/name/ext/宽高/大小/来源/标签）。**生成或导入前先查一下库里有没有，避免重复劳动**。
+- `GET /similar?id=xxx&maxDistance=12&limit=60` — **以图搜图**（只读，确定性 dHash 检索）：给一个库内素材 id，返回库中与它相似的素材（含 `matchPct` 相似度百分比，按相似度降序）。适合'这张图还有没有近似版本/重复'类需求。
 - `GET /asset?id=xxx` — 单素材详情：含 `comment`（生成信息存档在这里，可读回 prompt）、来源、标签。
 - `POST /tag` — 打标签：body `{"tag":"标签名","conditions":{...}}` 或 `{"tag":"...","ids":["..."]}`，给全部命中素材打标签（幂等）。
 - `POST /untag` — 摘标签：参数同上，从命中素材上移除该标签（可逆）。

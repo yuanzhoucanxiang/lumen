@@ -125,6 +125,7 @@ LUMEN 运行时在本机 `127.0.0.1:45678` 提供 HTTP 接口（仅监听回环�
 | `POST /import` | 按路径批量导入（支持目录递归、查重跳过），可选 `tags` 打标签、`folder` 归文件夹（支持 `A/B` 多级自动创建）、`move` 移动导入、`note` 把 prompt/生成信息写入素材备注（可被搜索）、`checkSimilar` 相似检测（回传库内近似素材，防近重复图入库）、`validate` 试运行（只预估不导入）、`boardId` 直送白板画布、`autoTag` 后台 AI 自动打标签；未指定 `folder` 时新素材自动归入「Agent 导入」专属文件夹，与用户素材区分；返回逐文件明细 `files`，跳过的重复文件回传命中的库内素材 `matchedIds` 并照常补标签/归档（幂等重跑安全） |
 | `GET /assets` | 查询素材（只读）：`q` 关键词（搜名称+备注+拼音）、`ext` 扩展名、`tag` 标签名、`source` 来源、`limit`≤500、`offset` 分页，返回窄列字段 |
 | `GET /asset?id=` | 单素材详情（含备注/来源/标签） |
+| `GET /similar?id=` | 以图搜图（dHash 相似检索，返回 matchPct 相似度） |
 | `POST /tag` / `POST /untag` | 按 `ids` 或 `conditions` 给命中素材打标签 / 摘标签（幂等可逆） |
 | `POST /folder` / `POST /star` / `POST /board` / `POST /note` | 归档到文件夹 / 设星级 / 追加到白板 / 写备注（均支持 `ids` 或 `conditions` 定位） |
 | `GET /ops` / `POST /undo` | Agent 操作记录（逐项明细，含可否回退）与回退（整条或 `itemIds` 逐项）；助手面板可查看并逐项回退 |

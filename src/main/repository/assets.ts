@@ -479,23 +479,22 @@ export async function findDuplicates(maxDistance = 6): Promise<DupeGroup[]> {
 }
 
 /** 以图搜图：返回与目标素材 dHash 汉明距离 ≤ maxDistance 的素材，按相似度排序 */
-export async function findSimilar(id: string, maxDistance = 10, limit = 60): Promise<Asset[]> {
+/**
+ * 按 dHash 在库中检索相似素材（以图搜图的执行层，里程碑 178）。
+ * excludeId：排除自身（用库内素材做参考图时传它的 id；外部参考图传 null）。
+ * 返回按汉明距离升序、附带距离的素材列表。
+ */
+export function findSimilarByHash(
+  targetHash: string,
+  excludeId: string | null,
+  maxDistance = 10,
+  limit = 60
+): { asset: Asset; distance: number }[] {
   const db = getDb()
-  const target = db.prepare('SELECT id, ext, rel_dir, hash FROM assets WHERE id = ?').get(id) as
-    | { id: string; ext: string; rel_dir: string; hash: string }
-    | undefined
-  if (!target) return []
-  let targetHash = target.hash
-  if (!targetHash && assetKindOf(target.ext) === 'image' && target.ext !== 'svg') {
-    targetHash = await computeDHash(join(getLibraryPath(), target.rel_dir, `${target.id}.${target.ext}`))
-    if (targetHash) db.prepare('UPDATE assets SET hash = ? WHERE id = ?').run(targetHash, id)
-  }
-  if (!targetHash) return []
-
   const tb = hexToBytes(targetHash)
   const rows = db
     .prepare("SELECT id, hash FROM assets WHERE hash != '' AND deleted_at IS NULL AND id != ?")
-    .all(id) as { id: string; hash: string }[]
+    .all(excludeId ?? '') as { id: string; hash: string }[]
   const scored: { id: string; d: number }[] = []
   for (const r of rows) {
     const d = hammingBytes(tb, hexToBytes(r.hash), maxDistance)
@@ -513,7 +512,22 @@ export async function findSimilar(id: string, maxDistance = 10, limit = 60): Pro
   const order = new Map(top.map((t, i) => [t.id, i]))
   assets.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
   attachTags(assets)
-  return assets
+  return assets.map((asset) => ({ asset, distance: top.find((t) => t.id === asset.id)?.d ?? 0 }))
+}
+
+export async function findSimilar(id: string, maxDistance = 10, limit = 60): Promise<Asset[]> {
+  const db = getDb()
+  const target = db.prepare('SELECT id, ext, rel_dir, hash FROM assets WHERE id = ?').get(id) as
+    | { id: string; ext: string; rel_dir: string; hash: string }
+    | undefined
+  if (!target) return []
+  let targetHash = target.hash
+  if (!targetHash && assetKindOf(target.ext) === 'image' && target.ext !== 'svg') {
+    targetHash = await computeDHash(join(getLibraryPath(), target.rel_dir, `${target.id}.${target.ext}`))
+    if (targetHash) db.prepare('UPDATE assets SET hash = ? WHERE id = ?').run(targetHash, id)
+  }
+  if (!targetHash) return []
+  return findSimilarByHash(targetHash, id, maxDistance, limit).map((r) => r.asset)
 }
 
 /* ---------------- 回收站自动清理 ---------------- */

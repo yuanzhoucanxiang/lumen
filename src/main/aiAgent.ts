@@ -8,7 +8,9 @@
  * 只读——本模块不写库，写操作（打标签/存智能文件夹）留待后续版本。
  */
 import { readFileSync } from 'fs'
-import { assetPaths, listTags, libraryStats, queryAssets, getAssetById, addTagToAssets } from './repository'
+import { assetPaths, findSimilarByHash, listTags, libraryStats, queryAssets, getAssetById, addTagToAssets } from './repository'
+import { getDb } from './db'
+import { computeDHash } from './importer'
 import { logger } from './logger'
 import { chat, chatStream } from './aiClient'
 import { extractJson, rankByVision } from './aiSearch'
@@ -120,6 +122,58 @@ function buildAgentQuery(raw: unknown): { query: AssetQuery; matchedTags: string
     limit: COUNT_CAP
   }
   return { query, matchedTags: matched }
+}
+
+/**
+ * 以图搜图（里程碑 178）：给一张参考图（库内素材 id 或外部图片 dataUrl），
+ * 用 dHash 感知哈希在库中检索相似素材（确定性，不消耗 AI）。
+ * 返回按相似度降序的窄列结果；matchPct 为相似度百分比（64 位哈希 → (64-d)/64）。
+ */
+export async function agentFindSimilar(
+  source: { assetId?: string; dataUrl?: string },
+  maxDistance = 12,
+  limit = 60
+): Promise<{ assets: AgentAssetBrief[]; total: number }> {
+  let hash = ''
+  let excludeId: string | null = null
+  if (source.assetId && /^[0-9a-f]{16}$/i.test(source.assetId)) {
+    const a = getAssetById(source.assetId)
+    if (!a || a.deletedAt != null) return { assets: [], total: 0 }
+    excludeId = a.id
+    // Asset 类型不含 hash 列，直接查库（与 findSimilar 同源）
+    hash =
+      (getDb().prepare('SELECT hash FROM assets WHERE id = ?').get(a.id) as { hash: string } | undefined)?.hash ?? ''
+    if (!hash && a.ext !== 'svg') {
+      const paths = assetPaths(a.id)
+      // 编辑过的素材用编辑版算哈希(与导入管线同源)
+      if (paths) hash = await computeDHash(paths.original)
+      if (hash) getDb().prepare('UPDATE assets SET hash = ? WHERE id = ?').run(hash, a.id)
+    }
+  } else if (source.dataUrl) {
+    const m = source.dataUrl.match(new RegExp('^data:image/[a-z+.-]+;base64,(.+)$', 's'))
+    if (!m) return { assets: [], total: 0 }
+    try {
+      hash = await computeDHash(Buffer.from(m[1], 'base64'))
+    } catch {
+      return { assets: [], total: 0 }
+    }
+  }
+  if (!hash) return { assets: [], total: 0 }
+
+  const hits = findSimilarByHash(hash, excludeId, Math.min(Math.max(maxDistance, 0), 32), limit)
+  const assets: AgentAssetBrief[] = hits.map(({ asset: x, distance }) => ({
+    id: x.id,
+    name: x.name,
+    ext: x.ext,
+    width: x.width,
+    height: x.height,
+    star: x.star,
+    source: x.source,
+    tags: x.tagNames ?? [],
+    matchPct: Math.round(((64 - distance) / 64) * 100)
+  }))
+  logger.info('[aiAgent]', `以图搜图: 命中 ${assets.length} 张（maxDistance=${maxDistance}）`)
+  return { assets, total: assets.length }
 }
 
 /**

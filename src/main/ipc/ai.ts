@@ -1,11 +1,11 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { aiApplySuggestions, aiProcessBatch, aiSuggestBatch, testAiConnection } from '../aiRename'
 import { aiSearch } from '../aiSearch'
-import { agentChatTurn, agentSearchFull, agentRerank, agentTagByConditions, executeAgentConditions } from '../aiAgent'
+import { agentChatTurn, agentFindSimilar, agentSearchFull, agentRerank, agentTagByConditions, executeAgentConditions } from '../aiAgent'
 import { listAgentOps, undoAgentOp } from '../agentOps'
 import { normalizeAiBaseUrl } from '../aiClient'
 import { loadConfig } from '../library'
-import { isUnnamedName, queryAssets } from '../repository'
+import { getAssetById, isUnnamedName, queryAssets } from '../repository'
 import type { AgentChatTurn, AiApplyRequest, AiProcessOptions, AiProcessResult, AiScope } from '../../shared/types'
 
 export function registerAiIpc(getWindow: () => BrowserWindow | null): void {
@@ -113,6 +113,17 @@ export function registerAiIpc(getWindow: () => BrowserWindow | null): void {
 
   // 按条件给全部命中素材打标签（助手的可撤销写操作；打标签本身确定性执行，不需要 AI）
   ipcMain.handle('ai:agentTag', (_e, conditions: unknown, tag: string) => agentTagByConditions(conditions, tag))
+
+  // 按 id 取完整素材（以图搜图结果铺进图库用，里程碑 178）
+  ipcMain.handle('ai:agentByIds', (_e, ids: string[]) => {
+    const list = Array.isArray(ids) ? ids.filter((x) => typeof x === 'string').slice(0, 500) : []
+    return list.map((id) => getAssetById(id)).filter((a): a is NonNullable<typeof a> => !!a && a.deletedAt == null)
+  })
+
+  // 以图搜图（里程碑 178）：参考图 = 库内素材 id 或外部图片 dataUrl，dHash 确定性检索
+  ipcMain.handle('ai:agentSimilar', (_e, source: { assetId?: string; dataUrl?: string }, maxDistance?: number) =>
+    agentFindSimilar(source ?? {}, typeof maxDistance === 'number' ? maxDistance : 12)
+  )
 
   // Agent 操作记录与回退（里程碑 171）
   ipcMain.handle('ai:agentOps', (_e, limit?: number) => listAgentOps(typeof limit === 'number' ? limit : 30))

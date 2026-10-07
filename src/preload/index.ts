@@ -115,6 +115,15 @@ const api = {
   /** 找图助手：按条件给全部命中素材打标签（可撤销写操作） */
   agentTag: (conditions: unknown, tag: string): Promise<{ tagged: number }> =>
     ipcRenderer.invoke('ai:agentTag', conditions, tag),
+  /** 找图助手：以图搜图（参考图 = 库内素材 id 或外部图片 dataUrl） */
+  agentSimilar: (
+    source: { assetId?: string; dataUrl?: string },
+    maxDistance?: number
+  ): Promise<{ assets: AgentAssetBrief[]; total: number }> => ipcRenderer.invoke('ai:agentSimilar', source, maxDistance),
+
+  /** 按 id 取完整素材（以图搜图结果铺进图库用） */
+  agentByIds: (ids: string[]): Promise<Asset[]> => ipcRenderer.invoke('ai:agentByIds', ids),
+
   /** Agent 操作记录（含能否回退） */
   agentOpsList: (limit?: number): Promise<AgentOpView[]> => ipcRenderer.invoke('ai:agentOps', limit),
   /** 回退一条 Agent 操作记录（itemIds 缺省 = 全部；给了则只回退其中指定项） */

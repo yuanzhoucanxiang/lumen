@@ -389,6 +389,12 @@ async function main() {
   const rUndoDone = partOp ? await request('POST', '/undo', JSON.stringify({ id: partOp.id })) : null
   check('回退已完结记录 400', rUndoDone?.status === 400, `status=${rUndoDone?.status}`)
 
+  /* ---------- 5k. HTTP /similar(里程碑 178) ---------- */
+  const rSimBad = await request('GET', '/similar')
+  check('/similar 缺 id 返回 400', rSimBad.status === 400, `status=${rSimBad.status}`)
+  const rSimMiss = await request('GET', '/similar?id=0000000000000000')
+  check('/similar 不存在的素材返回空结果', rSimMiss.status === 200 && rSimMiss.json?.total === 0, `total=${rSimMiss.json?.total}`)
+
   /* ---------- 5j. 批次键:同一次请求的多条记录共享 groupKey(里程碑 174) ---------- */
   // 新文件走完整 /import(带标签+归档)-> 一次请求产生 import/folder/tag 多条记录
   const gkFile = path.join(dupDir, `${tag}-gk.png`)

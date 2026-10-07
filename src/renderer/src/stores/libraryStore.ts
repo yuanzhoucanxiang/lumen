@@ -27,6 +27,8 @@ export interface AgentMsg {
   conditions?: AgentConditions | null
   /** assistant：可保存为智能文件夹的条件（null = 该轮无条件） */
   smart?: SmartConditions | null
+  /** 以图搜图结果素材 id（图库查看用；里程碑 178） */
+  resultIds?: string[]
   error?: boolean
 }
 
@@ -211,6 +213,8 @@ interface LibraryState {
   agentBusy: boolean
   agentSend: (text: string, imageIds?: string[]) => Promise<void>
   agentClearChat: () => void
+  /** 追加一条助手消息（以图搜图等旁路结果，里程碑 178） */
+  agentAppendMessage: (msg: AgentMsg) => void
   /** 视觉重排结果回写(里程碑 164):把重排后的素材顺序写回指定消息 */
   agentApplyRerank: (msgIndex: number, assets: AgentAssetBrief[]) => void
   showToast: (msg: string) => void
@@ -683,6 +687,13 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   closeAiDialog: () => set({ aiDialogOpen: false }),
   toggleAgentPanel: () => set((s) => ({ agentPanelOpen: !s.agentPanelOpen })),
   closeAgentPanel: () => set({ agentPanelOpen: false }),
+
+  agentAppendMessage: (msg) =>
+    set((s2) => {
+      const messages = [...s2.agentMessages, msg]
+      persistAgentChat(messages, s2.agentHistory)
+      return { agentMessages: messages }
+    }),
 
   agentClearChat: () => {
     set({ agentMessages: [], agentHistory: [] })

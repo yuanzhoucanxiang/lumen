@@ -176,6 +176,8 @@ export interface AgentAssetBrief {
   tags: string[]
   /** 视觉重排后的相关性得分(0-10;未重排时缺省) */
   score?: number
+  /** 以图搜图的相似度百分比(0-100;仅相似检索结果携带,里程碑 178) */
+  matchPct?: number
 }
 
 export interface AgentSearchResult {

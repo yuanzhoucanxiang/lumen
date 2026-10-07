@@ -41,6 +41,8 @@ export default function AgentPanel() {
   const [tagName, setTagName] = useState('')
   const [rerankBusy, setRerankBusy] = useState<number | null>(null)
   const [rerankProgress, setRerankProgress] = useState('')
+  /** 以图搜图进行中（里程碑 178） */
+  const [similarBusy, setSimilarBusy] = useState(false)
   /** 模型流式输出的尾部预览(等待时让"AI 在说话"可感知) */
   const [streamTail, setStreamTail] = useState('')
   /** 看图追问开关:开启后追问附带最近一轮结果的缩略图(上限 6 张) */
@@ -176,6 +178,39 @@ export default function AgentPanel() {
     }
   }
 
+  /** 以图搜图（里程碑 178）：参考图 = 选中素材 / 粘贴 / 拖入的图片（dHash 确定性检索，不消耗 AI） */
+  const searchSimilar = async (source: { assetId?: string; dataUrl?: string }, label: string) => {
+    if (similarBusy) return
+    setSimilarBusy(true)
+    try {
+      const r = await window.api.agentSimilar(source)
+      useLibraryStore.getState().agentAppendMessage({
+        role: 'assistant',
+        text:
+          r.total > 0
+            ? `以图搜图：找到 ${r.total} 张与参考图（${label}）相似的素材`
+            : `没有找到与参考图（${label}）相似的素材`,
+        assets: r.assets,
+        total: r.total,
+        truncated: false,
+        query: `以图搜图：${label}`,
+        resultIds: r.assets.map((a) => a.id)
+      })
+    } catch (e) {
+      useLibraryStore.getState().showToast(`以图搜图失败：${String((e as Error)?.message ?? e)}`)
+    } finally {
+      setSimilarBusy(false)
+    }
+  }
+
+  /** 从粘贴/拖入的图片文件发起以图搜图 */
+  const searchSimilarFromFile = (file: File, label: string) => {
+    const reader = new FileReader()
+    reader.onload = () => void searchSimilar({ dataUrl: String(reader.result) }, label)
+    reader.onerror = () => useLibraryStore.getState().showToast('读取图片失败')
+    reader.readAsDataURL(file)
+  }
+
   /** 加载操作记录（切到记录视图时） */
   useEffect(() => {
     if (view !== 'ops') return
@@ -214,9 +249,11 @@ export default function AgentPanel() {
 
   /** 把本轮全量结果铺进图库（用图库已有能力继续：批量打标签/导出/上板等） */
   const viewInLibrary = async (m: AgentMsg) => {
-    if (!m.conditions || !m.query) return
+    if (!m.query) return
+    const hasIds = m.resultIds && m.resultIds.length > 0
+    if (!hasIds && !m.conditions) return
     try {
-      const assets = await window.api.agentSearchFull(m.conditions)
+      const assets = hasIds ? await window.api.agentByIds(m.resultIds!) : await window.api.agentSearchFull(m.conditions!)
       if (assets.length === 0) {
         useLibraryStore.getState().showToast('没有可查看的素材（结果可能已变化）')
         return
@@ -386,6 +423,19 @@ export default function AgentPanel() {
       className="agent-panel anim-slide-left fixed right-0 top-0 z-[140] flex h-full w-[384px] flex-col border-l border-[var(--border)] bg-[var(--bg-panel)] shadow-2xl"
       aria-label="找图助手"
       data-testid="agent-panel"
+      onDragOver={(e) => {
+        if (e.dataTransfer?.types.includes('Files')) {
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      }}
+      onDrop={(e) => {
+        const file = Array.from(e.dataTransfer?.files ?? []).find((x) => x.type.startsWith('image/'))
+        if (!file) return
+        e.preventDefault()
+        e.stopPropagation()
+        searchSimilarFromFile(file, file.name || '拖入的图片')
+      }}
     >
       <header className="agent-panel__header flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
         <div className="flex items-center gap-1.5">
@@ -564,9 +614,9 @@ export default function AgentPanel() {
                         draggable={false}
                         className="h-full w-full object-cover"
                       />
-                      {typeof a.score === 'number' && (
+                      {(typeof a.matchPct === 'number' || typeof a.score === 'number') && (
                         <span className="tnum absolute right-0.5 top-0.5 rounded-sm bg-black/70 px-1 text-[9px] leading-[13px] text-white">
-                          {a.score}
+                          {typeof a.matchPct === 'number' ? `${a.matchPct}%` : a.score}
                         </span>
                       )}
                     </button>
@@ -590,7 +640,7 @@ export default function AgentPanel() {
               )}
 
               {/* 沉淀动作：结果铺进图库 / 条件存为智能文件夹（里程碑 163） */}
-              {m.role === 'assistant' && !m.error && m.total !== undefined && m.total > 0 && m.conditions && (
+              {m.role === 'assistant' && !m.error && m.total !== undefined && m.total > 0 && (m.conditions || (m.resultIds && m.resultIds.length > 0)) && (
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
                   <button
                     className="rounded-sm border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text-dim)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent-text)]"
@@ -740,7 +790,41 @@ export default function AgentPanel() {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.nativeEvent.isComposing) send()
             }}
+            onPaste={(e) => {
+              const items = e.clipboardData?.items
+              if (!items) return
+              for (let i = 0; i < items.length; i++) {
+                const it = items[i]
+                if (it.type.startsWith('image/')) {
+                  const file = it.getAsFile()
+                  if (file) {
+                    e.preventDefault()
+                    searchSimilarFromFile(file, '粘贴的图片')
+                    return
+                  }
+                }
+              }
+            }}
           />
+          {/* 以图搜图(里程碑 178):用选中素材/粘贴/拖入的图片检索库内相似素材 */}
+          <button
+            className="shrink-0 rounded-sm border border-[var(--border)] px-2 text-[11px] text-[var(--text-dim)] transition-colors duration-100 hover:border-[var(--accent)] hover:text-[var(--accent-text)] disabled:opacity-40"
+            disabled={busy || similarBusy}
+            title="以图搜图：先在图库选中一张参考图（也可把图片拖进面板或 Ctrl+V 粘贴）"
+            aria-label="以图搜图"
+            onClick={() => {
+              const st = useLibraryStore.getState()
+              const id = st.selection[0]
+              if (!id) {
+                st.showToast('先在素材库中选中一张参考图；也可把图片拖进面板或 Ctrl+V 粘贴')
+                return
+              }
+              const name = st.assets.find((a) => a.id === id)?.name ?? '选中素材'
+              void searchSimilar({ assetId: id }, name)
+            }}
+          >
+            <Icon name="duplicateSearch" size={12} />
+          </button>
           {/* 看图追问开关:开启后追问附带最近一轮结果的缩略图(有结果时才可用) */}
           {(() => {
             const hasLastAssets = [...messages].reverse().some((m) => m.role === 'assistant' && m.assets?.length)

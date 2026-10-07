@@ -22,7 +22,7 @@ import {
   updateAsset
 } from './repository'
 import { aiProcessBatch } from './aiRename'
-import { agentMatchedIds } from './aiAgent'
+import { agentFindSimilar, agentMatchedIds } from './aiAgent'
 import { itemsFromAssetIds, listAgentOps, logAgentOp, newGroupKey, undoAgentOp } from './agentOps'
 import type { AgentOpItem } from './agentOps'
 import { logger } from './logger'
@@ -586,6 +586,25 @@ export function startClipServer(
           tags: a.tagNames ?? []
         }
       })
+      return
+    }
+
+    // 以图搜图(只读,确定性):GET /similar?id=<素材id>&maxDistance=12&limit=60 —— dHash 感知哈希检索
+    if (req.method === 'GET' && url.pathname === '/similar') {
+      const id = (url.searchParams.get('id') ?? '').trim()
+      if (!/^[0-9a-f]{16}$/i.test(id)) {
+        json(res, 400, { ok: false, error: 'id required (16-hex asset id)' })
+        return
+      }
+      const maxDistanceRaw = Number(url.searchParams.get('maxDistance') ?? 12)
+      const maxDistance = Math.min(Math.max(Number.isFinite(maxDistanceRaw) ? Math.floor(maxDistanceRaw) : 12, 0), 32)
+      const limitRaw = Number(url.searchParams.get('limit') ?? 60)
+      const limit = Math.min(Math.max(Number.isFinite(limitRaw) ? Math.floor(limitRaw) : 60, 1), 200)
+      agentFindSimilar({ assetId: id }, maxDistance, limit)
+        .then((r) => json(res, 200, { ok: true, ...r }))
+        .catch((err: Error) => {
+          if (!res.headersSent) json(res, 400, { ok: false, error: err.message })
+        })
       return
     }
 
