@@ -61,7 +61,9 @@ function hydrateAgentChat(): { messages: AgentMsg[]; history: AgentChatTurn[] } 
 
 function persistAgentChat(messages: AgentMsg[], history: AgentChatTurn[]): void {
   try {
-    localStorage.setItem(AGENT_CHAT_KEY, JSON.stringify({ messages, history }))
+    // 瘦身:只保留最近 30 条消息、每条 assets 截到 9 个(面板渲染也只用 9 个)——防 localStorage 无限增长
+    const trimmed = messages.slice(-30).map((m) => ({ ...m, assets: m.assets?.slice(0, 9) }))
+    localStorage.setItem(AGENT_CHAT_KEY, JSON.stringify({ messages: trimmed, history: history.slice(-20) }))
   } catch {
     /* localStorage 不可用时静默(对话仅本次会话有效) */
   }
@@ -207,7 +209,7 @@ interface LibraryState {
   /** 回传给模型的多轮历史（assistant 项存模型原始 JSON，不直接渲染） */
   agentHistory: AgentChatTurn[]
   agentBusy: boolean
-  agentSend: (text: string) => Promise<void>
+  agentSend: (text: string, imageIds?: string[]) => Promise<void>
   agentClearChat: () => void
   /** 视觉重排结果回写(里程碑 164):把重排后的素材顺序写回指定消息 */
   agentApplyRerank: (msgIndex: number, assets: AgentAssetBrief[]) => void
@@ -696,12 +698,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       return next
     }),
 
-  agentSend: async (text) => {
+  agentSend: async (text, imageIds) => {
     const q = text.trim()
     if (!q || get().agentBusy) return
     set((s) => ({ agentMessages: [...s.agentMessages, { role: 'user', text: q }], agentBusy: true }))
     try {
-      const r = await window.api.agentChat(get().agentHistory, q)
+      const r = await window.api.agentChat(get().agentHistory, q, imageIds)
       set((s) => ({
         // assistant 历史回传模型原始输出（含条件 JSON），下一轮才能在此条件上继续调整
         agentHistory: [

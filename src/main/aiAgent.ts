@@ -7,7 +7,8 @@
  * 而非 function calling：兼容各家 OpenAI 兼容模型，容错解析复用 aiSearch 的 extractJson。
  * 只读——本模块不写库，写操作（打标签/存智能文件夹）留待后续版本。
  */
-import { listTags, libraryStats, queryAssets, getAssetById, addTagToAssets } from './repository'
+import { readFileSync } from 'fs'
+import { assetPaths, listTags, libraryStats, queryAssets, getAssetById, addTagToAssets } from './repository'
 import { logger } from './logger'
 import { chat, chatStream } from './aiClient'
 import { extractJson, rankByVision } from './aiSearch'
@@ -240,22 +241,54 @@ function buildPrompt(message: string): string {
  * onDelta 提供时走流式(SSE,增量经回调推送供 UI 实时显示);失败兜底：解析失败自动重试一次,
  * 仍失败则把原文当回复返回,不抛错打断对话。
  */
+/** 看图追问的缩略图上限(每张 512px JPEG 约 20-30KB,控制多模态请求成本) */
+const VISION_ATTACH_LIMIT = 6
+
+/** 加载缩略图 base64 + 对应文件名(看图追问用);读不到的跳过。
+ *  文件名随提示词告诉模型——缩略图本身不带名字,否则模型无法回答"哪张是 XX" */
+function loadThumbnails(ids: string[]): { images: { base64: string }[]; names: string[] } {
+  const images: { base64: string }[] = []
+  const names: string[] = []
+  for (const id of ids.slice(0, VISION_ATTACH_LIMIT)) {
+    try {
+      const a = getAssetById(id)
+      const paths = a ? assetPaths(id) : null
+      if (!a || !paths || !paths.thumbnail) continue
+      images.push({ base64: readFileSync(paths.thumbnail).toString('base64') })
+      names.push(a.name)
+    } catch {
+      /* 缩略图缺失跳过 */
+    }
+  }
+  return { images, names }
+}
+
 export async function agentChatTurn(
   message: string,
   history: ChatTurn[],
   cfg: AiConfig,
-  onDelta?: (accumulated: string) => void
+  onDelta?: (accumulated: string) => void,
+  imageIds?: string[]
 ): Promise<AgentReply> {
   const trimmed = message.trim()
   if (!trimmed) {
     return { reply: '想找什么素材？直接描述就行。', conditions: null, smart: null, assets: [], total: 0, truncated: false, matchedTags: [], raw: '' }
   }
 
-  const prompt = buildPrompt(trimmed)
+  // 看图追问:附带当前结果缩略图(上限 6 张),模型可结合画面回答
+  const attached = imageIds && imageIds.length > 0 ? loadThumbnails(imageIds) : null
+  const images = attached?.images ?? []
+  const prompt =
+    buildPrompt(trimmed) +
+    (images.length > 0
+      ? `\n\n本轮附带 ${images.length} 张图片(当前检索结果的缩略图,按顺序)。文件名对照: ${attached!.names
+          .map((n, idx) => `${idx + 1}=${n}`)
+          .join(', ')}。可结合画面内容回答用户的追问(如"哪张是红色的"就看图比较颜色);如用户意图仍是调整检索条件,照常输出 conditions。`
+      : '')
   // maxTokens 给足:推理型模型思考链与正文共享预算
   let content = onDelta
-    ? await chatStream(cfg, prompt, (acc) => onDelta(acc), 1500, 90_000, 0.2, history)
-    : await chat(cfg, prompt, undefined, 1500, 90_000, 0.2, history)
+    ? await chatStream(cfg, prompt, (acc) => onDelta(acc), 1500, 90_000, 0.2, history, images.length > 0 ? images : undefined)
+    : await chat(cfg, prompt, images.length > 0 ? images : undefined, 1500, 90_000, 0.2, history)
   let obj = extractJson(content)
 
   if (!obj) {

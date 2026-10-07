@@ -85,8 +85,8 @@ export function registerAiIpc(getWindow: () => BrowserWindow | null): void {
 
   /* ---------------- 找图助手（对话式检索，里程碑 161） ---------------- */
   // 一轮对话：模型 -> JSON 指令 -> 条件检索。history 由渲染层持有并回传（含上轮原始 JSON，保条件连续性）；
-  // 模型增量经 ai:agentDelta 实时推送(流式)
-  ipcMain.handle('ai:agentChat', async (_e, history: AgentChatTurn[], message: string) => {
+  // 模型增量经 ai:agentDelta 实时推送(流式);imageIds 非空时附带当前结果缩略图(看图追问,多模态)
+  ipcMain.handle('ai:agentChat', async (_e, history: AgentChatTurn[], message: string, imageIds?: string[]) => {
     const cfg = loadConfig()
     if (!cfg.aiApiKey) throw new Error('未配置 AI API Key，请在设置页填写')
     const safeHistory = Array.isArray(history)
@@ -94,11 +94,13 @@ export function registerAiIpc(getWindow: () => BrowserWindow | null): void {
           .filter((h) => h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
           .slice(-20)
       : []
+    const safeImageIds = Array.isArray(imageIds) ? imageIds.filter((x) => typeof x === 'string').slice(0, 6) : []
     return agentChatTurn(
       String(message ?? ''),
       safeHistory,
       { baseUrl: cfg.aiBaseUrl ?? 'https://open.bigmodel.cn/api/paas/v4', apiKey: cfg.aiApiKey, model: cfg.aiModel ?? 'glm-4v' },
-      (acc) => getWindow()?.webContents.send('ai:agentDelta', { text: acc })
+      (acc) => getWindow()?.webContents.send('ai:agentDelta', { text: acc }),
+      safeImageIds.length > 0 ? safeImageIds : undefined
     )
   })
 

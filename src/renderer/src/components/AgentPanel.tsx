@@ -32,6 +32,8 @@ export default function AgentPanel() {
   const [rerankProgress, setRerankProgress] = useState('')
   /** 模型流式输出的尾部预览(等待时让"AI 在说话"可感知) */
   const [streamTail, setStreamTail] = useState('')
+  /** 看图追问开关:开启后追问附带最近一轮结果的缩略图(上限 6 张) */
+  const [attachImages, setAttachImages] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // 流式增量订阅:busy 期间显示模型输出尾部
@@ -67,7 +69,11 @@ export default function AgentPanel() {
     const q = (preset ?? input).trim()
     if (!q || busy) return
     setInput('')
-    void useLibraryStore.getState().agentSend(q)
+    // 看图追问:开启附图时带上最近一轮结果的素材 id(上限 6),发完自动关闭(控制多模态成本)
+    const lastAssets = [...messages].reverse().find((m) => m.role === 'assistant' && m.assets?.length)?.assets
+    const imageIds = attachImages && lastAssets ? lastAssets.slice(0, 6).map((a) => a.id) : undefined
+    if (attachImages) setAttachImages(false)
+    void useLibraryStore.getState().agentSend(q, imageIds)
   }
 
   const clearChat = () => {
@@ -93,15 +99,19 @@ export default function AgentPanel() {
     }
   }
 
-  /** 把本轮条件存成智能文件夹（结果自动更新，可长期复用） */
+  /** 把本轮条件存成智能文件夹（结果自动更新，可长期复用）；存好跳转到该文件夹让用户立刻看到 */
   const saveSmart = async (m: AgentMsg) => {
     if (!m.smart) return
     const name = smartName.trim() || '助手收藏'
     try {
-      await window.api.createFolder(name, null, 1, JSON.stringify(m.smart))
+      const created = await window.api.createFolder(name, null, 1, JSON.stringify(m.smart))
       await useLibraryStore.getState().refreshFolders()
       useLibraryStore.getState().showToast(`已创建智能文件夹「${name}」`)
       setSmartSaveFor(null)
+      if (created?.id) {
+        useLibraryStore.getState().setView({ type: 'folder', id: created.id })
+        closeAgentPanel()
+      }
     } catch (e) {
       useLibraryStore.getState().showToast(`创建失败：${String((e as Error)?.message ?? e)}`)
     }
@@ -418,6 +428,26 @@ export default function AgentPanel() {
               if (e.key === 'Enter' && !e.nativeEvent.isComposing) send()
             }}
           />
+          {/* 看图追问开关:开启后追问附带最近一轮结果的缩略图(有结果时才可用) */}
+          {(() => {
+            const hasLastAssets = [...messages].reverse().some((m) => m.role === 'assistant' && m.assets?.length)
+            if (!hasLastAssets) return null
+            return (
+              <button
+                className={`shrink-0 rounded-sm border px-2 text-[11px] transition-colors duration-100 disabled:opacity-40 ${
+                  attachImages
+                    ? 'border-[var(--accent)] text-[var(--accent-text)]'
+                    : 'border-[var(--border)] text-[var(--text-dim)] hover:text-[var(--accent-text)]'
+                }`}
+                disabled={busy}
+                title="开启后，下一条追问会附带最近一轮结果的缩略图给 AI 看"
+                aria-pressed={attachImages}
+                onClick={() => setAttachImages((v) => !v)}
+              >
+                <Icon name="eye" size={12} />
+              </button>
+            )
+          })()}
           <button
             className="btn-ghost shrink-0 disabled:opacity-40"
             disabled={busy || !input.trim()}

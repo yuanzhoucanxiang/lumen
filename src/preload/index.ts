@@ -100,9 +100,9 @@ const api = {
     ipcRenderer.on('ai:searchProgress', h)
     return () => ipcRenderer.removeListener('ai:searchProgress', h)
   },
-  /** 找图助手：一轮对话（多轮历史由调用方回传） */
-  agentChat: (history: AgentChatTurn[], message: string): Promise<AgentReply> =>
-    ipcRenderer.invoke('ai:agentChat', history, message),
+  /** 找图助手：一轮对话（多轮历史由调用方回传）；imageIds 非空时附带当前结果缩略图（看图追问） */
+  agentChat: (history: AgentChatTurn[], message: string, imageIds?: string[]): Promise<AgentReply> =>
+    ipcRenderer.invoke('ai:agentChat', history, message, imageIds),
   /** 找图助手：直接执行一组结构化条件（不经过模型） */
   agentSearch: (conditions: unknown): Promise<AgentSearchResult> =>
     ipcRenderer.invoke('ai:agentSearch', conditions),

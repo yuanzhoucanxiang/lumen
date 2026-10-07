@@ -138,6 +138,7 @@ export async function mapWithConcurrency<T, R>(
 /**
  * 流式版 chat(SSE):边生成边经 onDelta 回调吐出增量(找图助手用,让等待可感知)。
  * - 解析 OpenAI 兼容 SSE(data: {...choices[].delta.content});reasoning_content 增量忽略
+ * - images 可选:附带在最后一条 user 消息上(多模态追问)
  * - 流式不可用(无 body)或整条流未产出任何 content 时,回退非流式 chat 重发一次
  * - 超时语义与 chat 一致:整个流式过程共享一个计时器
  */
@@ -148,14 +149,23 @@ export async function chatStream(
   maxTokens = 300,
   timeoutMs = 60_000,
   temperature = 0.3,
-  history?: ChatTurn[]
+  history?: ChatTurn[],
+  images?: { base64: string }[]
 ): Promise<string> {
   const url = `${normalizeAiBaseUrl(cfg.baseUrl)}/chat/completions`
   const messages: Record<string, unknown>[] = (history ?? []).map((h) => ({
     role: h.role,
     content: h.content
   }))
-  messages.push({ role: 'user', content: text })
+  if (images && images.length > 0) {
+    const content: Record<string, unknown>[] = [{ type: 'text', text }]
+    for (const img of images) {
+      content.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${img.base64}` } })
+    }
+    messages.push({ role: 'user', content })
+  } else {
+    messages.push({ role: 'user', content: text })
+  }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
