@@ -368,7 +368,7 @@ export default function Gallery() {
   }, [viewKey, loading, assets])
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
-  const [folderSubmenu, setFolderSubmenu] = useState({ open: false, left: false, up: false })
+  const [folderSubmenu, setFolderSubmenu] = useState({ open: false, left: false, up: false, top: 0 })
   /** 导出对话框的素材范围 */
   const [exportIds, setExportIds] = useState<string[] | null>(null)
   /** 批量重命名的素材集（保持图库当前顺序,供 {序号} 编号） */
@@ -450,7 +450,7 @@ export default function Gallery() {
       endHover()
       const st = useLibraryStore.getState()
       if (!st.selection.includes(id)) st.setSelection([id])
-      setFolderSubmenu({ open: false, left: false, up: false })
+      setFolderSubmenu({ open: false, left: false, up: false, top: 0 })
       setMenu({ x: e.clientX, y: e.clientY, id })
     },
     [endHover]
@@ -631,7 +631,11 @@ export default function Gallery() {
     const roomLeft = rect.left - CONTEXT_MENU_MARGIN
     const left = roomRight < FOLDER_SUBMENU_W && roomLeft > roomRight
     const up = rect.top + height > window.innerHeight - CONTEXT_MENU_MARGIN
-    setFolderSubmenu({ open: true, left, up })
+    // 垂直位置用显式像素值并双向钳制：向上对齐(底对齐行)时,行靠近屏幕顶部会把子菜单顶出视口上边界(回归实测)
+    let top = up ? rect.height - height : 0
+    top = Math.min(top, window.innerHeight - CONTEXT_MENU_MARGIN - height - rect.top)
+    top = Math.max(top, CONTEXT_MENU_MARGIN - rect.top)
+    setFolderSubmenu({ open: true, left, up, top })
   }
 
   const doDelete = async () => {
@@ -1087,8 +1091,8 @@ export default function Gallery() {
                 data-placement-y={folderSubmenu.up ? 'up' : 'down'}
                 className={`menu absolute z-10 w-44 max-w-[calc(100vw-16px)] overflow-y-auto py-1 ${
                   folderSubmenu.open ? 'block' : 'hidden'
-                } ${folderSubmenu.left ? 'right-full' : 'left-full'} ${folderSubmenu.up ? 'bottom-0' : 'top-0'}`}
-                style={{ maxHeight: `calc(100vh - ${CONTEXT_MENU_MARGIN * 2}px)` }}
+                } ${folderSubmenu.left ? 'right-full' : 'left-full'}`}
+                style={{ top: folderSubmenu.top, maxHeight: `calc(100vh - ${CONTEXT_MENU_MARGIN * 2}px)` }}
               >
                 {normalFolders.map((f) => (
                   <button

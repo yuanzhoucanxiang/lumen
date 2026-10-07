@@ -91,6 +91,10 @@ export function registerSettingsIpc(getWindow: () => BrowserWindow | null): void
       model: cfg.aiModel ?? 'glm-4v'
     }
     const idx = profiles.findIndex((p) => p.name === trimmed)
+    // 防丢 Key：同名更新时若当前配置没有 Key（尚未填写/只改了地址或模型），保留档案里已存的 Key
+    if (idx >= 0 && !next.apiKey && profiles[idx].apiKey) {
+      next.apiKey = profiles[idx].apiKey
+    }
     if (idx >= 0) profiles[idx] = next
     else profiles.unshift(next)
     cfg.aiProfiles = profiles.slice(0, 20)

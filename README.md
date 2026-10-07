@@ -152,7 +152,7 @@ node scripts/release.cjs --no-git       # 不执行 git tag/push
 流程：版本 bump → notes 生成/校验 → `npm run build:win` → `gh release create` → git tag + push。
 
 - **notes 来源**：优先读 `notes.md`（存在则直接使用）；不存在则从 `工作日志.md` 最后一条里程碑**自动生成分点草稿**写入 `notes.md`，编辑后再次运行即可发布。
-- **格式校验**：发布前校验 notes 必须是「分类标题 + `·` 条目」格式，不合规会中止。
+- **格式校验**：发布前校验 notes 必须每个分类区块下至少有 1 行条目（零符号块与旧 `·` 条目都通过），不合规会中止。
 
 > 安装包文件名必须用 ASCII（GitHub 附件名会剥掉非 ASCII 字符，中文名会导致 latest.yml 引用 404）。
 

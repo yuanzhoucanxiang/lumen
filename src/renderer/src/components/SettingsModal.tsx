@@ -497,7 +497,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             {(settings.aiProfiles?.length ?? 0) > 0 && (
               <div>
                 <label className="mb-0.5 block text-[11px] text-[var(--text-dim)]">
-                  已保存的服务商（点击切换，不用重填 Key）
+                  已保存的服务商（点击切换，不用重填 Key；切换前可先保存当前配置）
                 </label>
                 <div className="flex flex-wrap gap-1.5">
                   {(settings.aiProfiles ?? []).map((p) => {

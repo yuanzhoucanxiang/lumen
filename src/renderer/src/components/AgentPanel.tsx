@@ -180,7 +180,7 @@ export default function AgentPanel() {
 
   /** 以图搜图（里程碑 178）：参考图 = 选中素材 / 粘贴 / 拖入的图片（dHash 确定性检索，不消耗 AI） */
   const searchSimilar = async (source: { assetId?: string; dataUrl?: string }, label: string) => {
-    if (similarBusy) return
+    if (similarBusy || useLibraryStore.getState().agentBusy) return
     setSimilarBusy(true)
     try {
       const r = await window.api.agentSimilar(source)
