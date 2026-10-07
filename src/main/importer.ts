@@ -1,6 +1,6 @@
 import { existsSync } from 'fs'
 import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'fs/promises'
-import { basename, extname, join } from 'path'
+import { basename, dirname, extname, join } from 'path'
 import { randomUUID } from 'crypto'
 import { spawn } from 'child_process'
 import { cpus } from 'os'
@@ -58,6 +58,32 @@ export function assetKindOf(ext: string): 'image' | 'video' | 'audio' | 'other' 
   return 'other'
 }
 
+/**
+ * 浏览器"另存为网页"产生的资源夹判定:X_files 且同级存在 X.html / X.htm。
+ * 这类目录装的全是页面碎片（站标/头像/缩略图,实测一次保存 = 971 张 72px 小图），
+ * 监控文件夹递归或手动导入都不应吞进来（里程碑 170）。
+ * 签名足够精确（同名 html 兄弟文件）——普通叫 xxx_files 的素材文件夹不受影响；
+ * 夹内单个文件仍可直接指定路径导入。
+ */
+function isWebSaveAssetsDir(dirPath: string): boolean {
+  if (!dirPath.endsWith('_files')) return false
+  const base = dirPath.slice(0, -'_files'.length)
+  return existsSync(`${base}.html`) || existsSync(`${base}.htm`)
+}
+
+/** 文件是否位于网页保存资源夹内（沿父级链向上查，含子目录）。
+ *  watcher 的实时文件事件不经过 collectFiles，需要独立判定（里程碑 170）。 */
+export function isInWebSaveDir(filePath: string, maxUp = 8): boolean {
+  let dir = dirname(filePath)
+  for (let i = 0; i < maxUp; i++) {
+    if (isWebSaveAssetsDir(dir)) return true
+    const parent = dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  return false
+}
+
 /** 递归展开路径列表，返回所有可导入的文件路径（异步遍历，不阻塞主进程）。
  *  同一批调用里的重叠路径（目录+目录内文件 / 同一路径传两次）会展开出重复条目，
  *  而阶段 A 并发准备时彼此不可见（尚未提交），重复条目会把同一文件入库两次 —— 按路径归一去重兜底。 */
@@ -74,6 +100,7 @@ export async function collectFiles(paths: string[], acc: string[] = []): Promise
       return // 路径不存在/不可访问(与原 existsSync 预检语义一致)
     }
     if (st.isDirectory()) {
+      if (isWebSaveAssetsDir(p)) return // 网页保存资源夹:整夹跳过
       for (const e of await readdir(p, { withFileTypes: true })) {
         // 跳过符号链接/junction:目录联接可指向库外,递归会把外部目录整棵搬进库(Windows 建 junction 无需特权)
         if (e.isSymbolicLink()) continue

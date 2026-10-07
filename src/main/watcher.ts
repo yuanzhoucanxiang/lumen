@@ -1,8 +1,15 @@
 import { existsSync, lstatSync, statSync, watch, type FSWatcher } from 'fs'
-import { join, sep } from 'path'
+import { extname, join, sep } from 'path'
 import { loadConfig } from './library'
-import { collectFiles, importFiles } from './importer'
+import { assetKindOf, collectFiles, importFiles, isInWebSaveDir } from './importer'
 import { logger } from './logger'
+
+/** 监控/启动同步只收媒体素材(图片/视频/音频/字体)——自动导入应保守:
+ *  网页保存会产生 .html/.js/.css 及 `.下载` 等临时产物(里程碑 170 实证),
+ *  未识别的 `other` 类型一律不进(手动/Agent 导入不受此限,仍可收任意文件)。 */
+function isMediaFile(p: string): boolean {
+  return assetKindOf(extname(p).slice(1)) !== 'other'
+}
 
 const watchers = new Map<string, FSWatcher>()
 /** 防抖窗口内累积的待导入文件(Set 天然去重同一文件的多事件) */
@@ -31,6 +38,8 @@ async function flush(): Promise<void> {
     const valid = paths.filter((p) => {
       if (!existsSync(p) || !statSync(p).isFile()) return false
       if (p === cfg.current || p.startsWith(libPrefix)) return false
+      if (!isMediaFile(p)) return false // 非媒体文件(html/js/临时下载产物等)不进
+      if (isInWebSaveDir(p)) return false // 网页保存资源夹内的文件(实时事件不走 collectFiles,此处独立判定)
       try {
         return !lstatSync(p).isSymbolicLink()
       } catch {
@@ -109,7 +118,7 @@ export function stopWatchers(): void {
 export async function syncOnStartup(onImported: (count: number) => void): Promise<void> {
   const dirs = loadConfig().watchDirs
   if (dirs.length === 0) return
-  const files = await collectFiles(dirs)
+  const files = (await collectFiles(dirs)).filter(isMediaFile)
   if (files.length === 0) return
   logger.info('[watcher]', `启动增量同步：扫描 ${dirs.length} 个监控目录，${files.length} 个文件`)
   // importMode 由 loadConfig 决定，syncOnStartup 用 copy（不删源文件，监控目录的文件要保留）

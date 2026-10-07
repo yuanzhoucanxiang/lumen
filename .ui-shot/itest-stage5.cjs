@@ -86,11 +86,26 @@ async function main() {
   await run(`window.api.updateSettings({ watchDirs: [${JSON.stringify(watchDir)}] })`)
   // Windows fs.watch 注册后的短暂窗口可能漏事件,给足时间再写文件
   await sleep(1800)
+  // 正常图 3 张 + 干扰项:网页保存资源夹(X.html + X_files/,里程碑 170 应整夹跳过)与非媒体文件(.js 应被类型过滤)
+  const webBase = path.join(watchDir, `${tag}-page`)
+  fs.mkdirSync(`${webBase}_files`, { recursive: true })
+  fs.writeFileSync(`${webBase}.html`, '<html></html>')
+  fs.writeFileSync(path.join(`${webBase}_files`, `${tag}-junk1.png`), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 9, 1, 1]))
+  fs.writeFileSync(path.join(`${webBase}_files`, `${tag}-junk2.jpg`), Buffer.from([255, 216, 255, 9, 9]))
+  fs.writeFileSync(path.join(watchDir, `${tag}-script.js`), 'console.log(1)')
+  // 普通 *_files 目录(无同级 html)不受影响,应正常导入
+  const normalDir = path.join(watchDir, `${tag}-assets_files`)
+  fs.mkdirSync(normalDir, { recursive: true })
+  fs.writeFileSync(path.join(normalDir, `${tag}-normal.png`), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 7, 7, 7]))
   for (let i = 0; i < 3; i++) fs.writeFileSync(path.join(watchDir, `${tag}-${i}.png`), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, i, i + 1, i + 2]))
   await sleep(4000)
   const after = await run(`return { stats: await window.api.getLibraryStats(), events: window.__itestClipEvents }`)
   const delta = after.stats.total - before.stats.total
-  check('3 张图批量落库(统计 +3)', delta === 3, `before=${before.stats.total} after=${after.stats.total}`)
+  // 期望落库 4 张:3 张普通图 + 1 张 xxx_files(无同级 html)内图;网页资源夹整夹跳过、.js 被过滤
+  check('批量落库 4 张(3 正常 + 1 普通 _files 夹;网页资源夹与 .js 被拦)', delta === 4, `before=${before.stats.total} after=${after.stats.total}`)
+  const importedNames = await run(`return (await window.api.queryAssets({ limit: 5000 })).filter((a) => a.name.startsWith(${JSON.stringify(tag)})).map((a) => a.name)`)
+  check('网页保存资源夹内文件未入库', !importedNames.some((n) => n.includes('junk')), JSON.stringify(importedNames))
+  check('非媒体文件(.js)未入库', !importedNames.some((n) => n.endsWith('.js')), JSON.stringify(importedNames))
   // 清理本测试导入的素材(软删除,不留垃圾)
   await run(`(async () => {
     const all = await window.api.queryAssets({ limit: 5000 })
