@@ -204,51 +204,45 @@ function generateDraftFromLog() {
   // 冒号前是主题（如「视频封面 + 更新说明格式」），作为新功能条目
   const theme = segments[0].split('：')[0].trim()
 
-  const groups = { '✨ 新功能': [], '🐛 修复': [], '⚙️ 优化': [] }
+  // 零特殊符号（里程碑 176）：分类名与条目均为纯文本
+  const groups = { '新功能': [], '修复': [], '优化': [] }
   for (const seg of segments) {
     let clean = seg.replace(/^[①-⑨]\**/, '').trim()
     // 去掉 markdown 加粗符号，长条目取主题部分（「——」前）保持简洁
     clean = clean.replace(/\*\*/g, '')
     if (!clean) continue
     const brief = clean.split('——')[0].trim()
-    if (/修复|解决|热修|不再/.test(clean)) groups['🐛 修复'].push(brief)
-    else if (/新增|支持|实现|补齐|补全/.test(clean)) groups['✨ 新功能'].push(brief)
-    else groups['⚙️ 优化'].push(brief)
+    if (/修复|解决|热修|不再/.test(clean)) groups['修复'].push(brief)
+    else if (/新增|支持|实现|补齐|补全/.test(clean)) groups['新功能'].push(brief)
+    else groups['优化'].push(brief)
   }
   // 主题作为第一条新功能
-  if (theme && !groups['✨ 新功能'].includes(theme)) {
-    groups['✨ 新功能'].unshift(theme.replace(/\*\*/g, ''))
+  if (theme && !groups['新功能'].includes(theme)) {
+    groups['新功能'].unshift(theme.replace(/\*\*/g, ''))
   }
 
   const out = []
   for (const [title, items] of Object.entries(groups)) {
     if (items.length === 0) continue
     out.push(title)
-    out.push(...items.map((it) => `· ${it}`))
+    out.push(...items)
     out.push('')
   }
   return out.join('\n').trim()
 }
 
-/** 校验 notes 格式：非空、有分类、每条 `·` 条目前有分类标题 */
+/** 校验 notes 格式：非空、至少一个「分类标题 + 条目行」区块（兼容旧的 · 条目格式，里程碑 176 起推荐零符号块格式） */
 function validateNotes(notes) {
   if (!notes) fail('notes 为空')
-  const lines = notes.split('\n')
-  let inBlock = false
-  let itemCount = 0
-  for (const raw of lines) {
-    const line = raw.trim()
-    if (!line) {
-      inBlock = false
-      continue
-    }
-    if (line.startsWith('·')) {
-      itemCount++
-      if (!inBlock) fail(`条目「${line}」缺少分类标题（· 前应有分类行，如「✨ 新功能」）`)
-    } else {
-      inBlock = true
-    }
+  const blocks = notes
+    .split(/\n\s*\n/)
+    .map((b) => b.split('\n').map((l) => l.trim()).filter(Boolean))
+    .filter((b) => b.length > 0)
+  let entries = 0
+  for (const lines of blocks) {
+    const bullets = lines.filter((l) => /^(?:·|•|[-*]\s)/.test(l))
+    entries += bullets.length > 0 ? bullets.length : Math.max(0, lines.length - 1)
   }
-  if (itemCount === 0) fail('notes 没有任何「· 」条目')
-  ok(`notes 格式校验通过（${itemCount} 条）`)
+  if (entries === 0) fail('notes 没有任何条目（分类标题下应有 1 行以上内容）')
+  ok(`notes 格式校验通过（${entries} 条条目）`)
 }

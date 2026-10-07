@@ -76,6 +76,28 @@ try {
   // 7. 空输入 / 纯空白
   check('空输入返回空数组', parseUpdateNotes('').length === 0 && parseUpdateNotes('   \n\n ').length === 0)
 
+  // 7b. 零符号块格式（里程碑 176 起推荐）：首行分类、其余行条目
+  const plain = parseUpdateNotes('新功能\n助手看图追问：出过结果后可以继续问\n助手视觉重排：按描述重排\n\n优化\n界面贴合三套主题')
+  check(
+    '零符号块格式：分类 + 条目',
+    plain.length === 2 &&
+      plain[0].kind === 'title' &&
+      plain[0].text === '新功能' &&
+      plain[0].items.length === 2 &&
+      plain[1].text === '优化' &&
+      plain[1].items[0] === '界面贴合三套主题',
+    JSON.stringify(plain)
+  )
+
+  // 7c. 零符号格式下不得残留任何特殊符号（#, ·, emoji 等）
+  const symbolRe = /[#·•]|[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u
+  const allText = plain.flatMap((b) => [b.text, ...b.items]).join(' ')
+  check('零符号格式解析结果不含特殊符号', !symbolRe.test(allText), allText.slice(0, 60))
+
+  // 7d. 单行区块 = 段落（引言）
+  const oneLine = parseUpdateNotes('本版带来很多改进。')
+  check('单行区块识别为段落', oneLine.length === 1 && oneLine[0].kind === 'paragraph', JSON.stringify(oneLine))
+
   // 8. 真实 v0.8.35 说明（回归到实际发布内容，确保渲染不含 # 符号）
   const real = fs.readFileSync(path.join(ROOT, '.ui-shot', 'notes-fixture-v0.8.35.md'), 'utf-8')
   const r = parseUpdateNotes(real)
