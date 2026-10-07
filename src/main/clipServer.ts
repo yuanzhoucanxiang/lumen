@@ -23,7 +23,7 @@ import {
 } from './repository'
 import { aiProcessBatch } from './aiRename'
 import { agentMatchedIds } from './aiAgent'
-import { itemsFromAssetIds, listAgentOps, logAgentOp, undoAgentOp } from './agentOps'
+import { itemsFromAssetIds, listAgentOps, logAgentOp, newGroupKey, undoAgentOp } from './agentOps'
 import type { AgentOpItem } from './agentOps'
 import { logger } from './logger'
 import { guardedFetch, readBodyCapped } from './netGuard'
@@ -383,14 +383,16 @@ async function importFromPaths(
     boardItemIds = placeAssetsOnBoard(boardId, importedIds)
   }
 
-  // 操作记录(里程碑 171):每种副作用独立成一条,各自可独立回退
+  // 操作记录(里程碑 171):每种副作用独立成一条,各自可独立回退;
+  // 同一请求共享批次键(里程碑 174),面板按批次归纳成组
+  const gk = newGroupKey()
   // ①导入(移动导入的源文件已删 → 标记不可回退);默认「Agent 导入」归档随之撤销(删除会连归属一起清)
   if (importedIds.length > 0) {
     const summary =
       folderSegments.length > 0
         ? `导入 ${importedIds.length} 个素材`
         : `导入 ${importedIds.length} 个素材，归入「${AGENT_DEFAULT_FOLDER}」`
-    logAgentOp('import', summary, { items: itemsFromAssetIds(importedIds), undoable: payload.move !== true }, importedIds.length)
+    logAgentOp('import', summary, { items: itemsFromAssetIds(importedIds), undoable: payload.move !== true }, importedIds.length, gk)
   }
   // ②显式 folder(作用于新导入 + 命中的库内已有素材)
   if (applyIds.length > 0 && folderSegments.length > 0 && folderId !== null) {
@@ -398,14 +400,15 @@ async function importFromPaths(
       'folder',
       `把 ${applyIds.length} 个素材归入文件夹「${folderSegments.join('/')}」`,
       { items: itemsFromAssetIds(applyIds), folderId, folderName: folderSegments.join('/') },
-      applyIds.length
+      applyIds.length,
+      gk
     )
   }
   // ③标签(每个标签一条)
   if (applyIds.length > 0 && Array.isArray(payload.tags) && payload.tags.length > 0) {
     const tagNames = (payload.tags as unknown[]).map(sanitizeName).filter(Boolean)
     for (const t of tagNames) {
-      logAgentOp('tag', `给 ${applyIds.length} 个素材打标签「${t}」`, { items: itemsFromAssetIds(applyIds), tag: t }, applyIds.length)
+      logAgentOp('tag', `给 ${applyIds.length} 个素材打标签「${t}」`, { items: itemsFromAssetIds(applyIds), tag: t }, applyIds.length, gk)
     }
   }
   // ④上板
@@ -417,7 +420,7 @@ async function importFromPaths(
       name: getAssetById(importedIds[i])?.name ?? itemId,
       assetId: importedIds[i]
     }))
-    logAgentOp('board', `把 ${boardItemIds.length} 个素材放上白板「${bn}」`, { items: boardItems, boardId }, boardItemIds.length)
+    logAgentOp('board', `把 ${boardItemIds.length} 个素材放上白板「${bn}」`, { items: boardItems, boardId }, boardItemIds.length, gk)
   }
 
   // AI 自动打标签:后台队列执行,不阻塞响应;完成/跳过/失败经 agent:notify 推送

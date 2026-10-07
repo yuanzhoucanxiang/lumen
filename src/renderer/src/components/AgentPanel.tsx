@@ -1,9 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Icon from './Icon'
 import { useLibraryStore, type AgentMsg } from '../stores/libraryStore'
 import type { AgentOpView } from '@shared/types'
 
 /** 空态示例提示（点击直接发送） */
+const ACTION_CN: Record<string, string> = {
+  import: '导入',
+  tag: '打标签',
+  untag: '摘标签',
+  folder: '归档',
+  star: '星级',
+  board: '上板',
+  note: '备注'
+}
+
 const EXAMPLES = [
   '最近一周导入的竖构图',
   '还没打过标签的素材',
@@ -41,6 +51,8 @@ export default function AgentPanel() {
   const [undoing, setUndoing] = useState<number | null>(null)
   /** 记录卡片展开的明细(里程碑 172):查看/单独回退每个受影响项 */
   const [expandedOps, setExpandedOps] = useState<Set<number>>(new Set())
+  /** 展开的归纳组(里程碑 174):默认收起,展开看单条操作 */
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // 流式增量订阅:busy 期间显示模型输出尾部
@@ -86,6 +98,82 @@ export default function AgentPanel() {
   const clearChat = () => {
     setSmartSaveFor(null)
     useLibraryStore.getState().agentClearChat()
+  }
+
+  /** 两级归纳（里程碑 174）：先按批次键（同请求）归纳，无键记录按（分钟+动作）归并。
+   *  组卡片默认收起，展开看单条操作，单条再展开看逐项素材。 */
+  const opGroups = useMemo(() => {
+    // 第一层：按批次键(同一次请求的多条记录)归纳——多操作批次保持独立成组
+    const batches = new Map<string, AgentOpView[]>()
+    const singles: AgentOpView[] = []
+    for (const op of ops ?? []) {
+      if (op.groupKey) {
+        const arr = batches.get(op.groupKey)
+        if (arr) arr.push(op)
+        else batches.set(op.groupKey, [op])
+      } else {
+        singles.push(op)
+      }
+    }
+    const groups: { key: string; ops: AgentOpView[] }[] = [...batches.entries()].map(([key, groupOps]) => ({
+      key,
+      ops: groupOps
+    }))
+    // 批次里只有一条的也进入归并池（单独请求常见于逐次导入）
+    const toMerge: AgentOpView[] = [...singles]
+    for (const [key, groupOps] of [...batches.entries()]) {
+      if (groupOps.length === 1) {
+        toMerge.push(groupOps[0])
+        groups.splice(
+          groups.findIndex((g) => g.key === key),
+          1
+        )
+      }
+    }
+    // 第二层：单条记录按(分钟+动作)归并——同分钟的同类单次操作收敛成一行，避免列表拥挤
+    const merged = new Map<string, AgentOpView[]>()
+    for (const op of toMerge) {
+      const key = `${Math.floor(op.ts / 60000)}|${op.action}`
+      const arr = merged.get(key)
+      if (arr) arr.push(op)
+      else merged.set(key, [op])
+    }
+    for (const [key, groupOps] of merged.entries()) groups.push({ key, ops: groupOps })
+    groups.sort((a, b) => (b.ops[0]?.ts ?? 0) - (a.ops[0]?.ts ?? 0))
+    return groups.map((g) => ({
+      key: g.key,
+      ops: g.ops,
+      undoneOps: g.ops.filter((o) => o.undone).length,
+      ts: g.ops[0]?.ts ?? 0,
+      action: g.ops[0]?.action ?? ''
+    }))
+  }, [ops])
+
+  /** 组级回退：逐条撤掉组内记录的剩余项 */
+  const undoGroup = async (groupKey: string, groupOps: AgentOpView[]) => {
+    setUndoing(-1)
+    try {
+      let okCount = 0
+      const msgs: string[] = []
+      for (const op of groupOps) {
+        if (op.undone || !op.undoable) continue
+        const r = await window.api.agentUndoOp(op.id)
+        if (r.ok) okCount++
+        else if (!r.message.includes('已回退过')) msgs.push(r.message)
+      }
+      useLibraryStore.getState().showToast(
+        okCount > 0 ? `已回退该组 ${okCount} 项操作${msgs.length > 0 ? `（${msgs.length} 项未成功）` : ''}` : msgs[0] ?? '没有可回退的操作'
+      )
+      setOps(await window.api.agentOpsList(50))
+      void useLibraryStore.getState().refreshAll()
+      void useLibraryStore.getState().refreshTags()
+      void useLibraryStore.getState().refreshFolders()
+      void groupKey
+    } catch (e) {
+      useLibraryStore.getState().showToast(`回退失败：${String((e as Error)?.message ?? e)}`)
+    } finally {
+      setUndoing(null)
+    }
   }
 
   /** 加载操作记录（切到记录视图时） */
@@ -197,66 +285,8 @@ export default function AgentPanel() {
     }
   }
 
-  return (
-    <aside
-      className="agent-panel anim-slide-left fixed right-0 top-0 z-[140] flex h-full w-[384px] flex-col border-l border-[var(--border)] bg-[var(--bg-panel)] shadow-2xl"
-      aria-label="找图助手"
-      data-testid="agent-panel"
-    >
-      <header className="agent-panel__header flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
-        <div className="flex items-center gap-1.5">
-          <Icon name="assistant" size={13} className="text-[var(--accent-text)]" />
-          <span className="text-[12px] font-medium">助手</span>
-          <span className="agent-panel__kicker text-[10px] text-[var(--text-faint)]">对话式找图</span>
-        </div>
-        <div className="flex items-center gap-1">
-          {/* 视图切换:对话 / 操作记录(里程碑 171) */}
-          <button
-            className={`btn-ghost px-1.5 py-1 ${view === 'ops' ? 'text-[var(--accent-text)]' : ''}`}
-            title={view === 'ops' ? '返回对话' : 'Agent 操作记录（可回退）'}
-            aria-label="操作记录"
-            aria-pressed={view === 'ops'}
-            onClick={() => setView((v) => (v === 'ops' ? 'chat' : 'ops'))}
-          >
-            <Icon name={view === 'ops' ? 'arrowLeft' : 'listRows'} size={12} />
-          </button>
-          {view === 'chat' && messages.length > 0 && (
-            <button
-              className="btn-ghost px-1.5 py-1"
-              title="清空对话"
-              aria-label="清空对话"
-              onClick={clearChat}
-            >
-              <Icon name="trash" size={12} />
-            </button>
-          )}
-          <button
-            className="btn-ghost px-1.5 py-1"
-            title="关闭"
-            aria-label="关闭找图助手"
-            onClick={closeAgentPanel}
-          >
-            <Icon name="close" size={12} />
-          </button>
-        </div>
-      </header>
-
-      {view === 'ops' ? (
-        /* 操作记录视图（里程碑 171）：Agent 写操作审计 + 一键回退 */
-        <div className="agent-ops flex-1 space-y-2 overflow-y-auto px-3 py-3" data-testid="agent-ops">
-          <div className="agent-ops__intro rounded-lg border border-dashed border-[var(--border-strong)] px-3 py-2.5 text-[11px] leading-[1.6] text-[var(--text-dim)]">
-            AI 助手通过本地接口做过的改动都记在这里，点「回退」可撤销（一次性）。
-          </div>
-          {ops === null && (
-            <div className="flex items-center gap-1.5 text-[11.5px] text-[var(--text-faint)]">
-              <Icon name="rotate" size={12} className="animate-spin" />
-              加载中…
-            </div>
-          )}
-          {ops !== null && ops.length === 0 && (
-            <div className="text-[11.5px] text-[var(--text-faint)]">暂无操作记录</div>
-          )}
-          {(ops ?? []).map((op) => (
+  /** 单条操作卡片（里程碑 171/172）：进度 + 全部回退 + 逐项明细展开 */
+  const renderOpCard = (op: AgentOpView) => (
             <div
               key={op.id}
               className="agent-op-card rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-2.5 py-2 text-[11.5px]"
@@ -349,7 +379,125 @@ export default function AgentPanel() {
                 </div>
               )}
             </div>
-          ))}
+  )
+
+  return (
+    <aside
+      className="agent-panel anim-slide-left fixed right-0 top-0 z-[140] flex h-full w-[384px] flex-col border-l border-[var(--border)] bg-[var(--bg-panel)] shadow-2xl"
+      aria-label="找图助手"
+      data-testid="agent-panel"
+    >
+      <header className="agent-panel__header flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
+        <div className="flex items-center gap-1.5">
+          <Icon name="assistant" size={13} className="text-[var(--accent-text)]" />
+          <span className="text-[12px] font-medium">助手</span>
+          <span className="agent-panel__kicker text-[10px] text-[var(--text-faint)]">对话式找图</span>
+        </div>
+        <div className="flex items-center gap-1">
+          {/* 视图切换:对话 / 操作记录(里程碑 171) */}
+          <button
+            className={`btn-ghost px-1.5 py-1 ${view === 'ops' ? 'text-[var(--accent-text)]' : ''}`}
+            title={view === 'ops' ? '返回对话' : 'Agent 操作记录（可回退）'}
+            aria-label="操作记录"
+            aria-pressed={view === 'ops'}
+            onClick={() => setView((v) => (v === 'ops' ? 'chat' : 'ops'))}
+          >
+            <Icon name={view === 'ops' ? 'arrowLeft' : 'listRows'} size={12} />
+          </button>
+          {view === 'chat' && messages.length > 0 && (
+            <button
+              className="btn-ghost px-1.5 py-1"
+              title="清空对话"
+              aria-label="清空对话"
+              onClick={clearChat}
+            >
+              <Icon name="trash" size={12} />
+            </button>
+          )}
+          <button
+            className="btn-ghost px-1.5 py-1"
+            title="关闭"
+            aria-label="关闭找图助手"
+            onClick={closeAgentPanel}
+          >
+            <Icon name="close" size={12} />
+          </button>
+        </div>
+      </header>
+
+      {view === 'ops' ? (
+        /* 操作记录视图（里程碑 171）：Agent 写操作审计 + 一键回退 */
+        <div className="agent-ops flex-1 space-y-2 overflow-y-auto px-3 py-3" data-testid="agent-ops">
+          <div className="agent-ops__intro rounded-lg border border-dashed border-[var(--border-strong)] px-3 py-2.5 text-[11px] leading-[1.6] text-[var(--text-dim)]">
+            AI 助手通过本地接口做过的改动都记在这里，点「回退」可撤销（一次性）。
+          </div>
+          {ops === null && (
+            <div className="flex items-center gap-1.5 text-[11.5px] text-[var(--text-faint)]">
+              <Icon name="rotate" size={12} className="animate-spin" />
+              加载中…
+            </div>
+          )}
+          {ops !== null && ops.length === 0 && (
+            <div className="text-[11.5px] text-[var(--text-faint)]">暂无操作记录</div>
+          )}
+          {opGroups.map((g) =>
+            g.ops.length === 1 ? (
+              renderOpCard(g.ops[0])
+            ) : (
+              /* 归纳组卡片（里程碑 174）：默认收起，展开看单条操作 */
+              <div
+                key={g.key}
+                className="agent-op-card agent-op-group rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-2.5 py-2 text-[11.5px]"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className={`min-w-0 flex-1 leading-[1.6] ${g.undoneOps === g.ops.length ? 'text-[var(--text-faint)] line-through' : ''}`}>
+                    {ACTION_CN[g.action] ?? g.action} ×{g.ops.length} 项操作
+                  </span>
+                  {g.undoneOps === g.ops.length ? (
+                    <span className="shrink-0 rounded-sm border border-[var(--border)] px-1.5 py-0.5 text-[10px] text-[var(--text-faint)]">
+                      已回退
+                    </span>
+                  ) : (
+                    <button
+                      className="shrink-0 rounded-sm border border-[var(--border)] px-1.5 py-0.5 text-[10px] text-[var(--text-dim)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent-text)] disabled:opacity-40"
+                      disabled={undoing !== null}
+                      title="回退该组全部操作的剩余项"
+                      onClick={() => void undoGroup(g.key, g.ops)}
+                    >
+                      {undoing === -1 ? '回退中…' : '全部回退'}
+                    </button>
+                  )}
+                </div>
+                <div className="tnum mt-1 flex items-center gap-1.5 text-[10px] text-[var(--text-faint)]">
+                  <span>
+                    {new Date(g.ts).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    {' · 已回退 '}
+                    {g.undoneOps}/{g.ops.length} 项
+                  </span>
+                  <button
+                    className="flex items-center gap-0.5 text-[10px] text-[var(--text-dim)] transition-colors hover:text-[var(--accent-text)]"
+                    aria-expanded={expandedGroups.has(g.key)}
+                    onClick={() =>
+                      setExpandedGroups((prev) => {
+                        const next = new Set(prev)
+                        if (next.has(g.key)) next.delete(g.key)
+                        else next.add(g.key)
+                        return next
+                      })
+                    }
+                  >
+                    <Icon name="chevronDown" size={9} className={expandedGroups.has(g.key) ? '' : '-rotate-90'} />
+                    {expandedGroups.has(g.key) ? '收起操作' : `展开 ${g.ops.length} 条操作`}
+                  </button>
+                </div>
+                {expandedGroups.has(g.key) && (
+                  <div className="mt-1.5 space-y-1.5 border-t border-[var(--border)] pt-1.5">
+                    {g.ops.map((op) => renderOpCard(op))}
+                  </div>
+                )}
+              </div>
+            )
+          )}
         </div>
       ) : (
       <>

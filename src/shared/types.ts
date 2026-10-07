@@ -221,6 +221,8 @@ export interface AgentOpView {
   items: AgentOpItemView[]
   /** 已回退项数（与 items.length 比较可显示进度） */
   undoneCount: number
+  /** 批次键：同一次请求的多条记录共享；面板据此归纳成组（里程碑 174） */
+  groupKey: string
 }
 
 /** 多轮对话历史项(找图助手上下文) */

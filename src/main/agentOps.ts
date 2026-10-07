@@ -42,6 +42,11 @@ export interface AgentOpItem {
 
 export type AgentOp = AgentOpView
 
+/** 生成批次键：同一次请求里的多条记录共享，面板归纳成组（里程碑 174） */
+export function newGroupKey(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+}
+
 interface OpRow {
   id: number
   ts: number
@@ -51,6 +56,7 @@ interface OpRow {
   affected: number
   undone: number
   undone_items: string
+  group_key: string
 }
 
 function parseJson<T>(raw: string, fallback: T): T {
@@ -73,13 +79,14 @@ export function logAgentOp(
     boardId?: number
     undoable?: boolean
   },
-  affected: number
+  affected: number,
+  groupKey = ''
 ): void {
   if (payload.items.length === 0) return
   try {
     getDb()
-      .prepare('INSERT INTO agent_ops (ts, action, summary, payload, affected) VALUES (?, ?, ?, ?, ?)')
-      .run(Date.now(), action, summary.slice(0, 200), JSON.stringify(payload), affected)
+      .prepare('INSERT INTO agent_ops (ts, action, summary, payload, affected, group_key) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(Date.now(), action, summary.slice(0, 200), JSON.stringify(payload), affected, groupKey)
     logger.info('[agentOps]', `${action}: ${summary} (影响 ${affected})`)
   } catch (e) {
     // 记录失败绝不影响业务操作本身
@@ -99,7 +106,7 @@ export function itemsFromAssetIds(ids: string[]): AgentOpItem[] {
 export function listAgentOps(limit = 30): AgentOp[] {
   const rows = getDb()
     .prepare(
-      'SELECT id, ts, action, summary, payload, affected, undone, undone_items FROM agent_ops ORDER BY ts DESC, id DESC LIMIT ?'
+      'SELECT id, ts, action, summary, payload, affected, undone, undone_items, group_key FROM agent_ops ORDER BY ts DESC, id DESC LIMIT ?'
     )
     .all(Math.min(Math.max(limit, 1), 200)) as OpRow[]
   return rows.map((r) => {
@@ -120,7 +127,8 @@ export function listAgentOps(limit = 30): AgentOp[] {
       undone: r.undone === 1,
       undoable: p.undoable !== false,
       items,
-      undoneCount: items.filter((i) => i.undone).length
+      undoneCount: items.filter((i) => i.undone).length,
+      groupKey: r.group_key ?? ''
     }
   })
 }
@@ -135,7 +143,7 @@ export function undoAgentOp(
 ): { ok: boolean; message: string; undoneCount?: number; remaining?: number } {
   const db = getDb()
   const row = db
-    .prepare('SELECT id, ts, action, summary, payload, affected, undone, undone_items FROM agent_ops WHERE id = ?')
+    .prepare('SELECT id, ts, action, summary, payload, affected, undone, undone_items, group_key FROM agent_ops WHERE id = ?')
     .get(id) as OpRow | undefined
   if (!row) return { ok: false, message: '记录不存在' }
   if (row.undone === 1) return { ok: false, message: '该操作已回退过' }

@@ -389,6 +389,19 @@ async function main() {
   const rUndoDone = partOp ? await request('POST', '/undo', JSON.stringify({ id: partOp.id })) : null
   check('回退已完结记录 400', rUndoDone?.status === 400, `status=${rUndoDone?.status}`)
 
+  /* ---------- 5j. 批次键:同一次请求的多条记录共享 groupKey(里程碑 174) ---------- */
+  // 新文件走完整 /import(带标签+归档)-> 一次请求产生 import/folder/tag 多条记录
+  const gkFile = path.join(dupDir, `${tag}-gk.png`)
+  fs.writeFileSync(gkFile, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 3, 3, 3]))
+  await request('POST', '/import', JSON.stringify({ paths: [gkFile], tags: [`${TAG_NAME}-批次`], folder: `${tag}-批次夹` }))
+  const opsGk = (await request('GET', '/ops?limit=20')).json?.ops ?? []
+  check('/ops 记录带 groupKey(批次键非空)', opsGk.length > 0 && opsGk.every((o) => typeof o.groupKey === 'string') && opsGk[0].groupKey.length > 0,
+    `sample=${opsGk.slice(0, 3).map((o) => o.groupKey).join(',')}`)
+  const gk = opsGk[0]?.groupKey ?? ''
+  const fromSame = opsGk.filter((o) => o.groupKey === gk)
+  check('同请求的多条记录共享同一 groupKey(可归纳成组)', gk.length > 0 && fromSame.length >= 3,
+    `count=${fromSame.length} actions=${fromSame.map((o) => o.action).join(',')}`)
+
   /* ---------- 6. CDP 会话建立(清理与技能安装断言都走渲染层) ---------- */
   const targets = await getJson('http://127.0.0.1:9333/json/list')
   const page = targets.find((t) => t.type === 'page' && t.url.includes('localhost:5173') && !t.url.includes('floating'))
