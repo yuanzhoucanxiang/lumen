@@ -3,7 +3,7 @@
 > 类 Eagle 的本地素材管理桌面应用：收集、整理、检索你的图片 / 视频 / 音频 / 字体 / PSD 素材。
 > 数据全部存在本地，无需注册、无需联网（联网仅用于自动更新）。
 
-当前版本 **v0.8.38**。安装包下载：<https://github.com/yuanzhoucanxiang/shiguang-materials/releases/latest>
+当前版本 **v0.8.39**。安装包下载：<https://github.com/yuanzhoucanxiang/shiguang-materials/releases/latest>
 
 ---
 
