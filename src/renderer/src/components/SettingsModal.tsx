@@ -80,6 +80,9 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
   /** 服务商档案（里程碑 179） */
   const [profileName, setProfileName] = useState('')
   const [profileDeletePending, setProfileDeletePending] = useState<string | null>(null)
+  /** 清空 Agent 操作记录：两次点击确认（里程碑 185） */
+  const [opsClearPending, setOpsClearPending] = useState(false)
+  const [clearingOps, setClearingOps] = useState(false)
   const [skillInstalling, setSkillInstalling] = useState(false)
   const [skillStatus, setSkillStatus] = useState<{ installed: boolean; upToDate: boolean } | null>(null)
 
@@ -209,6 +212,24 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
     }
   }
 
+  /** 清空 Agent 操作记录（里程碑 185）：两次点击确认，防误清掉还想回退的记录 */
+  const clearOps = async () => {
+    if (!opsClearPending) {
+      setOpsClearPending(true)
+      return
+    }
+    setOpsClearPending(false)
+    setClearingOps(true)
+    try {
+      const n = await window.api.agentOpsClear()
+      useLibraryStore.getState().showToast(n > 0 ? `已清空 ${n} 条操作记录` : '没有可清空的记录')
+    } catch (e) {
+      useLibraryStore.getState().showToast(`清空失败：${(e as Error).message}`)
+    } finally {
+      setClearingOps(false)
+    }
+  }
+
   /** 一键安装 lumen 技能到本机 agent 技能目录(设置 → Agent 接入) */
   const installSkill = async () => {
     setSkillInstalling(true)
@@ -257,6 +278,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
     .filter((f) => !f.isSmart)
     .map((f) => ({ id: f.id, name: f.name, depth: depthOf(f) }))
   const scopeIds = settings.agentWriteFolders ?? []
+  /** 配置里指向已不存在的文件夹的项（里程碑 185）：静默导致 403 的隐患，需在界面上暴露 */
+  const missingScopeIds = scopeIds.filter((id) => !folderById.has(id))
 
   return (
     <div
@@ -789,6 +812,20 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
                       ))
                     )}
                   </div>
+                  {/* 失效项提示（里程碑 185）：文件夹被删/改名后，它的 id 还留在配置里但匹配不上任何路径，
+                      Agent 会一直吃 403，而清单里根本看不到它（清单按现有文件夹渲染）——在这里显式暴露 */}
+                  {missingScopeIds.length > 0 && (
+                    <div className="mt-1 rounded-md border border-[var(--warning,#e0a83c)] px-2 py-1 text-[10.5px] leading-[1.5] text-[var(--text-dim)]">
+                      有 {missingScopeIds.length} 个已勾选的文件夹已不存在（被删除或改名），它们不会放行任何路径：
+                      <span className="mono"> {missingScopeIds.join(', ')}</span>
+                      <button
+                        className="ml-1.5 underline"
+                        onClick={() => void update({ agentWriteFolders: scopeIds.filter((id) => folderById.has(id)) })}
+                      >
+                        清除失效项
+                      </button>
+                    </div>
+                  )}
                   <div className="mt-1 text-[10.5px] leading-[1.5] text-[var(--text-faint)]">
                     一个都没勾时，Agent 只能写入自带的「Agent 导入」文件夹。勾了父文件夹就不用再勾子文件夹；
                     范围外的归档/导入请求会被拒绝并提示来此处添加。
@@ -796,6 +833,20 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
                 </div>
               )}
             </div>
+          </div>
+          <div className="mt-3 border-t border-[var(--border)] pt-2.5">
+            <div className="mb-1 text-[11px] font-medium text-[var(--text-dim)]">操作记录</div>
+            <div className="mb-1.5 text-[10.5px] leading-[1.5] text-[var(--text-faint)]">
+              Agent 的每次写操作都会记一条（助手面板「操作记录」里可查看与回退）。记录会自动裁剪：
+              保留最近 90 天、最多 5000 条，更老的记录不能再回退。
+            </div>
+            <button
+              className="btn-ghost disabled:opacity-40"
+              disabled={clearingOps}
+              onClick={() => void clearOps()}
+            >
+              {opsClearPending ? '再点一次确认清空' : '清空操作记录'}
+            </button>
           </div>
           <div className="mt-1.5 text-[10.5px] leading-[1.5] text-[var(--text-faint)]">
             安装到 ~/.agents/skills/lumen（检测到 Claude Code 时同步写入 ~/.claude/skills/lumen）；

@@ -126,6 +126,42 @@ async function main() {
     `)
     check(`${theme} 服务商档案保存/删除往返且不影响当前配置`, prof.has && prof.gone && prof.sameActive, JSON.stringify(prof))
 
+    // 可写范围失效项提示 + 操作记录清空入口（里程碑 185）：只在首个主题跑一次
+    if (theme === 'silver-gelatin') {
+      // 直接调 API 改设置不会触发卡片重渲染，故改完关掉设置再重开，让卡片重新加载
+      await run(`await window.api.updateSettings({ agentWriteFolders: [999999] })`)
+      await run(`document.querySelector('button[aria-label="关闭设置与帮助"]').click()`)
+      await sleep(120)
+      await run(`document.querySelector('button[title="设置"]').click()`)
+      for (let i = 0; i < 40; i++) {
+        await sleep(150)
+        if (await run(`return !!document.querySelector('.settings-hub')`)) break
+      }
+      await sleep(150)
+      const scopeWarn = await run(`
+        const card = [...document.querySelectorAll('.settings-module')].find((el) => el.textContent.includes('可写入文件夹'))
+        const text = card?.textContent ?? ''
+        const clearBtn = card ? [...card.querySelectorAll('button')].find((b) => b.textContent.includes('清除失效项')) : null
+        const before = (await window.api.getSettings()).agentWriteFolders ?? []
+        if (clearBtn) clearBtn.click()
+        await new Promise((r) => setTimeout(r, 180))
+        const after = (await window.api.getSettings()).agentWriteFolders ?? []
+        return {
+          warn: text.includes('已不存在') && text.includes('999999'),
+          hadBad: before.includes(999999),
+          cleared: !after.includes(999999),
+          hasClearBtn: !!clearBtn,
+          retentionHint: text.includes('90 天') && text.includes('5000 条'),
+          hasOpsBtn: !!card && !!([...card.querySelectorAll('button')].find((b) => b.textContent.includes('清空操作记录')))
+        }
+      `)
+      check('可写范围失效文件夹有提示且可一键清除',
+        scopeWarn.warn && scopeWarn.hadBad && scopeWarn.cleared && scopeWarn.hasClearBtn,
+        JSON.stringify(scopeWarn))
+      check('操作记录保留策略提示与清空入口就位(不实际清空)',
+        scopeWarn.retentionHint && scopeWarn.hasOpsBtn, JSON.stringify(scopeWarn))
+    }
+
     // AI 优先标签选择器：三主题断言区块渲染；首个主题做真实勾选/取消 IPC 链路（结束后恢复原状）
     const aiPriority = await run(`return (() => {
       const pool = document.querySelector('.ai-priority-pool')

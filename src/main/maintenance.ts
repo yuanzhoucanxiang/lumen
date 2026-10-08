@@ -15,6 +15,7 @@ import { getLibraryPath } from './library'
 import { assetKindOf, computeDHash } from './importer'
 import { computeNamePinyin } from './pinyin'
 import { logger } from './logger'
+import { pruneAgentOps } from './agentOps'
 
 const ASSET_DIR_RE = /^[0-9a-f]{2}$/
 const ASSET_ID_RE = /^[0-9a-f]{16}$/
@@ -140,6 +141,12 @@ export async function runStartupMaintenance(): Promise<void> {
     await backfillMissingPinyin()
   } catch (e) {
     logger.warn('[maintenance]', `拼音回填异常: ${(e as Error).message}`)
+  }
+  try {
+    // Agent 操作记录保留策略（里程碑 185）：只写不删会一直涨，启动时按条数/天数裁剪
+    pruneAgentOps()
+  } catch (e) {
+    logger.warn('[maintenance]', `操作记录裁剪异常: ${(e as Error).message}`)
   }
   logger.info('[maintenance]', `启动维护完成 (${Date.now() - t0}ms)`)
 }

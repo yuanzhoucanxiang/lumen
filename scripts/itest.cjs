@@ -11,8 +11,9 @@
  *   - dev 实例以 detached 方式启动,测试结束后按进程树整体关闭。
  */
 const { spawn, execSync } = require('child_process')
-const { readdirSync } = require('fs')
+const { mkdirSync, readdirSync, rmSync } = require('fs')
 const { join } = require('path')
+const { tmpdir } = require('os')
 const http = require('http')
 
 const ROOT = join(__dirname, '..')
@@ -76,6 +77,20 @@ async function main() {
   console.log(`将运行 ${files.length} 个测试文件: ${files.join(', ')}`)
   if (excluded.length > 0) console.log(`(已排除: ${excluded.join(', ')})`)
 
+  // 配置隔离（里程碑 185）：默认让 dev 用一份临时配置跑，测试就碰不到用户真实的设置
+  // （此前测试能改到用户的 Agent 开关/可写范围，中途崩溃还会把设置留在测试态）。
+  // 素材库不受影响：临时配置里没有库记录，应用会落到默认库路径（即用户平时用的那个）。
+  // 想用真实配置跑（例如手动验证 AI 相关设置）：LUMEN_ITEST_REAL_CONFIG=1
+  let cfgDir = ''
+  if (process.env.LUMEN_ITEST_REAL_CONFIG === '1') {
+    console.log('(使用真实配置: LUMEN_ITEST_REAL_CONFIG=1)')
+  } else {
+    cfgDir = join(tmpdir(), 'lumen-itest-config')
+    rmSync(cfgDir, { recursive: true, force: true })
+    mkdirSync(cfgDir, { recursive: true })
+    console.log(`(配置已隔离: ${cfgDir})`)
+  }
+
   console.log('启动 dev (CDP 9333)…')
   const dev = spawn('npm', ['run', 'dev', '--', `--remote-debugging-port=${CDP_PORT}`], {
     cwd: ROOT,
@@ -83,7 +98,12 @@ async function main() {
     shell: true,
     detached: process.platform !== 'win32',
     // 测试逃生门:用户正式版 LUMEN 持有单实例锁时,dev 仍可启动(里程碑 105)
-    env: { ...process.env, LUMEN_ALLOW_MULTI: '1', LUMEN_CLIP_PORT: '45679' }
+    env: {
+      ...process.env,
+      LUMEN_ALLOW_MULTI: '1',
+      LUMEN_CLIP_PORT: '45679',
+      ...(cfgDir ? { LUMEN_CONFIG_DIR: cfgDir } : {})
+    }
   })
   let failed = 0
   try {
@@ -91,7 +111,12 @@ async function main() {
     ok('dev 已就绪')
     for (const f of files) {
       console.log(`\n----- 运行 ${f} -----`)
-      const r = spawn('node', [join(ROOT, '.ui-shot', f)], { cwd: ROOT, stdio: 'inherit', shell: true, env: { ...process.env, LUMEN_CLIP_PORT: '45679' } })
+      const r = spawn('node', [join(ROOT, '.ui-shot', f)], {
+        cwd: ROOT,
+        stdio: 'inherit',
+        shell: true,
+        env: { ...process.env, LUMEN_CLIP_PORT: '45679', ...(cfgDir ? { LUMEN_CONFIG_DIR: cfgDir } : {}) }
+      })
       const code = await new Promise((resolve) => r.on('exit', resolve))
       if (code !== 0) {
         console.error(`  ✗ ${f} 失败 (exit ${code})`)

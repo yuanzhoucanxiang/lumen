@@ -106,6 +106,47 @@ export function itemsFromAssetIds(ids: string[]): AgentOpItem[] {
   })
 }
 
+/** 操作记录保留策略（里程碑 185）：表只写不删会一直涨，按"最多 5000 条 / 最多 90 天"裁剪。
+ *  在启动维护里跑（应用重启频繁，够用），超龄与超量的老记录会失去可回退能力。 */
+export const AGENT_OPS_MAX_ROWS = 5000
+export const AGENT_OPS_MAX_AGE_DAYS = 90
+
+export function pruneAgentOps(opts?: { maxRows?: number; maxAgeDays?: number }): number {
+  const maxRows = Math.max(1, opts?.maxRows ?? AGENT_OPS_MAX_ROWS)
+  const maxAgeDays = Math.max(1, opts?.maxAgeDays ?? AGENT_OPS_MAX_AGE_DAYS)
+  try {
+    const db = getDb()
+    const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000
+    const byAge = db.prepare('DELETE FROM agent_ops WHERE ts < ?').run(cutoff).changes
+    // 按 ts 保留最近 N 条（ts 相同再按 id 兜底，避免同毫秒批次被误裁）
+    const byCount = db
+      .prepare(
+        `DELETE FROM agent_ops WHERE id NOT IN (
+           SELECT id FROM agent_ops ORDER BY ts DESC, id DESC LIMIT ?
+         )`
+      )
+      .run(maxRows).changes
+    const n = byAge + byCount
+    if (n > 0) logger.info('[agentOps]', `操作记录已裁剪 ${n} 条（保留最近 ${maxRows} 条 / ${maxAgeDays} 天）`)
+    return n
+  } catch (e) {
+    logger.warn('[agentOps]', `操作记录裁剪失败: ${(e as Error).message}`)
+    return 0
+  }
+}
+
+/** 清空全部操作记录（设置页手动触发；清空后无法再回退这些操作） */
+export function clearAgentOps(): number {
+  try {
+    const n = getDb().prepare('DELETE FROM agent_ops').run().changes
+    logger.info('[agentOps]', `操作记录已清空 ${n} 条`)
+    return n
+  } catch (e) {
+    logger.warn('[agentOps]', `清空操作记录失败: ${(e as Error).message}`)
+    return 0
+  }
+}
+
 /** 最近的操作记录（倒序，面板展示用；含逐项明细与逐项回退状态） */
 export function listAgentOps(limit = 30): AgentOp[] {
   const rows = getDb()

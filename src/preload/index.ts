@@ -133,6 +133,8 @@ const api = {
   /** 回退一条 Agent 操作记录（itemIds 缺省 = 全部；给了则只回退其中指定项） */
   agentUndoOp: (id: number, itemIds?: string[]): Promise<{ ok: boolean; message: string; remaining?: number }> =>
     ipcRenderer.invoke('ai:agentUndo', id, itemIds),
+  /** 清空 Agent 操作记录（里程碑 185；清空后这些操作不再可回退） */
+  agentOpsClear: (): Promise<number> => ipcRenderer.invoke('ai:agentOpsClear'),
   /** 找图助手：对话回复的流式增量(累积文本) */
   onAgentDelta: (cb: (p: { text: string }) => void): (() => void) => {
     const h = (_e: Electron.IpcRendererEvent, p: { text: string }) => cb(p)

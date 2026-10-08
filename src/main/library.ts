@@ -41,6 +41,17 @@ export interface AppConfig {
 }
 
 function configPath(): string {
+  // 测试隔离（里程碑 185）：LUMEN_CONFIG_DIR 指向别处时，配置读写全部落在那里。
+  // 集成测试此前共用用户真实配置——测试能改到用户的开关/可写范围，且中途崩溃会把设置留在测试态。
+  const override = process.env.LUMEN_CONFIG_DIR?.trim()
+  if (override) {
+    try {
+      mkdirSync(override, { recursive: true })
+      return join(override, CONFIG_NAME)
+    } catch {
+      /* 目录建不出来就退回默认位置（配置读不到会走默认值，不至于把应用卡死） */
+    }
+  }
   return join(app.getPath('userData'), CONFIG_NAME)
 }
 

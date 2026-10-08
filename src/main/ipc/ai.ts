@@ -2,7 +2,7 @@ import { BrowserWindow, ipcMain } from 'electron'
 import { aiApplySuggestions, aiProcessBatch, aiSuggestBatch, testAiConnection } from '../aiRename'
 import { aiSearch } from '../aiSearch'
 import { agentChatTurn, agentFindSimilar, agentSearchFull, agentRerank, agentTagByConditions, executeAgentConditions } from '../aiAgent'
-import { listAgentOps, undoAgentOp } from '../agentOps'
+import { clearAgentOps, listAgentOps, undoAgentOp } from '../agentOps'
 import { normalizeAiBaseUrl } from '../aiClient'
 import { loadConfig } from '../library'
 import { getAssetById, isUnnamedName, queryAssets } from '../repository'
@@ -132,6 +132,8 @@ export function registerAiIpc(getWindow: () => BrowserWindow | null): void {
   // Agent 操作记录与回退（里程碑 171）
   ipcMain.handle('ai:agentOps', (_e, limit?: number) => listAgentOps(typeof limit === 'number' ? limit : 30))
   ipcMain.handle('ai:agentUndo', (_e, id: number, itemIds?: string[]) => undoAgentOp(id, itemIds))
+  // 清空操作记录（里程碑 185）：设置页手动触发；清空后这些操作不再可回退
+  ipcMain.handle('ai:agentOpsClear', () => clearAgentOps())
 
   // AI 视觉重排：对助手已检索到的素材按查询意图做视觉相关性重排（复用 aiSearch 的视觉精排管线）
   ipcMain.handle(
