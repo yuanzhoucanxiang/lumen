@@ -2,7 +2,7 @@ name: Smoke
 
 # 每次 push/PR 自动跑:类型检查 + CDP 冒烟回归(替代"想起来才跑测试")。
 # 种子库(scripts/ci-seed-library.cjs)在全新 HOME 下生成接近真实形态的最小素材库,
-# 应用通过 HOME 指向它,跑 CDP 测试的"稳定核心"子集(见下方 ITEST_EXCLUDE)。
+# 应用通过 HOME 指向它,跑 CDP 测试(见下方 ITEST_EXCLUDE;运行器带探活/重启/重试,单个套件崩了不再连累其它)。
 # 说明:完整工作流无法在本地直接执行(需 Linux + xvfb),本地已用 APPDATA 指向种子库
 # 验证过同一套测试在种子库上全绿。
 
@@ -59,4 +59,4 @@ jobs:
           ITEST_MAX_RESTARTS: "6"
           # GitHub Actions 容器缺用户命名空间,禁用 Chromium 沙箱
           ELECTRON_DISABLE_SANDBOX: "1"
-LUMEN_HEADLESS: "1"
+          LUMEN_HEADLESS: "1"
