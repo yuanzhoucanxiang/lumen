@@ -228,11 +228,17 @@ async function main() {
       setValue.call(search, '__itest_no_reference_match__')
       search.dispatchEvent(new Event('input', { bubbles: true }))
     `)
-    await sleep(350)
-    const independentCanvas = await run(`return {
-      trayAssets: document.querySelectorAll('[data-board-reference-asset]').length,
-      boardImages: document.querySelectorAll('[data-board-item] img, [data-board-item] video').length
-    }`)
+    // 有界轮询(2026-10-08):参考架筛选是异步的,机器忙时 350ms 固定等待不够,曾出现"没筛掉"的假红;
+    // 真坏了(筛选永不生效)依然会失败
+    let independentCanvas = { trayAssets: -1, boardImages: -1 }
+    for (let attempt = 0; attempt < 8; attempt++) {
+      await sleep(300)
+      independentCanvas = await run(`return {
+        trayAssets: document.querySelectorAll('[data-board-reference-asset]').length,
+        boardImages: document.querySelectorAll('[data-board-item] img, [data-board-item] video').length
+      }`)
+      if (independentCanvas.trayAssets === 0) break
+    }
     check('画布素材不受参考来源筛选影响', independentCanvas.trayAssets === 0 && independentCanvas.boardImages > 0, JSON.stringify(independentCanvas))
 
     // 原图切换(方案 B):放大超阈值 -> 视口内图片叠加原图 data-board-orig;缩回 -> 切回缩略图

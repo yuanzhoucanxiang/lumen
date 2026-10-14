@@ -109,15 +109,20 @@ async function main() {
   await mainRun(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '+', bubbles: true }))`)
   await sleep(900) // 防抖 600ms
   const tZoom = await mainRun(`return ${SURFACE}`)
-  const saved = await mainRun(`return (async () => {
-    const bs = await window.api.listBoards()
-    return (bs.find((x) => x.id === ${aId}) ?? {}).viewport ?? ''
-  })()`)
+  // 有界轮询(2026-10-08):机器忙时防抖落库可能晚于固定等待,曾出现"落库 null"的假红;
+  // 真的没落库(反复重试仍为 null)依然会失败
   let parsed = null
-  try {
-    parsed = JSON.parse(saved)
-  } catch {
-    parsed = null
+  for (let attempt = 0; attempt < 6 && !parsed; attempt++) {
+    const saved = await mainRun(`return (async () => {
+      const bs = await window.api.listBoards()
+      return (bs.find((x) => x.id === ${aId}) ?? {}).viewport ?? ''
+    })()`)
+    try {
+      parsed = JSON.parse(saved)
+    } catch {
+      parsed = null
+    }
+    if (!parsed) await sleep(400)
   }
   check('缩放后视口落库(s≈1.25)', parsed && parsed.s > 1.2 && parsed.s < 1.3, JSON.stringify(parsed))
 

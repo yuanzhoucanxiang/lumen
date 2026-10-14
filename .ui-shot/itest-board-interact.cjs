@@ -343,9 +343,14 @@ async function main() {
     const frame = surface.parentElement
     const scale = () => { const t = surface.style.transform; const m = t.match(/scale\\(([-\\d.]+)\\)/); return m ? Number(m[1]) : 1 }
     const before = scale()
-    for (let i = 0; i < 4; i++) frame.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -120, clientX: 400, clientY: 400 }))
-    await new Promise((r) => setTimeout(r, 250))
-    const zoomed = scale()
+    // 有界轮询(2026-10-08):机器忙时合帧可能晚于固定 250ms,曾出现"缩放没生效"的假红;
+    // 真坏了(多次滚轮后 scale 仍不变)依然会失败
+    let zoomed = before
+    for (let attempt = 0; attempt < 6 && zoomed <= before; attempt++) {
+      for (let i = 0; i < 4; i++) frame.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -120, clientX: 400, clientY: 400 }))
+      await new Promise((r) => setTimeout(r, 250))
+      zoomed = scale()
+    }
     frame.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))
     await new Promise((r) => setTimeout(r, 300))
     const fitted = scale()

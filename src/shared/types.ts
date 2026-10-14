@@ -237,7 +237,7 @@ export interface AgentChatTurn {
 export interface ImportFileDetail {
   path: string
   name: string
-  status: 'imported' | 'skipped' | 'failed'
+  status: 'imported' | 'skipped' | 'failed' | 'unsupported'
   /** imported = 新素材 id；skipped = 命中的库内已有素材 id（tombstone/无命中时缺省） */
   id?: string
 }
@@ -248,6 +248,9 @@ export interface ImportResult {
   failed: number
   /** 失败文件的文件名列表（用于 UI 提示与日志） */
   failedFiles?: string[]
+  /** 非视觉类文件（md/py/txt/json 等）个数与文件名：本就不该进素材库，导入时直接忽略 */
+  unsupported?: number
+  unsupportedFiles?: string[]
   /** 本次成功导入的素材 id(白板外部拖入需把新素材放到画布上) */
   importedIds?: string[]
   /** 本次跳过的重复文件命中的库内已有素材 id（Agent 渠道用于幂等补打标签/归档） */

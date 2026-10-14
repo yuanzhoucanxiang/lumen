@@ -580,10 +580,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   importDialog: async () => {
     const r = await window.api.importViaDialog()
-    const msg =
-      r.failed > 0
-        ? `导入完成：新增 ${r.imported}，跳过 ${r.skipped}，⚠ 失败 ${r.failed}`
-        : `导入完成：新增 ${r.imported}，跳过 ${r.skipped}`
+    const parts = [`新增 ${r.imported}`, `跳过 ${r.skipped}`]
+    if (r.unsupported) parts.push(`忽略 ${r.unsupported} 个非素材文件`)
+    if (r.failed > 0) parts.push(`⚠ 失败 ${r.failed}`)
+    const msg = `导入完成：${parts.join('，')}`
     get().showToast(msg)
     await get().refreshAll()
     await autoAiAfterImport(r.imported)
@@ -592,10 +592,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   importFiles: async (files) => {
     if (files.length === 0) return
     const r = await window.api.importFileObjects(files)
-    const msg =
-      r.failed > 0
-        ? `导入完成：新增 ${r.imported}，跳过 ${r.skipped}，⚠ 失败 ${r.failed}`
-        : `导入完成：新增 ${r.imported}，跳过 ${r.skipped}`
+    const parts = [`新增 ${r.imported}`, `跳过 ${r.skipped}`]
+    if (r.unsupported) parts.push(`忽略 ${r.unsupported} 个非素材文件`)
+    if (r.failed > 0) parts.push(`⚠ 失败 ${r.failed}`)
+    const msg = `导入完成：${parts.join('，')}`
     get().showToast(msg)
     await get().refreshAll()
     await autoAiAfterImport(r.imported)

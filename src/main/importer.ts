@@ -275,7 +275,7 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
 
 /** 阶段 A 产出：一个已复制到库内、缩略图/主色/dHash 已计算完毕的待提交记录 */
 interface PreparedAsset {
-  status: 'ok' | 'skip' | 'fail'
+  status: 'ok' | 'skip' | 'fail' | 'unsupported'
   filePath: string
   name: string
   /** 仅 status='ok' 时有效 */
@@ -549,6 +549,13 @@ async function prepareOne(filePath: string, opts: ImportOptions): Promise<Prepar
     const kind = assetKindOf(ext)
     const checkTombstone = !!opts.checkTombstone
 
+    // 非视觉类文件不收（里程碑 188）：md/py/txt/json/pdf 这类既没有缩略图也没有整理价值，
+    // 以前会被当素材收进来、在库里显示成通用图标（用户反馈"这种不该进来"）。
+    // 判定=扩展名不属于 图片/视频/音频/字体 任何一类（assetKindOf 返回 'other'）。
+    if (kind === 'other') {
+      return { status: 'unsupported', filePath, name }
+    }
+
     // 文件内容哈希(里程碑 182):查重的终审判据,同时写进素材记录供以后核实
     let srcSha = ''
     try {
@@ -768,15 +775,21 @@ export async function importFiles(paths: string[], opts: ImportOptions = {}): Pr
     return r
   })
 
-  // 分离 ok 记录 vs skip/fail
+  // 分离 ok 记录 vs skip/fail/unsupported
   const okRecords: PreparedAsset[] = []
+  const unsupportedNames: string[] = []
   for (const r of prepared) {
     if (r.status === 'ok') okRecords.push(r)
     else if (r.status === 'skip') result.skipped++
+    else if (r.status === 'unsupported') unsupportedNames.push(r.name)
     else {
       result.failed++
       result.failedFiles!.push(r.name)
     }
+  }
+  if (unsupportedNames.length > 0) {
+    result.unsupported = unsupportedNames.length
+    result.unsupportedFiles = unsupportedNames
   }
 
   // 跳过的重复文件回填命中的库内素材 id（Agent 渠道幂等补打标签/归档用）
@@ -789,7 +802,8 @@ export async function importFiles(paths: string[], opts: ImportOptions = {}): Pr
     result.files = prepared.map((r) => ({
       path: r.filePath,
       name: r.name,
-      status: r.status === 'ok' ? 'imported' : r.status === 'skip' ? 'skipped' : 'failed',
+      status:
+        r.status === 'ok' ? 'imported' : r.status === 'skip' ? 'skipped' : r.status === 'unsupported' ? 'unsupported' : 'failed',
       id: r.status === 'ok' ? r.id : r.matchedId
     }))
   }

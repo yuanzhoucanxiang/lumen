@@ -490,6 +490,25 @@ async function main() {
   const skillOk = fs.existsSync(skillMd) && fs.readFileSync(skillMd, 'utf-8').includes('/import')
   check('技能文件已落到 ~/.agents/skills/lumen 且含 /import 文档', skillOk, `SKILL.md=${skillMd}`)
 
+  /* ---------- 8b. 非视觉类文件不收(里程碑 188) ---------- */
+  const mixDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumen-agent-mix-'))
+  fs.writeFileSync(path.join(mixDir, `${tag}-mix.png`), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 4, 4, 4]))
+  fs.writeFileSync(path.join(mixDir, `${tag}-readme.md`), 'doc not asset')
+  fs.writeFileSync(path.join(mixDir, `${tag}-script.py`), 'print("hello")')
+  fs.writeFileSync(path.join(mixDir, `${tag}-data.json`), '{"a":1}')
+  const rMix = await request('POST', '/import', JSON.stringify({ paths: [mixDir] }))
+  check('混入 md/py/json 时只收视觉素材(其余忽略并回传)',
+    rMix.status === 200 && rMix.json?.imported === 1 && rMix.json?.unsupported === 3 &&
+      (rMix.json?.unsupportedFiles ?? []).some((n) => n.endsWith('.md')) &&
+      (rMix.json?.files ?? []).filter((f) => f.status === 'unsupported').length === 3,
+    `imported=${rMix.json?.imported} unsupported=${rMix.json?.unsupported} files=${(rMix.json?.files ?? []).map((f) => f.status).join(',')}`)
+  const rMixDry = await request('POST', '/import', JSON.stringify({ paths: [mixDir], validate: true }))
+  check('试运行据实上报将忽略的非视觉文件(wouldUnsupported=3)',
+    rMixDry.status === 200 && rMixDry.json?.validate === true && rMixDry.json?.wouldUnsupported === 3 && rMixDry.json?.wouldImport === 0,
+    `wouldImport=${rMixDry.json?.wouldImport} wouldUnsupported=${rMixDry.json?.wouldUnsupported}`)
+  const mdQuery = await request('GET', `/assets?q=${encodeURIComponent(tag + '-readme')}`)
+  check('非视觉文件确实没进库(查不到 readme.md)', mdQuery.json?.count === 0, `count=${mdQuery.json?.count}`)
+
   /* ---------- 9. 里程碑 182:回退只撤本次改动 / 精确查重 / 危险动作权限 ---------- */
   // 9a. 素材先由"用户"打上标签(走渲染层 IPC,不经 Agent 通道 -> 不产生操作记录)
   const PRE_TAG = `${tag}-原有标签`
@@ -692,6 +711,7 @@ async function main() {
   fs.rmSync(dupDir, { recursive: true, force: true })
   fs.rmSync(concurDir, { recursive: true, force: true })
   fs.rmSync(dryDir, { recursive: true, force: true })
+  fs.rmSync(mixDir, { recursive: true, force: true })
 
   console.log('')
   console.log(pass + ' PASS / ' + fail + ' FAIL')

@@ -1,10 +1,10 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http'
 import { mkdtempSync, rmSync } from 'fs'
 import { writeFile, rm, stat } from 'fs/promises'
-import { basename, join, isAbsolute } from 'path'
+import { basename, extname, join, isAbsolute } from 'path'
 import { tmpdir } from 'os'
 import { app } from 'electron'
-import { collectFiles, importFiles, isKnownAssetByNameSize } from './importer'
+import { assetKindOf, collectFiles, importFiles, isKnownAssetByNameSize } from './importer'
 import { getLibraryPath, loadConfig } from './library'
 import type { AppConfig } from './library'
 import {
@@ -321,6 +321,9 @@ async function importFromPaths(
   failedFiles: string[]
   importedIds: string[]
   matchedIds: string[]
+  unsupported?: number
+  unsupportedFiles?: string[]
+  wouldUnsupported?: number
   files: ImportFileDetail[]
   missing: string[]
   folderId: number | null
@@ -366,7 +369,13 @@ async function importFromPaths(
   if (payload.validate === true) {
     const walked = await collectFiles(exists)
     let wouldSkip = 0
+    const unsupportedList: string[] = []
     for (const f of walked) {
+      // 非视觉类文件（md/py/txt/json 等）真实导入时会被忽略，试运行据实上报（里程碑 188）
+      if (assetKindOf(extname(f).slice(1).toLowerCase()) === 'other') {
+        unsupportedList.push(basename(f))
+        continue
+      }
       try {
         const st = await stat(f)
         if (isKnownAssetByNameSize(basename(f), st.size)) wouldSkip++
@@ -377,8 +386,10 @@ async function importFromPaths(
     return {
       validate: true,
       fileCount: walked.length,
-      wouldImport: walked.length - wouldSkip,
+      wouldImport: walked.length - wouldSkip - unsupportedList.length,
       wouldSkip,
+      wouldUnsupported: unsupportedList.length,
+      unsupportedFiles: unsupportedList.slice(0, 50),
       missing,
       imported: 0,
       skipped: 0,
@@ -514,6 +525,9 @@ async function importFromPaths(
     skipped: result.skipped,
     failed: result.failed,
     failedFiles: result.failedFiles ?? [],
+    // 非视觉类文件（md/py/txt/json 等）被忽略的个数与名字（里程碑 188）
+    unsupported: result.unsupported ?? 0,
+    unsupportedFiles: result.unsupportedFiles ?? [],
     importedIds: result.importedIds ?? [],
     matchedIds: result.matchedIds ?? [],
     files: result.files ?? [],
