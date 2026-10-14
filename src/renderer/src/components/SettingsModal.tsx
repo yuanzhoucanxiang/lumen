@@ -827,7 +827,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
                     </div>
                   )}
                   <div className="mt-1 text-[10.5px] leading-[1.5] text-[var(--text-faint)]">
-                    一个都没勾时，Agent 只能写入自带的「Agent 导入」文件夹。勾了父文件夹就不用再勾子文件夹；
+                    一个都没勾时，Agent 只能写入自带的「Agent 导入」。勾了父文件夹就不用再勾子文件夹；
+                    <b>Agent 可以在这些文件夹里自建子文件夹</b>（多个助手各建各的，不会挤在一起）；
                     范围外的归档/导入请求会被拒绝并提示来此处添加。
                   </div>
                 </div>

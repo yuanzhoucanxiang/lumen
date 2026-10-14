@@ -586,10 +586,27 @@ async function main() {
     rAutoAllowed.status === 200 && rAutoAllowed.json?.imported === 0 && rAutoAllowed.json?.skipped === 1,
     `status=${rAutoAllowed.status} imported=${rAutoAllowed.json?.imported} skipped=${rAutoAllowed.json?.skipped}`)
 
-  // 9f. 可写范围(里程碑 183):默认只允许「Agent 导入」;勾选后其子文件夹同样放行;范围外一律拒绝
+  // 9f. 可写范围(里程碑 183/187):默认只允许「Agent 导入」(含子文件夹);勾选后其子文件夹同样放行;范围外一律拒绝
   const scopeFile = path.join(dupDir, `${tag}-scope.png`)
   fs.writeFileSync(scopeFile, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 9, 9]))
   await run(`await window.api.updateSettings({ agentScopeUnrestricted: false })`)
+  // /scope 发现接口（里程碑 187）:默认(未勾任何文件夹)时应为 unrestricted=false + allowed 为空 + 提示默认夹
+  const rScopeDefault = await request('GET', '/scope')
+  check('/scope 默认:不限制=false、allowed 为空、说明默认夹与子文件夹可建',
+    rScopeDefault.status === 200 && rScopeDefault.json?.unrestricted === false && Array.isArray(rScopeDefault.json?.allowed) &&
+      rScopeDefault.json.allowed.length === 0 && rScopeDefault.json.subfoldersAllowed === true &&
+      String(rScopeDefault.json.defaultFolder) === 'Agent 导入' && String(rScopeDefault.json.hint || '').includes('Agent 导入'),
+    `unrestricted=${rScopeDefault.json?.unrestricted} allowed=${JSON.stringify(rScopeDefault.json?.allowed)}`)
+  // 默认夹的子文件夹必须可写（里程碑 187）:多个 agent 各建自己的子夹分开存放
+  const subName = `${tag}-子夹`
+  const subFile = path.join(dupDir, `${tag}-defsub.png`)
+  fs.writeFileSync(subFile, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 5, 9]))
+  const rDefSub = await request('POST', '/import', JSON.stringify({ paths: [subFile], folder: `Agent 导入/${subName}` }))
+  const defFolderRow = ((await request('GET', '/folders')).json?.folders ?? []).find((f) => f.name === 'Agent 导入')
+  const subFolderRow = ((await request('GET', '/folders')).json?.folders ?? []).find((f) => f.name === subName)
+  check('「Agent 导入」下可建子文件夹并归档(父夹=Agent 导入)',
+    rDefSub.status === 200 && rDefSub.json?.imported === 1 && subFolderRow?.parentId === defFolderRow?.id,
+    `status=${rDefSub.status} imported=${rDefSub.json?.imported} subParent=${subFolderRow?.parentId} defId=${defFolderRow?.id}`)
   const rScopeDenied = await request('POST', '/import', JSON.stringify({ paths: [scopeFile], folder: `${tag}-项目` }))
   check('范围外文件夹被拒(403 且提示去设置页勾选)',
     rScopeDenied.status === 403 && String(rScopeDenied.json?.error || '').includes('可写范围'),
@@ -602,6 +619,12 @@ async function main() {
   const scopeRootName = `${tag}-项目夹`
   const scopeRootFolder = await run(`return await window.api.createFolder(${JSON.stringify(scopeRootName)}, null)`)
   await run(`await window.api.updateSettings({ agentWriteFolders: [${scopeRootFolder.id}] })`)
+  // /scope 要如实反映勾选结果（agent 靠它决定写哪儿，而不是撞 403 再猜）
+  const rScopeOn = await request('GET', '/scope')
+  check('/scope 反映勾选:allowed 含该文件夹的完整路径',
+    rScopeOn.status === 200 && rScopeOn.json?.unrestricted === false &&
+      (rScopeOn.json?.allowed ?? []).some((a) => a.path === scopeRootName && a.id === scopeRootFolder.id),
+    `allowed=${JSON.stringify(rScopeOn.json?.allowed)}`)
   const scopeFile2 = path.join(dupDir, `${tag}-scope2.png`)
   fs.writeFileSync(scopeFile2, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 8, 9]))
   const rScopeOk = await request('POST', '/import', JSON.stringify({ paths: [scopeFile2], folder: scopeRootName }))

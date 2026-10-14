@@ -264,8 +264,13 @@ function agentFolderAllowed(segments: string[], cfg: AppConfig): boolean {
   if (cfg.agentScopeUnrestricted === true) return true
   if (segments.length === 1 && segments[0] === AGENT_DEFAULT_FOLDER) return true
   const scope = new Set<number>((cfg.agentWriteFolders ?? []).filter((n: number) => Number.isInteger(n)))
-  if (scope.size === 0) return false
   const folders = listFolders().filter((f) => !f.isSmart)
+  // 「Agent 导入」及其子文件夹永远可写（里程碑 187）：多个 agent 共用一个默认夹时，
+  // 各自建子文件夹分开存放（如「Agent 导入/ZCode」）——此前只有"恰好等于默认夹名"才放行，
+  // 子层会被范围校验拒掉，逼得所有 agent 都往同一个平铺目录里堆图。
+  const defFolder = folders.find((f) => f.parentId === null && f.name === AGENT_DEFAULT_FOLDER)
+  if (defFolder) scope.add(defFolder.id)
+  if (scope.size === 0) return false
   let parentId: number | null = null
   for (const seg of segments) {
     const found = folders.find((f) => f.parentId === parentId && f.name === seg)
@@ -274,6 +279,18 @@ function agentFolderAllowed(segments: string[], cfg: AppConfig): boolean {
     parentId = found.id
   }
   return parentId !== null && scope.has(parentId)
+}
+
+/** 文件夹全路径（从库根起，用 / 连接）。供 /scope 回传可写范围，让 agent 自己找位置。 */
+function folderPathOf(id: number, byId: Map<number, { id: number; name: string; parentId: number | null }>): string {
+  const parts: string[] = []
+  let cur = byId.get(id)
+  let guard = 0
+  while (cur && guard++ < 10) {
+    parts.unshift(cur.name)
+    cur = cur.parentId != null ? byId.get(cur.parentId) : undefined
+  }
+  return parts.join('/')
 }
 
 /** 范围拒绝时的统一提示（告诉用户去哪里加） */
@@ -550,6 +567,36 @@ export function startClipServer(
 
     if (req.method === 'GET' && url.pathname === '/status') {
       json(res, 200, { ok: true, name: 'LUMEN', version: app.getVersion(), library: getLibraryPath() })
+      return
+    }
+
+    // 可写范围（里程碑 187）：让 agent 自己发现"能往哪儿写"，而不是撞 403 再猜。
+    // 多个 agent 共用一个素材库时，配合 subfoldersAllowed 各建子文件夹分开存放。
+    if (req.method === 'GET' && url.pathname === '/scope') {
+      const cfg = loadConfig()
+      const folders = listFolders().filter((f) => !f.isSmart)
+      const byId = new Map(folders.map((f) => [f.id, { id: f.id, name: f.name, parentId: f.parentId }]))
+      const allowed = (cfg.agentWriteFolders ?? [])
+        .filter((n: number) => Number.isInteger(n))
+        .map((id: number) => (byId.has(id) ? { id, path: folderPathOf(id, byId), name: byId.get(id)!.name } : null))
+        .filter((x): x is { id: number; path: string; name: string } => x !== null)
+      json(res, 200, {
+        ok: true,
+        version: app.getVersion(),
+        unrestricted: cfg.agentScopeUnrestricted === true,
+        defaultFolder: AGENT_DEFAULT_FOLDER,
+        /** 允许的文件夹**内部**可直接创建子文件夹（folder 传 'A/B'，缺失层级自动建） */
+        subfoldersAllowed: true,
+        /** 用户勾选的允许文件夹（path 从素材库根起，可直接作为 folder 参数）；unrestricted=true 时为空 */
+        allowed,
+        hint:
+          cfg.agentScopeUnrestricted === true
+            ? `当前不限制可写文件夹。未指定 folder 时素材落在「${AGENT_DEFAULT_FOLDER}」，可在其下建子文件夹分开存放。`
+            : `可写范围 = 「${AGENT_DEFAULT_FOLDER}」（含子文件夹）+ 上面 allowed 里的文件夹（含子文件夹）。` +
+              'folder 参数写从库根起的完整路径；在自己的文件夹下可直接建子文件夹。' +
+              '多个 agent 共用时，建议各自建子文件夹（例如 ' +
+              `${AGENT_DEFAULT_FOLDER}/<你的名字>-<日期>）避免混在一起。`
+      })
       return
     }
 

@@ -34,7 +34,7 @@ node "<本技能目录>/scripts/import.cjs" --paths "C:/图1.png" "C:/输出/整
 | --- | --- |
 | `--paths` | 一个或多个文件/目录路径，必填，**必须是绝对路径**（相对路径会被拒绝）。目录会递归导入其中全部文件（最多 1000 个路径） |
 | `--tags` | 可选，逗号分隔。给本次新导入的素材追加标签；标签不存在会自动创建 |
-| `--folder` | 可选。把新导入素材归入该文件夹；支持 `A/B` 多级路径，缺失的层级会自动逐级创建（最多 5 级）。**未指定时新导入素材自动归入「Agent 导入」专属文件夹**，与用户自己的素材分开 |
+| `--folder` | 可选。把新导入素材归入该文件夹；支持 `A/B` 多级路径，缺失的层级会自动逐级创建（最多 5 级）。**未指定时新导入素材自动归入「Agent 导入」专属文件夹**，与用户自己的素材分开。**在自己可写的文件夹（含「Agent 导入」）下可以直接建子文件夹**，用来按 agent / 任务 / 日期分开存放——见下节 |
 | `--note` | 可选。生成信息存档：把 prompt、模型名、参数等写进素材备注（仅作用于新导入的素材），之后在 LUMEN 里搜备注关键词就能找到"这张图当时怎么生成的" |
 | `--check-similar` | 可选开关。导入时对每张新图做相似检测，响应的 `similar` 数组会列出库内近似素材（dHash 感知哈希命中）——AI 批量出图前用它防止近重复图淹没图库，收到 `similar` 告警时如实告知用户 |
 | `--dry-run` | 可选开关。试运行：只展开路径、预估会导入/跳过多少文件并回传 `missing`，不真正导入。大批量导入前先跑一遍是稳妥做法 |
@@ -47,6 +47,21 @@ node "<本技能目录>/scripts/import.cjs" --paths "C:/图1.png" "C:/输出/整
 ```json
 {"ok":true,"imported":12,"skipped":3,"failed":0,"failedFiles":[],"importedIds":["a1b2c3"],"matchedIds":["d4e5f6"],"files":[{"path":"C:/图1.png","name":"图1.png","status":"imported","id":"a1b2c3"}],"missing":[],"folderId":42}
 ```
+
+## 多个 agent 一起用时：各建各的子文件夹
+
+同一个素材库里可能同时有多个 agent 在干活（比如你、Claude Code、Codex）。**默认夹「Agent 导入」是大家共用的**，
+平铺着往里面丢会很快乱掉。约定：**每个 agent / 每个任务在自己的可写文件夹下建一个子文件夹**，把素材放进去。
+
+- 先问一次可写范围：`GET /scope`（只读）→ 返回 `allowed`（用户勾选允许写入的文件夹，`path` 可直接当 `folder` 用）、
+  `defaultFolder`（默认是「Agent 导入」）、`subfoldersAllowed: true`、`unrestricted`（true 表示不限制）。
+- 往子文件夹里放：`--folder "Agent 导入/ZCode-2026-10-08"` 或 `folder: "GIR项目/ZCode-参考"`——
+  **缺失的层级会自动创建**，不需要先建文件夹，也不占额外权限。
+- 命名建议：`<agent 名>` 或 `<agent 名>-<任务/日期>`，例如 `Agent 导入/Claude-线稿`、`GIR项目/Codex-2026-10-08`。
+  同一个任务反复导入时用**同一个**子文件夹名，别每次换名字（否则会散成一堆碎夹）。
+- 报给用户时说明你把素材归到了哪个子文件夹，方便他确认位置。
+- 用户没勾任何文件夹时，你能写的只有「Agent 导入」**及其子文件夹**；想写到别处（比如项目文件夹），
+  请用户去 LUMEN「设置 → Agent 接入 → 可写入文件夹」勾上——不要绕路往别处塞。
 
 ## 行为要点（决定你怎么向用户汇报）
 
@@ -74,6 +89,7 @@ curl -s -X POST http://127.0.0.1:45678/import \
 
 其他端点（均需带同样的鉴权头）：
 
+- `GET /scope` — **我的可写范围**（只读）：`allowed`（用户允许写入的文件夹，`path` 从库根起、可直接作为 `folder` 参数）、`defaultFolder`、`subfoldersAllowed`、`unrestricted`、`hint`。导入/归档前先看一眼，比撞 403 再猜省事。
 - `GET /assets` — 查询素材（只读）。参数：`q`=关键词（搜名称和备注，含拼音，比如用 prompt 片段找图）、`ext`=逗号分隔扩展名、`tag`=标签名、`source`=来源（manual/agent/clip/watcher/screenshot）、`limit`≤500、`offset` 分页。响应含 `count/truncated/assets`（窄列：id/name/ext/宽高/大小/来源/标签）。**生成或导入前先查一下库里有没有，避免重复劳动**。
 - `GET /similar?id=xxx&maxDistance=12&limit=60` — **以图搜图**（只读，确定性 dHash 检索）：给一个库内素材 id，返回库中与它相似的素材（含 `matchPct` 相似度百分比，按相似度降序）。适合'这张图还有没有近似版本/重复'类需求。
 - `GET /asset?id=xxx` — 单素材详情：含 `comment`（生成信息存档在这里，可读回 prompt）、来源、标签。
