@@ -130,8 +130,9 @@ async function main() {
   const rStatus = await request('GET', '/status')
   check('/status 返回 ok+version+library', rStatus.status === 200 && rStatus.json?.ok === true && !!rStatus.json?.version && !!rStatus.json?.library,
     `status=${rStatus.status} version=${rStatus.json?.version} library=${rStatus.json?.library}`)
-  check('/status 带技能版本自检字段(installed/upToDate)',
-    rStatus.json?.skill && typeof rStatus.json.skill.installed === 'boolean' && typeof rStatus.json.skill.upToDate === 'boolean',
+  check('/status 带技能版本自检字段(installed/upToDate/dirs)',
+    rStatus.json?.skill && typeof rStatus.json.skill.installed === 'boolean' && typeof rStatus.json.skill.upToDate === 'boolean' &&
+      Array.isArray(rStatus.json.skill.dirs) && rStatus.json.skill.dirs.every((d) => typeof d === 'string'),
     `skill=${JSON.stringify(rStatus.json?.skill)}`)
 
   /* ---------- 3. 按目录导入 2 张图 + 原样重导查重 ---------- */

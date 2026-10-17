@@ -584,10 +584,11 @@ export function startClipServer(
       // 技能版本自检（里程碑 189）：agent 每次开工先问这个接口，就能知道本机装的技能是不是落后于
       // 当前 LUMEN 自带版本，从而主动提醒用户去「设置 → Agent 接入」点「更新技能」。
       // 旧版技能里没有这条检查，所以它只对"装过含此检查的版本之后"的更新生效。
-      let skill: { installed: boolean; upToDate: boolean } | null = null
+      // 里程碑 191：把安装目录一并回传，更新后 agent 知道去哪里重读 SKILL.md（闭环）。
+      let skill: { installed: boolean; upToDate: boolean; dirs: string[] } | null = null
       try {
         const st = agentSkillStatus()
-        skill = { installed: st.installed, upToDate: st.upToDate }
+        skill = { installed: st.installed, upToDate: st.upToDate, dirs: st.dirs }
       } catch {
         skill = null
       }
@@ -600,8 +601,10 @@ export function startClipServer(
         ...(skill && skill.installed && !skill.upToDate
           ? {
               skillUpdateHint:
-                '本机安装的 lumen 技能不是当前版本：请提醒用户打开 LUMEN「设置 → Agent 接入」点「更新技能」，' +
-                '然后重新读取技能文件再继续；在更新前，按你当前掌握的约定工作即可。'
+                '本机安装的 lumen 技能不是当前版本：请提醒用户打开 LUMEN「设置 → Agent 接入」点「更新技能」；' +
+                '用户更新后，重新读取你的技能文件再继续' +
+                (skill.dirs.length > 0 ? `（${skill.dirs.map((d) => `${d}/SKILL.md`).join(' 或 ')}）` : '') +
+                '。在更新前，按你当前掌握的约定工作即可。'
             }
           : {})
       })

@@ -19,8 +19,9 @@ curl -s -H "x-lumen-client: lumen-clip/1" http://127.0.0.1:45678/status
 - 返回 `{"ok":true,...}` → 服务可用，继续。
 - 连接被拒（Connection refused）→ LUMEN 没在运行。告诉用户"请先启动 LUMEN"，等启动后重试。不要替用户强杀/重启 LUMEN 进程。
 - `/status` 正常但 `POST /import` 返回 404 → 用户安装的 LUMEN 版本过旧（未提供本接口），提示用户更新 LUMEN。
-- **顺便看 `skill` 字段**（本技能版本自检）：`{"installed":true,"upToDate":false}` 表示用户装在你身上的这份技能**不是最新**——
-  如果响应里还带了 `skillUpdateHint`，就按它说的提醒用户：打开 LUMEN「设置 → Agent 接入」点「更新技能」，更新后重新读一遍技能文件。
+- **顺便看 `skill` 字段**（本技能版本自检）：`{"installed":true,"upToDate":false,"dirs":["…"]}` 表示用户装在你身上的这份技能**不是最新**——
+  如果响应里还带了 `skillUpdateHint`，就按它说的提醒用户：打开 LUMEN「设置 → Agent 接入」点「更新技能」。
+  **用户更新后，用 `skill.dirs` 里的路径重新读取 `SKILL.md`**（通常 `dirs[0]/SKILL.md`），按新内容继续；
   提醒一次即可，不要反复催；在更新前按你当前掌握的约定继续工作。
 
 ## 导入图片（主要用法）
