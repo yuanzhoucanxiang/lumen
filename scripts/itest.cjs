@@ -11,6 +11,7 @@
  *   - dev 实例以 detached 方式启动,测试结束后按进程树整体关闭。
  */
 const { spawn, execSync } = require('child_process')
+const WebSocket = require('ws')
 const { mkdirSync, readdirSync, rmSync } = require('fs')
 const { join } = require('path')
 const { tmpdir } = require('os')
@@ -56,6 +57,40 @@ async function cdpAlive(timeoutMs = 3000) {
     return Array.isArray(targets) && targets.some((t) => t.type === 'page')
   } catch {
     return false
+  }
+}
+
+/** 尽力把 dev 主窗口切到前台（只在重试前调用）：窗口被遮挡或最小化时 Chromium 会节流 rAF，
+ *  依赖合帧效果的断言（白板滚轮缩放、视口落库等）会假红。失败不影响测试（里程碑 189）。 */
+async function bringDevToFront() {
+  try {
+    const targets = await new Promise((resolve, reject) => {
+      const req = http
+        .get(`http://127.0.0.1:${CDP_PORT}/json/list`, (r) => {
+          let d = ''
+          r.on('data', (c) => (d += c))
+          r.on('end', () => resolve(JSON.parse(d)))
+        })
+        .on('error', reject)
+      req.setTimeout(3000, () => req.destroy(new Error('timeout')))
+    })
+    const page = targets.find((t) => t.type === 'page' && !String(t.url).includes('floating'))
+    if (!page) return
+    const ws = new WebSocket(page.webSocketDebuggerUrl, { perMessageDeflate: false })
+    await new Promise((r, j) => {
+      ws.on('open', r)
+      ws.on('error', j)
+    })
+    ws.send(JSON.stringify({ id: 1, method: 'Page.bringToFront' }))
+    await sleep(400)
+    try {
+      ws.close()
+    } catch {
+      /* 已关闭 */
+    }
+    console.log('  (已把 dev 窗口切到前台后重试)')
+  } catch {
+    /* 切前台失败不阻断 */
   }
 }
 
@@ -164,6 +199,8 @@ async function main() {
       console.log(`\n----- 运行 ${f} -----`)
       let passed = false
       for (let attempt = 1; attempt <= 2 && !passed; attempt++) {
+        // 重试前把窗口切到前台：被遮挡时 rAF 被节流，合帧类断言会假红
+        if (attempt > 1) await bringDevToFront()
         const { code, timedOut } = await runSuiteOnce(f)
         if (code === 0) {
           if (attempt > 1) console.log(`  ✓ ${f} 重试通过`)

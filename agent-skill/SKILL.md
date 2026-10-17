@@ -19,6 +19,9 @@ curl -s -H "x-lumen-client: lumen-clip/1" http://127.0.0.1:45678/status
 - 返回 `{"ok":true,...}` → 服务可用，继续。
 - 连接被拒（Connection refused）→ LUMEN 没在运行。告诉用户"请先启动 LUMEN"，等启动后重试。不要替用户强杀/重启 LUMEN 进程。
 - `/status` 正常但 `POST /import` 返回 404 → 用户安装的 LUMEN 版本过旧（未提供本接口），提示用户更新 LUMEN。
+- **顺便看 `skill` 字段**（本技能版本自检）：`{"installed":true,"upToDate":false}` 表示用户装在你身上的这份技能**不是最新**——
+  如果响应里还带了 `skillUpdateHint`，就按它说的提醒用户：打开 LUMEN「设置 → Agent 接入」点「更新技能」，更新后重新读一遍技能文件。
+  提醒一次即可，不要反复催；在更新前按你当前掌握的约定继续工作。
 
 ## 导入图片（主要用法）
 
@@ -48,20 +51,31 @@ node "<本技能目录>/scripts/import.cjs" --paths "C:/图1.png" "C:/输出/整
 {"ok":true,"imported":12,"skipped":3,"failed":0,"failedFiles":[],"importedIds":["a1b2c3"],"matchedIds":["d4e5f6"],"files":[{"path":"C:/图1.png","name":"图1.png","status":"imported","id":"a1b2c3"}],"missing":[],"folderId":42}
 ```
 
-## 多个 agent 一起用时：各建各的子文件夹
+## 归档分类：按用途建子文件夹（默认动作，不用等用户交代）
 
-同一个素材库里可能同时有多个 agent 在干活（比如你、Claude Code、Codex）。**默认夹「Agent 导入」是大家共用的**，
-平铺着往里面丢会很快乱掉。约定：**每个 agent / 每个任务在自己的可写文件夹下建一个子文件夹**，把素材放进去。
+**不要把所有素材平铺进「Agent 导入」。** 每次导入前先想清楚"这批图是干什么用的"，放进对应的子文件夹——
+这是默认行为，用户不需要额外说"请分类"。多个 agent 共用同一个库时，这条同样避免了大家挤在同一层。
 
-- 先问一次可写范围：`GET /scope`（只读）→ 返回 `allowed`（用户勾选允许写入的文件夹，`path` 可直接当 `folder` 用）、
-  `defaultFolder`（默认是「Agent 导入」）、`subfoldersAllowed: true`、`unrestricted`（true 表示不限制）。
-- 往子文件夹里放：`--folder "Agent 导入/ZCode-2026-10-08"` 或 `folder: "GIR项目/ZCode-参考"`——
-  **缺失的层级会自动创建**，不需要先建文件夹，也不占额外权限。
-- 命名建议：`<agent 名>` 或 `<agent 名>-<任务/日期>`，例如 `Agent 导入/Claude-线稿`、`GIR项目/Codex-2026-10-08`。
-  同一个任务反复导入时用**同一个**子文件夹名，别每次换名字（否则会散成一堆碎夹）。
-- 报给用户时说明你把素材归到了哪个子文件夹，方便他确认位置。
-- 用户没勾任何文件夹时，你能写的只有「Agent 导入」**及其子文件夹**；想写到别处（比如项目文件夹），
-  请用户去 LUMEN「设置 → Agent 接入 → 可写入文件夹」勾上——不要绕路往别处塞。
+**工作流（每次导入前走一遍）**
+
+1. 问一次范围和已有分类：`GET /scope`（只读）。返回里：
+   - `allowed[].path` / `defaultFolder` —— 你能写的位置（`path` 可直接当 `folder` 参数）；
+   - `allowed[].subfolders` / `defaultSubfolders` —— **这些位置下已经存在的子文件夹**（含完整路径）；
+   - `subfoldersAllowed: true` —— 在这些位置下可以直接建子夹（缺失层级自动创建，不需要先建文件夹）。
+2. **先复用**：已有分类能装下这批图，就原样用它的 `path`。别造近义夹（有「参考图」就别再建「参考」「Reference」）。
+3. **再新建**：没有合适的就按**用途**建一层，命名用名词、短、可复用：
+   `参考图` / `角色` / `场景` / `道具` / `草稿` / `线稿` / `最终稿` / `表情` / `姿势` / `分镜` …
+   如果这批图属于某个具体任务，用「用途/任务」两级：`Agent 导入/角色/赛博鸦-三视图`。
+   只有确实属于个人/多 agent 协作时，才在最前面加 agent 名：`Agent 导入/ZCode/参考图`。
+4. **同一任务重复导入用同一个子夹**：别按时间/批次每次新建（会散成一堆碎夹）；确实要留历史版本时再按日期分。
+5. 导入时把选择传进去：`--folder "Agent 导入/参考图"` / `folder: "GIR项目/角色/赛博鸦"`。
+6. **汇报里写明归到哪**：例如"12 张参考图已导入「Agent 导入/参考图」"。用户想换位置时，用 `POST /folder` 挪即可（可回退）。
+
+**判断用途的依据**：用户的说法（"这批是角色三视图"/"先把草稿收一下"）、文件名与内容、此前同一任务的子夹。
+拿不准时不硬造夹——先放 `Agent 导入` 根下并在汇报里说明"这批用途不确定，先放在 Agent 导入，需要我分到哪个子夹？"。
+
+**权限边界**：用户没勾任何文件夹时，你能写的只有「Agent 导入」**及其子文件夹**；想写到别处（比如项目文件夹），
+请用户去 LUMEN「设置 → Agent 接入 → 可写入文件夹」勾上——不要绕路往别处塞。
 
 ## 行为要点（决定你怎么向用户汇报）
 
@@ -90,7 +104,8 @@ curl -s -X POST http://127.0.0.1:45678/import \
 
 其他端点（均需带同样的鉴权头）：
 
-- `GET /scope` — **我的可写范围**（只读）：`allowed`（用户允许写入的文件夹，`path` 从库根起、可直接作为 `folder` 参数）、`defaultFolder`、`subfoldersAllowed`、`unrestricted`、`hint`。导入/归档前先看一眼，比撞 403 再猜省事。
+- `GET /scope` — **我的可写范围 + 已有分类**（只读）：`allowed`（允许写入的文件夹，`path` 可直接作为 `folder` 参数）、`allowed[].subfolders` 与 `defaultSubfolders`（**已有的子文件夹完整路径，优先复用**）、`defaultFolder`、`subfoldersAllowed`、`unrestricted`、`hint`。导入/归档前必看。
+- `GET /status` — 服务探测 + **技能版本自检**：`version`、`library`、`skill:{installed,upToDate}`；`upToDate:false` 时另带 `skillUpdateHint`（提醒用户去设置里更新技能）。
 - `GET /assets` — 查询素材（只读）。参数：`q`=关键词（搜名称和备注，含拼音，比如用 prompt 片段找图）、`ext`=逗号分隔扩展名、`tag`=标签名、`source`=来源（manual/agent/clip/watcher/screenshot）、`limit`≤500、`offset` 分页。响应含 `count/truncated/assets`（窄列：id/name/ext/宽高/大小/来源/标签）。**生成或导入前先查一下库里有没有，避免重复劳动**。
 - `GET /similar?id=xxx&maxDistance=12&limit=60` — **以图搜图**（只读，确定性 dHash 检索）：给一个库内素材 id，返回库中与它相似的素材（含 `matchPct` 相似度百分比，按相似度降序）。适合'这张图还有没有近似版本/重复'类需求。
 - `GET /asset?id=xxx` — 单素材详情：含 `comment`（生成信息存档在这里，可读回 prompt）、来源、标签。

@@ -25,6 +25,7 @@ import {
   updateAsset
 } from './repository'
 import { aiProcessBatch } from './aiRename'
+import { agentSkillStatus } from './agentSkill'
 import { agentFindSimilar, agentMatchedIds } from './aiAgent'
 import { itemsFromAssetIds, listAgentOps, logAgentOp, newGroupKey, undoAgentOp } from './agentOps'
 import type { AgentOpItem } from './agentOps'
@@ -580,7 +581,30 @@ export function startClipServer(
     const url = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`)
 
     if (req.method === 'GET' && url.pathname === '/status') {
-      json(res, 200, { ok: true, name: 'LUMEN', version: app.getVersion(), library: getLibraryPath() })
+      // 技能版本自检（里程碑 189）：agent 每次开工先问这个接口，就能知道本机装的技能是不是落后于
+      // 当前 LUMEN 自带版本，从而主动提醒用户去「设置 → Agent 接入」点「更新技能」。
+      // 旧版技能里没有这条检查，所以它只对"装过含此检查的版本之后"的更新生效。
+      let skill: { installed: boolean; upToDate: boolean } | null = null
+      try {
+        const st = agentSkillStatus()
+        skill = { installed: st.installed, upToDate: st.upToDate }
+      } catch {
+        skill = null
+      }
+      json(res, 200, {
+        ok: true,
+        name: 'LUMEN',
+        version: app.getVersion(),
+        library: getLibraryPath(),
+        skill,
+        ...(skill && skill.installed && !skill.upToDate
+          ? {
+              skillUpdateHint:
+                '本机安装的 lumen 技能不是当前版本：请提醒用户打开 LUMEN「设置 → Agent 接入」点「更新技能」，' +
+                '然后重新读取技能文件再继续；在更新前，按你当前掌握的约定工作即可。'
+            }
+          : {})
+      })
       return
     }
 
@@ -590,10 +614,41 @@ export function startClipServer(
       const cfg = loadConfig()
       const folders = listFolders().filter((f) => !f.isSmart)
       const byId = new Map(folders.map((f) => [f.id, { id: f.id, name: f.name, parentId: f.parentId }]))
+      /** 某文件夹下已有的子孙夹（里程碑 189）：让 agent 优先复用现成分类，而不是每次造近义的新夹 */
+      const descendantsOf = (rootId: number, limit = 120): { id: number; path: string; name: string }[] => {
+        const out: { id: number; path: string; name: string }[] = []
+        let frontier = [rootId]
+        while (frontier.length > 0 && out.length < limit) {
+          const next: number[] = []
+          for (const fid of frontier) {
+            for (const f of folders) {
+              if (f.parentId === fid) {
+                out.push({ id: f.id, path: folderPathOf(f.id, byId), name: f.name })
+                next.push(f.id)
+                if (out.length >= limit) break
+              }
+            }
+            if (out.length >= limit) break
+          }
+          frontier = next
+        }
+        return out
+      }
       const allowed = (cfg.agentWriteFolders ?? [])
         .filter((n: number) => Number.isInteger(n))
-        .map((id: number) => (byId.has(id) ? { id, path: folderPathOf(id, byId), name: byId.get(id)!.name } : null))
-        .filter((x): x is { id: number; path: string; name: string } => x !== null)
+        .map((id: number) =>
+          byId.has(id)
+            ? {
+                id,
+                path: folderPathOf(id, byId),
+                name: byId.get(id)!.name,
+                /** 该根下已有的子文件夹（完整路径，可直接当 folder 用）——优先复用 */
+                subfolders: descendantsOf(id)
+              }
+            : null
+        )
+        .filter((x): x is { id: number; path: string; name: string; subfolders: { id: number; path: string; name: string }[] } => x !== null)
+      const defRow = folders.find((f) => f.parentId === null && f.name === AGENT_DEFAULT_FOLDER)
       json(res, 200, {
         ok: true,
         version: app.getVersion(),
@@ -603,13 +658,15 @@ export function startClipServer(
         subfoldersAllowed: true,
         /** 用户勾选的允许文件夹（path 从素材库根起，可直接作为 folder 参数）；unrestricted=true 时为空 */
         allowed,
+        /** 默认夹下已有的子文件夹（完整路径）：多个 agent 复用同一套分类，避免各造一份 */
+        defaultSubfolders: defRow ? descendantsOf(defRow.id) : [],
         hint:
-          cfg.agentScopeUnrestricted === true
+          (cfg.agentScopeUnrestricted === true
             ? `当前不限制可写文件夹。未指定 folder 时素材落在「${AGENT_DEFAULT_FOLDER}」，可在其下建子文件夹分开存放。`
             : `可写范围 = 「${AGENT_DEFAULT_FOLDER}」（含子文件夹）+ 上面 allowed 里的文件夹（含子文件夹）。` +
-              'folder 参数写从库根起的完整路径；在自己的文件夹下可直接建子文件夹。' +
-              '多个 agent 共用时，建议各自建子文件夹（例如 ' +
-              `${AGENT_DEFAULT_FOLDER}/<你的名字>-<日期>）避免混在一起。`
+              'folder 参数写从库根起的完整路径；在自己的文件夹下可直接建子文件夹。') +
+          ' **先看 subfolders / defaultSubfolders：已有合适的分类就复用（路径原样传给 folder），别造近义新夹。**' +
+          ' 没有合适的再按用途新建（例如「参考图」「角色」「场景」「草稿」「最终稿」，或按任务名），多个 agent 协同时可在自己的子夹下再分。'
       })
       return
     }

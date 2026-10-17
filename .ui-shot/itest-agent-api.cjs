@@ -130,6 +130,9 @@ async function main() {
   const rStatus = await request('GET', '/status')
   check('/status 返回 ok+version+library', rStatus.status === 200 && rStatus.json?.ok === true && !!rStatus.json?.version && !!rStatus.json?.library,
     `status=${rStatus.status} version=${rStatus.json?.version} library=${rStatus.json?.library}`)
+  check('/status 带技能版本自检字段(installed/upToDate)',
+    rStatus.json?.skill && typeof rStatus.json.skill.installed === 'boolean' && typeof rStatus.json.skill.upToDate === 'boolean',
+    `skill=${JSON.stringify(rStatus.json?.skill)}`)
 
   /* ---------- 3. 按目录导入 2 张图 + 原样重导查重 ---------- */
   // 唯一前缀:历史测试垃圾已入过库的同名文件会被查重跳过,导致断言失真
@@ -626,6 +629,12 @@ async function main() {
   check('「Agent 导入」下可建子文件夹并归档(父夹=Agent 导入)',
     rDefSub.status === 200 && rDefSub.json?.imported === 1 && subFolderRow?.parentId === defFolderRow?.id,
     `status=${rDefSub.status} imported=${rDefSub.json?.imported} subParent=${subFolderRow?.parentId} defId=${defFolderRow?.id}`)
+  // /scope 要把已有子夹回传(agents 优先复用而不是每次造新夹)（里程碑 189）
+  const rScopeReuse = await request('GET', '/scope')
+  const listedSub = (rScopeReuse.json?.defaultSubfolders ?? []).find((f) => f.path === `Agent 导入/${subName}`)
+  check('/scope 回传默认夹下已有子文件夹(完整路径可复用)',
+    rScopeReuse.status === 200 && !!listedSub && Number.isInteger(listedSub.id),
+    `defaultSubfolders=${JSON.stringify((rScopeReuse.json?.defaultSubfolders ?? []).slice(0, 4))}`)
   const rScopeDenied = await request('POST', '/import', JSON.stringify({ paths: [scopeFile], folder: `${tag}-项目` }))
   check('范围外文件夹被拒(403 且提示去设置页勾选)',
     rScopeDenied.status === 403 && String(rScopeDenied.json?.error || '').includes('可写范围'),
@@ -644,6 +653,13 @@ async function main() {
     rScopeOn.status === 200 && rScopeOn.json?.unrestricted === false &&
       (rScopeOn.json?.allowed ?? []).some((a) => a.path === scopeRootName && a.id === scopeRootFolder.id),
     `allowed=${JSON.stringify(rScopeOn.json?.allowed)}`)
+  // 允许根下的既有子夹要在 allowed[].subfolders 里出现（agent 据此复用分类）
+  const subFolderRow2 = await run(`return await window.api.createFolder('itest-分类子夹', ${scopeRootFolder.id})`)
+  const rScopeSub = await request('GET', '/scope')
+  const rootEntry = (rScopeSub.json?.allowed ?? []).find((a) => a.id === scopeRootFolder.id)
+  check('/scope 的 allowed[].subfolders 含根下已有子夹',
+    (rootEntry?.subfolders ?? []).some((f) => f.id === subFolderRow2?.id && f.path === `${scopeRootName}/itest-分类子夹`),
+    `subfolders=${JSON.stringify(rootEntry?.subfolders)}`)
   const scopeFile2 = path.join(dupDir, `${tag}-scope2.png`)
   fs.writeFileSync(scopeFile2, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 8, 9]))
   const rScopeOk = await request('POST', '/import', JSON.stringify({ paths: [scopeFile2], folder: scopeRootName }))
@@ -692,6 +708,8 @@ async function main() {
     // 可写范围用例建的深层子夹(名字不含前缀,需按 id 先删子后删父)
     if (Number.isInteger(${JSON.stringify(childFolder?.id ?? null)})) await window.api.deleteFolder(${JSON.stringify(childFolder?.id ?? null)})
     if (Number.isInteger(${JSON.stringify(childFolder?.parentId ?? null)})) await window.api.deleteFolder(${JSON.stringify(childFolder?.parentId ?? null)})
+    // 分类复用用例建的子夹（名字不带测试前缀，按 id 删）
+    if (Number.isInteger(${JSON.stringify(subFolderRow2?.id ?? null)})) await window.api.deleteFolder(${JSON.stringify(subFolderRow2?.id ?? null)})
     const tags = await window.api.listTags()
     const tids = tags.filter((x) => x.name.includes('agentapi-')).map((x) => x.id)
     for (const tid of tids) await window.api.deleteTag(tid)
