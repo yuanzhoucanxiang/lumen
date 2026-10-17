@@ -357,7 +357,17 @@ async function main() {
     const btn = [...document.querySelectorAll('button[aria-label="回到实际大小"]')]
     if (btn[0]) btn[0].click()
     await new Promise((r) => setTimeout(r, 300))
-    return { before, zoomed, fitted, reset: scale(), hasBtn: btn.length }
+    // 诊断（2026-10-08）：全量跑时偶发"滚轮完全无效"，单独跑必过。把现场带出来，便于判断是
+    // 目标元素不对（DOM 结构被别的状态改过）还是有面板/遮罩截走了事件
+    return {
+      before, zoomed, fitted, reset: scale(), hasBtn: btn.length,
+      diag: {
+        frameTag: frame?.tagName, frameCls: String(frame?.className || '').slice(0, 80),
+        surfaceTag: surface?.tagName, surfaceCls: String(surface?.className || '').slice(0, 80),
+        overlays: document.querySelectorAll('.settings-hub, .agent-panel, [data-board-tray], .board-panel').length,
+        activeEl: String(document.activeElement?.tagName || '') + ':' + String(document.activeElement?.getAttribute?.('aria-label') || '')
+      }
+    }
   `)
   check('滚轮放大生效(合帧后仍能变焦)', zoomSeq.zoomed > zoomSeq.before, JSON.stringify(zoomSeq))
   check('双击空白 = 适配全部内容(缩放被收回)', zoomSeq.fitted < zoomSeq.zoomed, `zoomed=${zoomSeq.zoomed} fitted=${zoomSeq.fitted}`)
