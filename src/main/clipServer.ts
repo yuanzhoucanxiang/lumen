@@ -5,6 +5,7 @@ import { basename, extname, join, isAbsolute } from 'path'
 import { tmpdir } from 'os'
 import { app } from 'electron'
 import { assetKindOf, collectFiles, importFiles, isKnownAssetByNameSize } from './importer'
+import { getDb } from './db'
 import { getLibraryPath, loadConfig } from './library'
 import type { AppConfig } from './library'
 import {
@@ -14,6 +15,7 @@ import {
   assetFolderIds,
   assetsHavingTag,
   assetsInFolder,
+  removeFromFolder,
   findTagId,
   createFolder,
   findSimilar,
@@ -804,7 +806,21 @@ export function startClipServer(
         offset
       })
       const truncated = rows.length > limit
-      const assets = rows.slice(0, limit).map((a) => ({
+      const pageRows = rows.slice(0, limit)
+      // 每个素材所属的文件夹（里程碑 199）：整理已有素材时要知道"它现在在哪"，否则只能逐条 /asset
+      const folderMap = new Map<string, number[]>()
+      if (pageRows.length > 0) {
+        const marks = pageRows.map(() => '?').join(',')
+        const links = getDb()
+          .prepare(`SELECT asset_id, folder_id FROM asset_folders WHERE asset_id IN (${marks})`)
+          .all(...pageRows.map((r) => r.id)) as { asset_id: string; folder_id: number }[]
+        for (const l of links) {
+          const arr = folderMap.get(l.asset_id) ?? []
+          arr.push(l.folder_id)
+          folderMap.set(l.asset_id, arr)
+        }
+      }
+      const assets = pageRows.map((a) => ({
         id: a.id,
         name: a.name,
         ext: a.ext,
@@ -814,7 +830,8 @@ export function startClipServer(
         star: a.star,
         importedAt: a.importedAt,
         source: a.source,
-        tags: a.tagNames ?? []
+        tags: a.tagNames ?? [],
+        folderIds: folderMap.get(a.id) ?? []
       }))
       json(res, 200, { ok: true, count: assets.length, truncated, assets })
       return
@@ -1010,6 +1027,61 @@ export function startClipServer(
             folderPath: name,
             createdFolders: created.map((c) => c.path)
           })
+        })
+        .catch((err: Error) => {
+          if (!res.headersSent) json(res, 400, { ok: false, error: err.message })
+        })
+      return
+    }
+
+    // 移出文件夹（里程碑 199）：Agent 之前只能"加"不能"减"，所谓移动会变成同时挂在两个夹里。
+    // 目标文件夹必须在可写范围内（不能把用户个人文件夹里的素材抽走）；只记真正被移出的项。
+    if (req.method === 'POST' && url.pathname === '/unfolder') {
+      readBody(req, res)
+        .then(async (body) => {
+          const payload = JSON.parse(body) as { ids?: string[]; conditions?: unknown; folder?: string }
+          const { segments: segs } = agentFolderSegments(String(payload.folder ?? ''))
+          if (segs.length === 0) throw new Error('folder required')
+          const smartClash = smartFolderConflict(segs)
+          if (smartClash) {
+            json(res, 409, { ok: false, error: `「${smartClash}」是智能文件夹，没有成员可移出` })
+            return
+          }
+          if (!agentFolderAllowed(segs, loadConfig())) {
+            json(res, 403, { ok: false, error: SCOPE_HINT })
+            return
+          }
+          // 只按已存在的文件夹匹配，不新建
+          const folders = listFolders().filter((f) => !f.isSmart)
+          let parentId: number | null = null
+          let fid: number | null = null
+          for (const seg of segs) {
+            const found = folders.find((f) => f.parentId === parentId && f.name === seg)
+            if (!found) {
+              fid = null
+              break
+            }
+            fid = found.id
+            parentId = found.id
+          }
+          if (fid === null) {
+            json(res, 404, { ok: false, error: 'folder not found' })
+            return
+          }
+          const ids = await resolveAgentIds(payload)
+          const inside = assetsInFolder(ids, fid)
+          const changed = ids.filter((id) => inside.has(id))
+          if (changed.length > 0) {
+            removeFromFolder(changed, fid)
+            logAgentOp(
+              'unfolder',
+              `把 ${changed.length} 个素材移出文件夹「${segs.join('/')}」`,
+              { items: itemsFromAssetIds(changed), folderId: fid, folderName: segs.join('/') },
+              changed.length
+            )
+            onImported?.(0, 'agent')
+          }
+          json(res, 200, { ok: true, removed: changed.length, folderId: fid, folderPath: segs.join('/') })
         })
         .catch((err: Error) => {
           if (!res.headersSent) json(res, 400, { ok: false, error: err.message })

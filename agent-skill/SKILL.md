@@ -76,6 +76,37 @@ node "<本技能目录>/scripts/import.cjs" --paths "C:/图1.png" "C:/输出/整
 5. 导入时传 `--folder "…"` / `folder: "…"`。
 6. 汇报里写明归到哪：例如"12 张参考图已导入「Agent 导入/角色三视图-赛博鸦」"。
 
+## 整理已有素材（不是导入，是把库里现有的图分好类）
+
+用户说"帮我整理一下库里的图""这些图太乱了"时，**先摸清现状，再提方案，得到确认后分批执行**——
+不要一上来就大批量改，用户没法预判你会动什么。
+
+**1. 摸底（都是只读，可放心调）**
+- `GET /folders` — 现有文件夹树（含每个夹的素材数）；`GET /tags` — 标签及使用数；`GET /stats` — 库规模。
+- `GET /assets?untagged=1` — 还没打标签的；`GET /assets?folder=<id>` — 某个夹里有什么。
+- `GET /assets` 每行带 `folderIds`（当前归属），据此判断"它现在在哪、要不要挪"。
+- 不要逐条 `GET /asset` 去拼全库——先按条件筛出目标集合（数量、分布），再决定怎么处理。
+
+**2. 提方案（必做）**
+用一段话说清：按什么标准分组、每组大概多少张、放到哪些夹 / 打什么标签、会不会动到已有文件夹。
+给 1–2 个方案让用户选（例如"按用途分：参考图/角色/场景" vs "按项目分：GIR/其他"），说明你的推荐。
+用户确认后再动手；用户说"你看着办"就按推荐方案执行，但先说明你要改什么。
+
+**3. 执行（分批、可回退）**
+- 打标签：`POST /tag {"tag":"…","conditions":{…}}`（按条件批量）或 `{"tag":"…","ids":[…]}`。
+- 归档：`POST /folder {"folder":"A/B","conditions":{…}}`。
+- **移动 = 先加后减**：素材可以同时属于多个文件夹，真正的"从 A 挪到 B"要两步——
+  `POST /folder {"folder":"B", …}` 再加入 B，然后 `POST /unfolder {"folder":"A", …}` 从 A 移出。
+  只加不减会同时挂在两个夹里。
+- 备注/星级同理（`/note`、`/star`），都支持 `conditions`。
+- **每批做完汇报一次**（改了多少张、加到哪），再继续下一批；批量操作都会进操作记录。
+- 不要删除素材、不要改用户原有的文件夹结构（重命名/删除文件夹没有 Agent 接口，也不需要）。
+
+**4. 校验与善后**
+- 用 `GET /assets?folder=<id>`、`?tag=<名>`、`?untagged=1` 复核数量对不对。
+- 改错了：`GET /ops` 找到这批记录的 `groupKey`，`POST /undo {"groupKey":"…"}` **整批撤回**（一次导入/整理对应一个 groupKey）。
+- 发现重复图：用 `POST /similar` 或导入时的 `checkSimilar` 找出来，**如实报告给用户**请你决定，不要试图自动删（Agent 没有删除权限）。
+
 ## 不确定时先问用户（默认就有这个能力，主动用）
 
 你可以、也应该在**动手前征询用户**——尤其是"放哪个文件夹"和"要不要新建文件夹"这两件事。
@@ -134,13 +165,14 @@ curl -s -X POST http://127.0.0.1:45678/import \
 
 - `GET /scope` — **我的可写范围 + 已有分类**（只读）：`allowed`（允许写入的文件夹，`path` 可直接作为 `folder` 参数）、`allowed[].subfolders` 与 `defaultSubfolders`（**已有的子文件夹完整路径，优先复用**）、`defaultFolder`、`subfoldersAllowed`、`unrestricted`、`hint`。导入/归档前必看。
 - `GET /status` — 服务探测 + **技能版本自检**：`version`、`library`、`skill:{installed,upToDate}`；`upToDate:false` 时另带 `skillUpdateHint`（提醒用户去设置里更新技能）。
-- `GET /assets` — 查询素材（只读）。参数：`q`=关键词（搜名称和备注，含拼音，比如用 prompt 片段找图）、`ext`=逗号分隔扩展名、`tag`=标签名、`source`=来源（manual/agent/clip/watcher/screenshot）、`days`=最近 N 天、`star`=最低星级、`shape`=landscape/portrait/square、`untagged=1`=未打标签、`folder`=文件夹 id、`sort`=imported/name/size/star + `order`=asc/desc（按名字默认正序，其余默认倒序）、`limit`≤500、`offset` 分页。响应含 `count/truncated/assets`（窄列：id/name/ext/宽高/大小/来源/标签）。**生成或导入前先查一下库里有没有，避免重复劳动**。
+- `GET /assets` — 查询素材（只读）。参数：`q`=关键词（搜名称和备注，含拼音，比如用 prompt 片段找图）、`ext`=逗号分隔扩展名、`tag`=标签名、`source`=来源（manual/agent/clip/watcher/screenshot）、`days`=最近 N 天、`star`=最低星级、`shape`=landscape/portrait/square、`untagged=1`=未打标签、`folder`=文件夹 id、`sort`=imported/name/size/star + `order`=asc/desc（按名字默认正序，其余默认倒序）、`limit`≤500、`offset` 分页。响应含 `count/truncated/assets`（窄列：id/name/ext/宽高/大小/来源/标签/**当前归属 folderIds**）。**生成或导入前先查一下库里有没有，避免重复劳动**。
 - `GET /similar?id=xxx&maxDistance=12&limit=60` — **以图搜图**（只读，确定性 dHash 检索）：给一个库内素材 id，返回库中与它相似的素材（含 `matchPct` 相似度百分比，按相似度降序）。适合'这张图还有没有近似版本/重复'类需求。
 - `POST /similar` — **外部图片查重**（只读）：body `{"dataUrl":"data:image/...;base64,...","maxDistance":12,"limit":60}`，`maxDistance` 0-32、`limit` 1-200、dataUrl 上限 20MB。适合"这张新图还没入库，先看看库里有没有近似的"；也接受 `{"assetId":"..."}`（等价于 GET）。响应同 GET（含 `matchPct`）。
 - `GET /asset?id=xxx` — 单素材详情：含 `comment`（生成信息存档在这里，可读回 prompt）、来源、标签、**归属文件夹 `folders`（完整路径）**。
 - `POST /tag` — 打标签：body `{"tag":"标签名","conditions":{...}}` 或 `{"tag":"...","ids":["..."]}`，给全部命中素材打标签（幂等）。
 - `POST /untag` — 摘标签：参数同上，从命中素材上移除该标签（可逆）。
 - `POST /folder` — 归档：`{"folder":"A/B","conditions":{...}}`（文件夹不存在自动创建），把已有素材归入文件夹。
+- `POST /unfolder` — **移出文件夹**：`{"folder":"A/B","ids":[…]}` 或带 `conditions`；只对**已存在的文件夹**生效（不新建），目标必须在可写范围内。返回 `removed/folderId/folderPath`；可回退（回退会放回）。
 - `POST /star` — 星级：`{"star":0-5,"ids":[...]}` 或带 `conditions`。
 - `POST /board` — 上板：`{"boardId":N,"ids":[...]}`，把已有素材追加到白板（自动流式排布）。
 - `POST /note` — 备注：`{"note":"...","mode":"append","ids":[...]}`（mode 缺省为改写），给已有素材写/追加备注。

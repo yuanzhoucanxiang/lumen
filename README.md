@@ -123,11 +123,11 @@ LUMEN 运行时在本机 `127.0.0.1:45678` 提供 HTTP 接口（仅监听回环�
 | 端点 | 说明 |
 |------|------|
 | `POST /import` | 按路径批量导入（支持目录递归；**只收视觉素材**——图片/视频/音频/字体之外的普通文件会被忽略并在 `unsupported` 里回传；查重以 **SHA-256 内容**为准，同名同大小但内容不同不误判，文件改名仍能命中）。`move`（删源文件）与 `autoTag`（图片外发）**默认关闭**，需在设置 → Agent 接入 授权；`folder` 目标须在 Agent 可写范围内（同名智能文件夹会被 409 拒绝，不能作为落位目标）（默认只有「Agent 导入」，设置页可勾选）。未授权/越界都返回 403 且整批不做；响应回传实际落位路径 `folderPath` 与本次新建的文件夹 `createdFolders`（回退时会清理新建的空夹），可选 `tags` 打标签、`folder` 归文件夹（支持 `A/B` 多级自动创建）、`move` 移动导入、`note` 把 prompt/生成信息写入素材备注（可被搜索）、`checkSimilar` 相似检测（回传库内近似素材，防近重复图入库）、`validate` 试运行（只预估不导入）、`boardId` 直送白板画布、`autoTag` 后台 AI 自动打标签；未指定 `folder` 时新素材自动归入「Agent 导入」专属文件夹，与用户素材区分；返回逐文件明细 `files`，跳过的重复文件回传命中的库内素材 `matchedIds` 并照常补标签/归档（幂等重跑安全） |
-| `GET /assets` | 查询素材（只读）：`q` 关键词（名称+备注+拼音）/ `ext` / `tag` / `source` / `days` 最近N天 / `star` 最低星级 / `shape` 构图 / `untagged` / `folder` 文件夹 / `sort`+`order` 排序 / `limit` / `offset` |
+| `GET /assets` | 查询素材（只读）：`q` 关键词（名称+备注+拼音）/ `ext` / `tag` / `source` / `days` 最近N天 / `star` 最低星级 / `shape` 构图 / `untagged` / `folder` 文件夹 / `sort`+`order` 排序，行内含当前归属 `folderIds` / `limit` / `offset` |
 | `GET /asset?id=` | 单素材详情（含备注/来源/标签） |
 | `GET /similar?id=` / `POST /similar` | 以图搜图（dHash 相似检索，返回 matchPct）。GET 按库内素材 id；POST 支持**外部图片 dataUrl**（≤20MB）或 assetId，用于新图入库前查重 |
 | `POST /tag` / `POST /untag` | 按 `ids` 或 `conditions` 给命中素材打标签 / 摘标签（幂等可逆） |
-| `POST /folder` / `POST /star` / `POST /board` / `POST /note` | 归档到文件夹 / 设星级 / 追加到白板 / 写备注（均支持 `ids` 或 `conditions` 定位） |
+| `POST /folder` / `POST /unfolder` / `POST /star` / `POST /board` / `POST /note` | 归档到文件夹 / 移出文件夹 / 设星级 / 追加到白板 / 写备注（均支持 `ids` 或 `conditions` 定位） |
 | `GET /ops` / `POST /undo` | Agent 操作记录（逐项明细，含可否回退）与回退（整条、`itemIds` 逐项、或按 `groupKey` 整批；回退会清理本次新建的空文件夹与空标签）；助手面板可查看并逐项回退 |
 | `GET /boards` | 列出现有白板（id/name），配合 `boardId` 使用 |
 | `GET /stats` | 库汇总（只读）：素材总数、回收站数、标签/文件夹数、Agent 来源素材数 |

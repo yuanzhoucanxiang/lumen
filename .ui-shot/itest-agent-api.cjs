@@ -672,6 +672,53 @@ async function main() {
   check('POST /similar 传 assetId 等价于 GET', rSimPostId.status === 200 && rSimPostId.json?.ok === true,
     `status=${rSimPostId.status} total=${rSimPostId.json?.total}`)
 
+  /* ---------- 9m. 整理已有素材:folderIds + /unfolder(里程碑 199) ---------- */
+  const orgPng = path.join(dupDir, `${tag}-org.png`)
+  fs.writeFileSync(orgPng, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 5, 4, 4]))
+  const orgFolderA = `${tag}-整理A`
+  const orgFolderB = `${tag}-整理B`
+  const rOrg = await request('POST', '/import', JSON.stringify({ paths: [orgPng], folder: orgFolderA }))
+  const orgId = rOrg.json?.importedIds?.[0]
+  const orgFolderAId = rOrg.json?.folderId
+  // /assets 行要带 folderIds（整理时知道"它在哪"）
+  const rOrgList = await request('GET', `/assets?q=${encodeURIComponent(tag + '-org')}`)
+  const orgRow = (rOrgList.json?.assets ?? []).find((a) => a.id === orgId)
+  check('/assets 行回传 folderIds', Array.isArray(orgRow?.folderIds) && orgRow.folderIds.includes(orgFolderAId),
+    `folderIds=${JSON.stringify(orgRow?.folderIds)}`)
+  // 真正的"移动"：先加进 B，再从 A 移出
+  await request('POST', '/folder', JSON.stringify({ ids: [orgId], folder: orgFolderB }))
+  const rUnfolder = await request('POST', '/unfolder', JSON.stringify({ ids: [orgId], folder: orgFolderA }))
+  check('/unfolder 移出文件夹(只记真正移出的)',
+    rUnfolder.status === 200 && rUnfolder.json?.removed === 1 && rUnfolder.json?.folderId === orgFolderAId,
+    `removed=${rUnfolder.json?.removed}`)
+  const afterMove = ((await request('GET', `/assets?q=${encodeURIComponent(tag + '-org')}`)).json?.assets ?? []).find((a) => a.id === orgId)
+  const orgFolderBRow = ((await request('GET', '/folders')).json?.folders ?? []).find((f) => f.name === orgFolderB)
+  check('移动后只留在目标文件夹(不再同时挂两个夹)',
+    Array.isArray(afterMove?.folderIds) && afterMove.folderIds.length === 1 && afterMove.folderIds[0] === orgFolderBRow?.id,
+    `folderIds=${JSON.stringify(afterMove?.folderIds)} B=${orgFolderBRow?.id}`)
+  // 重复移出 → removed=0（幂等）
+  const rUnfolderAgain = await request('POST', '/unfolder', JSON.stringify({ ids: [orgId], folder: orgFolderA }))
+  check('/unfolder 重复移出 removed=0', rUnfolderAgain.status === 200 && rUnfolderAgain.json?.removed === 0,
+    `removed=${rUnfolderAgain.json?.removed}`)
+  // 不存在的文件夹 → 404（不新建）
+  const rUnfolderGhost = await request('POST', '/unfolder', JSON.stringify({ ids: [orgId], folder: `${tag}-不存在夹` }))
+  check('/unfolder 不存在的文件夹 404 且不新建', rUnfolderGhost.status === 404, `status=${rUnfolderGhost.status}`)
+  // 范围校验：目标文件夹在可写范围外 → 403（不能把用户个人文件夹里的素材抽走）
+  await run(`await window.api.updateSettings({ agentScopeUnrestricted: false, agentWriteFolders: [] })`)
+  const rUnfolderScope = await request('POST', '/unfolder', JSON.stringify({ ids: [orgId], folder: orgFolderB }))
+  await run(`await window.api.updateSettings({ agentScopeUnrestricted: true })`)
+  check('/unfolder 目标在可写范围外返回 403', rUnfolderScope.status === 403,
+    `status=${rUnfolderScope.status} error=${String(rUnfolderScope.json?.error).slice(0, 40)}`)
+  // 回退移出 → 重新放回
+  const unfolderOp = ((await request('GET', '/ops?limit=30')).json?.ops ?? []).find(
+    (o) => o.action === 'unfolder' && (o.items ?? []).some((it) => it.id === orgId)
+  )
+  const rUndoUnfolder = unfolderOp ? await request('POST', '/undo', JSON.stringify({ id: unfolderOp.id })) : null
+  const afterUndoMove = ((await request('GET', `/assets?q=${encodeURIComponent(tag + '-org')}`)).json?.assets ?? []).find((a) => a.id === orgId)
+  check('回退移出操作会把素材放回原文件夹',
+    rUndoUnfolder?.json?.ok === true && Array.isArray(afterUndoMove?.folderIds) && afterUndoMove.folderIds.includes(orgFolderAId),
+    `folderIds=${JSON.stringify(afterUndoMove?.folderIds)} msg=${String(rUndoUnfolder?.json?.message)}`)
+
   /* ---------- 9. 里程碑 182:回退只撤本次改动 / 精确查重 / 危险动作权限 ---------- */
   // 9a. 素材先由"用户"打上标签(走渲染层 IPC,不经 Agent 通道 -> 不产生操作记录)
   const PRE_TAG = `${tag}-原有标签`

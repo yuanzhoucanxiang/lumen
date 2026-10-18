@@ -20,6 +20,7 @@ import { logger } from './logger'
 import type { AgentOpView } from '../shared/types'
 import {
   addTagToAssets,
+  addToFolder,
   deleteAssets,
   deleteBoardItem,
   deleteFolder,
@@ -32,7 +33,7 @@ import {
   updateAsset
 } from './repository'
 
-export type AgentOpAction = 'import' | 'tag' | 'untag' | 'folder' | 'star' | 'board' | 'note'
+export type AgentOpAction = 'import' | 'tag' | 'untag' | 'folder' | 'unfolder' | 'star' | 'board' | 'note'
 
 /** 记录中的一个受影响项 */
 export interface AgentOpItem {
@@ -274,6 +275,13 @@ export function undoAgentOp(
         const folderId = Number(p.folderId)
         if (Number.isInteger(folderId)) removeFromFolder(targets.map((t) => t.id), folderId)
         message = `已把 ${targets.length} 个素材移出「${String(p.folderName ?? '文件夹')}」`
+        break
+      }
+      case 'unfolder': {
+        // 移出文件夹的逆操作：重新加回去（里程碑 199）
+        const folderId = Number(p.folderId)
+        if (Number.isInteger(folderId)) addToFolder(targets.map((t) => t.id), folderId)
+        message = `已把 ${targets.length} 个素材放回「${String(p.folderName ?? '文件夹')}」`
         break
       }
       case 'star': {
