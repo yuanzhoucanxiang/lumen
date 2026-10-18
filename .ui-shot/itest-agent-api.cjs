@@ -559,6 +559,61 @@ async function main() {
   const keepGone = !((await request('GET', '/folders')).json?.folders ?? []).some((f) => f.name === keepFolder)
   check('撤完全部项后空夹被清理', rRestOfKeep?.json?.ok === true && keepGone, `夹仍在=${!keepGone}`)
 
+  /* ---------- 9i. /assets 高级筛选 + /asset 归属 + 整批回退(里程碑 196) ---------- */
+  const advPng = path.join(dupDir, `${tag}-adv.png`)
+  fs.writeFileSync(advPng, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 3, 9, 9]))
+  const advFolder = `${tag}-高级夹`
+  const rAdv = await request('POST', '/import', JSON.stringify({ paths: [advPng], folder: advFolder, tags: [`${tag}-高级标签`] }))
+  const advId = rAdv.json?.importedIds?.[0]
+  await request('POST', '/star', JSON.stringify({ ids: [advId], star: 4 }))
+  // star 过滤：4 星以上应命中
+  const rStarFilter = await request('GET', `/assets?star=4&q=${encodeURIComponent(tag + '-adv')}`)
+  check('/assets?star=4 按最低星级筛选命中', (rStarFilter.json?.assets ?? []).some((a) => a.id === advId),
+    `count=${rStarFilter.json?.count}`)
+  // days 过滤：刚导入的应在最近 1 天内
+  const rDays = await request('GET', `/assets?days=1&q=${encodeURIComponent(tag + '-adv')}`)
+  check('/assets?days=1 最近一天筛选命中', (rDays.json?.assets ?? []).some((a) => a.id === advId), `count=${rDays.json?.count}`)
+  // folder 过滤：按文件夹只该出这个夹里的
+  const rFolderFilter = await request('GET', `/assets?folder=${rAdv.json?.folderId}&limit=50`)
+  check('/assets?folder= 按文件夹筛选且只含该夹素材',
+    (rFolderFilter.json?.assets ?? []).length >= 1 && (rFolderFilter.json?.assets ?? []).every((a) => a.id === advId),
+    `count=${rFolderFilter.json?.count}`)
+  // sort 过滤：按名字升序
+  const rSorted = await request('GET', `/assets?q=${encodeURIComponent(tag)}&sort=name&limit=500`)
+  const sortedNames = (rSorted.json?.assets ?? []).map((a) => a.name)
+  const isAsc = sortedNames.every((n, i) => i === 0 || String(sortedNames[i - 1]).localeCompare(String(n)) <= 0)
+  check('/assets?sort=name 按名称升序', sortedNames.length > 1 && isAsc, `前两个=${JSON.stringify(sortedNames.slice(0, 2))}`)
+  const rSortedDesc = await request('GET', `/assets?q=${encodeURIComponent(tag)}&sort=name&order=desc&limit=500`)
+  const descNames = (rSortedDesc.json?.assets ?? []).map((a) => a.name)
+  const isDesc = descNames.every((n, i) => i === 0 || String(descNames[i - 1]).localeCompare(String(n)) >= 0)
+  check('/assets?sort=name&order=desc 按名称降序', descNames.length > 1 && isDesc, `前两个=${JSON.stringify(descNames.slice(0, 2))}`)
+  // untagged：未打标签的素材
+  const rUntagged = await request('GET', '/assets?untagged=1&limit=20')
+  check('/assets?untagged=1 只回未打标签素材',
+    (rUntagged.json?.assets ?? []).length > 0 && (rUntagged.json?.assets ?? []).every((a) => (a.tags ?? []).length === 0),
+    `count=${rUntagged.json?.count}`)
+  // /asset 回传文件夹归属
+  const rAssetDetail = await request('GET', `/asset?id=${advId}`)
+  check('/asset 回传 folders(归属路径)', (rAssetDetail.json?.asset?.folders ?? []).some((f) => f.path === advFolder),
+    `folders=${JSON.stringify(rAssetDetail.json?.asset?.folders)}`)
+
+  // 整批回退：这次导入（带标签+归档）会产生同 groupKey 的多条记录
+  const advOps = (await request('GET', '/ops?limit=20')).json?.ops ?? []
+  const advImportOp = advOps.find((o) => o.action === 'import' && (o.items ?? []).some((it) => it.id === advId))
+  const advGroup = advImportOp?.groupKey ?? ''
+  const sameGroup = advOps.filter((o) => o.groupKey === advGroup && o.groupKey !== '')
+  const rGroupUndo = await request('POST', '/undo', JSON.stringify({ groupKey: advGroup }))
+  const opsAfterGroup = (await request('GET', '/ops?limit=20')).json?.ops ?? []
+  const groupAllUndone = sameGroup.every((o) => (opsAfterGroup.find((x) => x.id === o.id) ?? {}).undone === true)
+  const advTagsLeft = ((await request('GET', `/asset?id=${advId}`)).json?.asset?.tags ?? []).length
+  check('整批回退(groupKey)一次撤掉该批次的全部记录',
+    rGroupUndo.status === 200 && rGroupUndo.json?.ok === true && sameGroup.length >= 2 && groupAllUndone,
+    `group=${advGroup} 条数=${sameGroup.length} msg=${String(rGroupUndo.json?.message)}`)
+  const rGroupUndoAgain = await request('POST', '/undo', JSON.stringify({ groupKey: advGroup }))
+  check('重复整批回退返回 400(已无可回退)', rGroupUndoAgain.status === 400, `status=${rGroupUndoAgain.status}`)
+  const rUndoNoKey = await request('POST', '/undo', JSON.stringify({}))
+  check('/undo 缺 id 与 groupKey 返回 400', rUndoNoKey.status === 400, `status=${rUndoNoKey.status}`)
+
   /* ---------- 9. 里程碑 182:回退只撤本次改动 / 精确查重 / 危险动作权限 ---------- */
   // 9a. 素材先由"用户"打上标签(走渲染层 IPC,不经 Agent 通道 -> 不产生操作记录)
   const PRE_TAG = `${tag}-原有标签`

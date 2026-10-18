@@ -134,9 +134,9 @@ curl -s -X POST http://127.0.0.1:45678/import \
 
 - `GET /scope` — **我的可写范围 + 已有分类**（只读）：`allowed`（允许写入的文件夹，`path` 可直接作为 `folder` 参数）、`allowed[].subfolders` 与 `defaultSubfolders`（**已有的子文件夹完整路径，优先复用**）、`defaultFolder`、`subfoldersAllowed`、`unrestricted`、`hint`。导入/归档前必看。
 - `GET /status` — 服务探测 + **技能版本自检**：`version`、`library`、`skill:{installed,upToDate}`；`upToDate:false` 时另带 `skillUpdateHint`（提醒用户去设置里更新技能）。
-- `GET /assets` — 查询素材（只读）。参数：`q`=关键词（搜名称和备注，含拼音，比如用 prompt 片段找图）、`ext`=逗号分隔扩展名、`tag`=标签名、`source`=来源（manual/agent/clip/watcher/screenshot）、`limit`≤500、`offset` 分页。响应含 `count/truncated/assets`（窄列：id/name/ext/宽高/大小/来源/标签）。**生成或导入前先查一下库里有没有，避免重复劳动**。
+- `GET /assets` — 查询素材（只读）。参数：`q`=关键词（搜名称和备注，含拼音，比如用 prompt 片段找图）、`ext`=逗号分隔扩展名、`tag`=标签名、`source`=来源（manual/agent/clip/watcher/screenshot）、`days`=最近 N 天、`star`=最低星级、`shape`=landscape/portrait/square、`untagged=1`=未打标签、`folder`=文件夹 id、`sort`=imported/name/size/star + `order`=asc/desc（按名字默认正序，其余默认倒序）、`limit`≤500、`offset` 分页。响应含 `count/truncated/assets`（窄列：id/name/ext/宽高/大小/来源/标签）。**生成或导入前先查一下库里有没有，避免重复劳动**。
 - `GET /similar?id=xxx&maxDistance=12&limit=60` — **以图搜图**（只读，确定性 dHash 检索）：给一个库内素材 id，返回库中与它相似的素材（含 `matchPct` 相似度百分比，按相似度降序）。适合'这张图还有没有近似版本/重复'类需求。
-- `GET /asset?id=xxx` — 单素材详情：含 `comment`（生成信息存档在这里，可读回 prompt）、来源、标签。
+- `GET /asset?id=xxx` — 单素材详情：含 `comment`（生成信息存档在这里，可读回 prompt）、来源、标签、**归属文件夹 `folders`（完整路径）**。
 - `POST /tag` — 打标签：body `{"tag":"标签名","conditions":{...}}` 或 `{"tag":"...","ids":["..."]}`，给全部命中素材打标签（幂等）。
 - `POST /untag` — 摘标签：参数同上，从命中素材上移除该标签（可逆）。
 - `POST /folder` — 归档：`{"folder":"A/B","conditions":{...}}`（文件夹不存在自动创建），把已有素材归入文件夹。
@@ -144,7 +144,7 @@ curl -s -X POST http://127.0.0.1:45678/import \
 - `POST /board` — 上板：`{"boardId":N,"ids":[...]}`，把已有素材追加到白板（自动流式排布）。
 - `POST /note` — 备注：`{"note":"...","mode":"append","ids":[...]}`（mode 缺省为改写），给已有素材写/追加备注。
 - `GET /ops` — **操作记录**：列出你做过的写操作（**含逐项明细 `items[]`** 与能否回退）。改动用户素材后建议主动向用户汇报；用户可在 LUMEN 助手面板查看并**逐项或整条回退**。
-- `POST /undo` — 回退：`{"id":N}` 撤销整条记录，或 `{"id":N,"itemIds":["资产id",...]}` **只撤销其中几项**；响应含 `undoneCount/remaining`（进度）。一次性，移动导入不可回退。
+- `POST /undo` — 回退：`{"id":N}` 整条、`{"id":N,"itemIds":[...]}` 逐项、**`{"groupKey":"…"}` 一次撤掉同一批请求产生的全部记录**（一次带标签+归档的导入会生成多条记录，用 groupKey 最省事）。回退时本次新建的空文件夹会被一并清理。
 - `GET /stats` — 库汇总（只读）：素材总数、回收站数、标签/文件夹数、Agent 导入文件夹张数（`agentImported`）。汇报时用它说"库内共 X 张，Agent 收纳了 Y 张"。
 - `GET /tags` — 列出现有标签（含 id/name/count）。打标签前可先看看有没有语义相近的既有标签，优先复用，避免同义标签泛滥。
 - `GET /folders` — 列出现有文件夹（含 id/name/parentId/count）。同理优先归入既有文件夹。

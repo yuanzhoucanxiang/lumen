@@ -11,6 +11,7 @@ import {
   addBoardItems,
   addTagToAssets,
   addToFolder,
+  assetFolderIds,
   assetsHavingTag,
   assetsInFolder,
   createFolder,
@@ -27,7 +28,7 @@ import {
 import { aiProcessBatch } from './aiRename'
 import { agentSkillStatus } from './agentSkill'
 import { agentFindSimilar, agentMatchedIds } from './aiAgent'
-import { itemsFromAssetIds, listAgentOps, logAgentOp, newGroupKey, undoAgentOp } from './agentOps'
+import { itemsFromAssetIds, listAgentOps, logAgentOp, newGroupKey, undoAgentGroup, undoAgentOp } from './agentOps'
 import type { AgentOpItem } from './agentOps'
 import { logger } from './logger'
 import { guardedFetch, readBodyCapped } from './netGuard'
@@ -730,6 +731,22 @@ export function startClipServer(
       const offset = Math.min(Math.max(Number.isFinite(offsetRaw) ? Math.floor(offsetRaw) : 0, 0), 100000)
       const exts = (q.get('ext') ?? '').split(',').map((s) => s.trim().toLowerCase().replace(/^\./, '')).filter(Boolean)
       const tagName = (q.get('tag') ?? '').trim()
+      // 额外筛选（里程碑 196）：days=最近N天 / star=最低星级 / shape=构图 / untagged=未打标签 / sort=排序 / folder=文件夹id
+      const daysRaw = Number(q.get('days') ?? 0)
+      const withinDays = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.min(Math.floor(daysRaw), 3650) : undefined
+      const starRaw = Number(q.get('star') ?? 0)
+      const starMin = Number.isFinite(starRaw) && starRaw > 0 ? Math.min(Math.floor(starRaw), 5) : undefined
+      const shapeRaw = (q.get('shape') ?? '').toLowerCase()
+      const shape =
+        shapeRaw === 'landscape' || shapeRaw === 'portrait' || shapeRaw === 'square' ? shapeRaw : undefined
+      const untagged = ['1', 'true', 'yes'].includes((q.get('untagged') ?? '').toLowerCase()) || undefined
+      const sortRaw = (q.get('sort') ?? '').toLowerCase()
+      const sortBy = sortRaw === 'name' || sortRaw === 'size' || sortRaw === 'star' ? sortRaw : undefined
+      // 排序方向（里程碑 196）：order=asc|desc；不给时按名字正序、其余倒序（最近导入/大文件/高星级在前更符合直觉）
+      const orderRaw = (q.get('order') ?? '').toLowerCase()
+      const sortDesc = orderRaw === 'asc' ? false : orderRaw === 'desc' ? true : sortBy !== 'name'
+      const folderRaw = Number(q.get('folder') ?? NaN)
+      const folderId = Number.isInteger(folderRaw) ? folderRaw : undefined
       // source 参数归一：'' 与 'manual' 都表示手动导入（列值为 ''）；其余白名单直通；非法值忽略
       const sourceRaw = q.get('source')
       const source = sourceRaw === null ? undefined : sourceRaw === '' || sourceRaw === 'manual' ? '' : SOURCES_HTTP.has(sourceRaw) ? sourceRaw : undefined
@@ -744,6 +761,13 @@ export function startClipServer(
         exts: exts.length > 0 ? exts : undefined,
         tagIds: tagRow ? [tagRow.id] : undefined,
         source,
+        withinDays,
+        starMin,
+        shape,
+        untagged,
+        sortBy,
+        sortDesc,
+        folderId,
         limit: limit + 1,
         offset
       })
@@ -786,7 +810,15 @@ export function startClipServer(
           source: a.source,
           comment: a.comment,
           url: a.url,
-          tags: a.tagNames ?? []
+          tags: a.tagNames ?? [],
+          // 归属文件夹（里程碑 196）：Agent 能回答"这张图归档到哪了"
+          folders: (() => {
+            const all = listFolders().filter((f) => !f.isSmart)
+            const byId = new Map(all.map((f) => [f.id, { id: f.id, name: f.name, parentId: f.parentId }]))
+            return assetFolderIds(a.id)
+              .filter((fid) => byId.has(fid))
+              .map((fid) => ({ id: fid, path: folderPathOf(fid, byId) }))
+          })()
         }
       })
       return
@@ -1018,9 +1050,16 @@ ${note}` : note
     if (req.method === 'POST' && url.pathname === '/undo') {
       readBody(req, res)
         .then(async (body) => {
-          const payload = JSON.parse(body) as { id?: number; itemIds?: string[] }
+          const payload = JSON.parse(body) as { id?: number; itemIds?: string[]; groupKey?: string }
+          // 整批回退（里程碑 196）：一次请求产生的多条记录（导入/标签/归档）用一个 groupKey 一起撤
+          if (typeof payload.groupKey === 'string' && payload.groupKey.trim()) {
+            const g = undoAgentGroup(payload.groupKey)
+            if (g.ok) onImported?.(0, 'agent')
+            json(res, g.ok ? 200 : 400, { ok: g.ok, message: g.message, undone: g.undone, remaining: g.remaining })
+            return
+          }
           const id = Number(payload.id)
-          if (!Number.isInteger(id)) throw new Error('id required')
+          if (!Number.isInteger(id)) throw new Error('id required (or groupKey)')
           const itemIds = Array.isArray(payload.itemIds) ? payload.itemIds.filter((x) => typeof x === 'string') : undefined
           const r = undoAgentOp(id, itemIds)
           if (r.ok) onImported?.(0, 'agent')

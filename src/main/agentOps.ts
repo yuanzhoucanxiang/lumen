@@ -152,6 +152,32 @@ export function clearAgentOps(): number {
 }
 
 /** 最近的操作记录（倒序，面板展示用；含逐项明细与逐项回退状态） */
+/** 整批回退（里程碑 196）：按批次键把一次请求产生的多条记录一起撤掉。
+ *  一次带标签+归档的导入会产生 import/tag/folder 多条记录，逐条撤对 agent 太啰嗦。 */
+export function undoAgentGroup(groupKey: string): { ok: boolean; message: string; undone: number; remaining: number } {
+  const key = String(groupKey ?? '').trim()
+  if (!key) return { ok: false, message: 'groupKey 不能为空', undone: 0, remaining: 0 }
+  const rows = getDb()
+    .prepare('SELECT id FROM agent_ops WHERE group_key = ? AND undone = 0 ORDER BY id')
+    .all(key) as { id: number }[]
+  if (rows.length === 0) return { ok: false, message: '该批次没有可回退的记录', undone: 0, remaining: 0 }
+  let done = 0
+  let blocked = 0
+  for (const r of rows) {
+    const res = undoAgentOp(r.id)
+    if (res.ok) done++
+    else blocked++
+  }
+  return {
+    ok: done > 0,
+    message:
+      `已回退该批次的 ${done} 条操作` +
+      (blocked > 0 ? `（${blocked} 条不可回退，如移动导入）` : ''),
+    undone: done,
+    remaining: blocked
+  }
+}
+
 export function listAgentOps(limit = 30): AgentOp[] {
   const rows = getDb()
     .prepare(

@@ -90,6 +90,15 @@ export function addToFolder(assetIds: string[], folderId: number): void {
   for (const id of assetIds) ins.run(id, folderId)
 }
 
+/** 某素材所属的文件夹 id 列表（Agent /asset 回传归属用，里程碑 196） */
+export function assetFolderIds(assetId: string): number[] {
+  return (
+    getDb()
+      .prepare('SELECT folder_id FROM asset_folders WHERE asset_id = ?')
+      .all(assetId) as { folder_id: number }[]
+  ).map((r) => r.folder_id)
+}
+
 /** 文件夹是否为空（无未删除素材、无子夹）。Agent 回退清理本次新建的空夹用（里程碑 192）。
  *  注意按 deleted_at IS NULL 判断——软删素材的归属行可能仍在表里。 */
 export function isFolderEmpty(folderId: number): boolean {
