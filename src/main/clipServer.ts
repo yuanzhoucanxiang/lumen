@@ -171,28 +171,37 @@ function sanitizeName(name: unknown): string {
   return String(name)
     .replace(/[\u0000-\u001f\u007f]/g, '')
     .replace(/[\\/:*?"<>|]/g, '_')
+    // 纯点号（"." / ".."）不是有意义的夹名/标签名，直接视为空（里程碑 192）
+    .replace(/^\.+$/, '')
     .trim()
     .slice(0, MAX_NAME_LEN)
 }
 
-/** 按名解析文件夹(预校验过的多级段名,缺失层级自动逐级创建),返回最深一级的 id。
- *  匹配时排除智能文件夹(智能文件夹由条件定义,不应作为落位目标)。 */
-function resolveFolderId(segments: string[]): number {
+/** 按名解析文件夹(预校验过的多级段名,缺失层级自动逐级创建),返回最深一级的 id + 本次新建的层级。
+ *  匹配时排除智能文件夹(智能文件夹由条件定义,不应作为落位目标)。
+ *  created 用于操作记录（里程碑 192）：回退 Agent 的导入/归档时，把这次新建的空文件夹一并清掉，
+ *  否则撤销之后库里会留下一个个空壳夹。 */
+function resolveFolderId(segments: string[]): { id: number; created: { id: number; path: string }[] } {
   const folders = listFolders()
   let parentId: number | null = null
   let id = 0
-  for (const seg of segments) {
+  const created: { id: number; path: string }[] = []
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i]
     const found = folders.find((f) => f.parentId === parentId && !f.isSmart && f.name === seg)
     if (found) {
       id = found.id
     } else {
-      const created = createFolder(seg, parentId)
-      id = created.id
-      folders.push(created) // 后续层级基于新建节点继续匹配
+      const row = createFolder(seg, parentId)
+      id = row.id
+      folders.push(row) // 后续层级基于新建节点继续匹配
+      const path = segments.slice(0, i + 1).join('/')
+      // 「Agent 导入」是稳定锚点，不记录为"本次新建"，回退时也不删它
+      if (path !== AGENT_DEFAULT_FOLDER) created.push({ id, path })
     }
     parentId = id
   }
-  return id
+  return { id, created }
 }
 
 /** Agent 自动打标签后台队列:AI 打标签耗时分钟级,不阻塞导入响应,完成经 notify 推送 */
@@ -328,6 +337,8 @@ async function importFromPaths(
   files: ImportFileDetail[]
   missing: string[]
   folderId: number | null
+  folderPath?: string
+  createdFolders?: string[]
   boardId: number | null
   autoTagStarted: boolean
   similar: { id: string; name: string; matches: { id: string; name: string }[] }[]
@@ -435,12 +446,16 @@ async function importFromPaths(
   // 未指定时新导入素材自动归入专属文件夹「Agent 导入」,与用户自己的素材区分开。
   // 专属文件夹只作用于新导入——matched 的库内已有素材可能是用户自己导入的,不应被挪进 agent 专属文件夹。
   let folderId: number | null = null
+  let createdFolders: { id: number; path: string }[] = []
   if (applyIds.length > 0 && folderSegments.length > 0) {
-    folderId = resolveFolderId(folderSegments)
+    const r = resolveFolderId(folderSegments)
+    folderId = r.id
+    createdFolders = r.created
     folderPre = assetsInFolder(applyIds, folderId)
     addToFolder(applyIds, folderId)
   } else if (importedIds.length > 0) {
-    folderId = resolveFolderId([AGENT_DEFAULT_FOLDER])
+    const r = resolveFolderId([AGENT_DEFAULT_FOLDER])
+    folderId = r.id
     addToFolder(importedIds, folderId)
   }
 
@@ -466,7 +481,13 @@ async function importFromPaths(
       folderSegments.length > 0
         ? `导入 ${importedIds.length} 个素材`
         : `导入 ${importedIds.length} 个素材，归入「${AGENT_DEFAULT_FOLDER}」`
-    logAgentOp('import', summary, { items: itemsFromAssetIds(importedIds), undoable: payload.move !== true }, importedIds.length, gk)
+    logAgentOp(
+      'import',
+      summary,
+      { items: itemsFromAssetIds(importedIds), undoable: payload.move !== true, createdFolders },
+      importedIds.length,
+      gk
+    )
   }
   // ②显式 folder(作用于新导入 + 命中的库内已有素材)
   //   只记"本次真正新归档进去的"：已经在目标文件夹里的素材不入记录，回退时不会把用户原有归属移出去(里程碑 182)
@@ -476,7 +497,7 @@ async function importFromPaths(
       logAgentOp(
         'folder',
         `把 ${changedFolderIds.length} 个素材归入文件夹「${folderSegments.join('/')}」`,
-        { items: itemsFromAssetIds(changedFolderIds), folderId, folderName: folderSegments.join('/') },
+        { items: itemsFromAssetIds(changedFolderIds), folderId, folderName: folderSegments.join('/'), createdFolders },
         changedFolderIds.length,
         gk
       )
@@ -534,6 +555,10 @@ async function importFromPaths(
     files: result.files ?? [],
     missing,
     folderId,
+    /** 落位的文件夹完整路径（Agent 汇报"放到哪个夹"直接用这个，不用自己拼） */
+    folderPath: folderSegments.length > 0 ? folderSegments.join('/') : importedIds.length > 0 ? AGENT_DEFAULT_FOLDER : '',
+    /** 本次请求新建的文件夹路径（回退时会一并清理，Agent 可告知用户"同时新建了这些夹"） */
+    createdFolders: createdFolders.map((c) => c.path),
     boardId,
     autoTagStarted,
     similar
@@ -618,23 +643,29 @@ export function startClipServer(
       const folders = listFolders().filter((f) => !f.isSmart)
       const byId = new Map(folders.map((f) => [f.id, { id: f.id, name: f.name, parentId: f.parentId }]))
       /** 某文件夹下已有的子孙夹（里程碑 189）：让 agent 优先复用现成分类，而不是每次造近义的新夹 */
+      // 全局预算（里程碑 192）：单根上限 120 条、所有根合计不超过 300 条，
+      // 避免用户勾了很多可写文件夹时 /scope 响应无限膨胀
+      let subfolderBudget = 300
       const descendantsOf = (rootId: number, limit = 120): { id: number; path: string; name: string }[] => {
         const out: { id: number; path: string; name: string }[] = []
+        const cap = Math.min(limit, Math.max(0, subfolderBudget))
+        if (cap === 0) return out
         let frontier = [rootId]
-        while (frontier.length > 0 && out.length < limit) {
+        while (frontier.length > 0 && out.length < cap) {
           const next: number[] = []
           for (const fid of frontier) {
             for (const f of folders) {
               if (f.parentId === fid) {
                 out.push({ id: f.id, path: folderPathOf(f.id, byId), name: f.name })
                 next.push(f.id)
-                if (out.length >= limit) break
+                if (out.length >= cap) break
               }
             }
-            if (out.length >= limit) break
+            if (out.length >= cap) break
           }
           frontier = next
         }
+        subfolderBudget -= out.length
         return out
       }
       const allowed = (cfg.agentWriteFolders ?? [])
@@ -850,17 +881,24 @@ export function startClipServer(
             json(res, 200, { ok: true, moved: 0 })
             return
           }
-          const fid = resolveFolderId(segs)
+          const { id: fid, created } = resolveFolderId(segs)
           const name = segs.join('/')
           // 只记"本次真正新归档进去"的素材（原本就在这个文件夹里的不记，回退才不会移走用户的原有归属）。里程碑 182
           const alreadyIn = assetsInFolder(ids, fid)
           const changed = ids.filter((id) => !alreadyIn.has(id))
           addToFolder(ids, fid)
           if (changed.length > 0) {
-            logAgentOp('folder', `把 ${changed.length} 个素材归入文件夹「${name}」`, { items: itemsFromAssetIds(changed), folderId: fid, folderName: name }, changed.length)
+            logAgentOp('folder', `把 ${changed.length} 个素材归入文件夹「${name}」`, { items: itemsFromAssetIds(changed), folderId: fid, folderName: name, createdFolders: created }, changed.length)
           }
           onImported?.(0, 'agent')
-          json(res, 200, { ok: true, moved: ids.length, changed: changed.length, folderId: fid })
+          json(res, 200, {
+            ok: true,
+            moved: ids.length,
+            changed: changed.length,
+            folderId: fid,
+            folderPath: name,
+            createdFolders: created.map((c) => c.path)
+          })
         })
         .catch((err: Error) => {
           if (!res.headersSent) json(res, 400, { ok: false, error: err.message })

@@ -90,6 +90,21 @@ export function addToFolder(assetIds: string[], folderId: number): void {
   for (const id of assetIds) ins.run(id, folderId)
 }
 
+/** 文件夹是否为空（无未删除素材、无子夹）。Agent 回退清理本次新建的空夹用（里程碑 192）。
+ *  注意按 deleted_at IS NULL 判断——软删素材的归属行可能仍在表里。 */
+export function isFolderEmpty(folderId: number): boolean {
+  if (!Number.isInteger(folderId)) return false
+  const db = getDb()
+  const hasAsset = db
+    .prepare(
+      `SELECT 1 FROM asset_folders af JOIN assets a ON a.id = af.asset_id
+       WHERE af.folder_id = ? AND a.deleted_at IS NULL LIMIT 1`
+    )
+    .get(folderId)
+  if (hasAsset) return false
+  return !db.prepare('SELECT 1 FROM folders WHERE parent_id = ? LIMIT 1').get(folderId)
+}
+
 /** 这批素材里已经在该文件夹内的 id 集合。
  *  Agent 操作记录用（里程碑 182）：只把"本次真正新归档进去"的素材记进记录，
  *  回退时就不会把用户原本就归在这个文件夹里的素材移出去。 */

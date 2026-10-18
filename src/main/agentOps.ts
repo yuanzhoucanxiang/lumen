@@ -22,7 +22,9 @@ import {
   addTagToAssets,
   deleteAssets,
   deleteBoardItem,
+  deleteFolder,
   getAssetById,
+  isFolderEmpty,
   removeFromFolder,
   removeTagFromAssets,
   updateAsset
@@ -80,6 +82,8 @@ export function logAgentOp(
     tag?: string
     folderId?: number
     folderName?: string
+    /** 本次操作新建的文件夹（里程碑 192）：回退时若已空则一并删掉，避免留下空壳夹 */
+    createdFolders?: { id: number; path: string }[]
     boardId?: number
     undoable?: boolean
   },
@@ -192,10 +196,14 @@ export function undoAgentOp(
     .get(id) as OpRow | undefined
   if (!row) return { ok: false, message: '记录不存在' }
   if (row.undone === 1) return { ok: false, message: '该操作已回退过' }
-  const p = parseJson<{ items?: AgentOpItem[]; tag?: string; folderId?: number; folderName?: string; undoable?: boolean }>(
-    row.payload,
-    {}
-  )
+  const p = parseJson<{
+    items?: AgentOpItem[]
+    tag?: string
+    folderId?: number
+    folderName?: string
+    createdFolders?: { id: number; path: string }[]
+    undoable?: boolean
+  }>(row.payload, {})
   if (p.undoable === false) return { ok: false, message: '该操作不可回退（移动导入的源文件已删除）' }
 
   const allItems = p.items ?? []
@@ -279,8 +287,24 @@ export function undoAgentOp(
         return { ok: false, message: `未知操作类型: ${row.action}` }
     }
 
+    // 清理本次操作新建、且现在已空的文件夹（里程碑 192）：撤销后不留空壳夹。
+    // 由深到浅删（子夹先删，父夹才可能变空）；只删空夹，有素材/有子夹的一律保留。
+    let removedFolders = 0
+    const createdFolders = p.createdFolders ?? []
+    if (createdFolders.length > 0 && (row.action === 'import' || row.action === 'folder')) {
+      const ordered = [...createdFolders].sort((a, b2) => b2.path.split('/').length - a.path.split('/').length)
+      for (const f of ordered) {
+        if (!Number.isInteger(f.id)) continue
+        if (isFolderEmpty(f.id)) {
+          deleteFolder(f.id)
+          removedFolders++
+        }
+      }
+    }
+
     const newDone = [...doneIds, ...targets.map((t) => t.id)]
     const remaining = allItems.length - newDone.length
+    if (removedFolders > 0) message += `（并清理了 ${removedFolders} 个本次新建的空文件夹）`
     if (remaining <= 0) {
       db.prepare('UPDATE agent_ops SET undone = 1, undone_at = ?, undone_items = ? WHERE id = ?').run(
         Date.now(),

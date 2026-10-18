@@ -513,6 +513,52 @@ async function main() {
   const mdQuery = await request('GET', `/assets?q=${encodeURIComponent(tag + '-readme')}`)
   check('非视觉文件确实没进库(查不到 readme.md)', mdQuery.json?.count === 0, `count=${mdQuery.json?.count}`)
 
+  /* ---------- 9h. 回退清理本次新建的空夹 + 落位路径回传(里程碑 192) ---------- */
+  const cleanupPng = path.join(dupDir, `${tag}-cleanup.png`)
+  fs.writeFileSync(cleanupPng, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 2, 6, 6]))
+  const newFolderPath = `${tag}-清理夹/子级`
+  const rFolderInfo = await request('POST', '/import', JSON.stringify({ paths: [cleanupPng], folder: newFolderPath }))
+  check('/import 回传 folderPath 与本次新建的文件夹',
+    rFolderInfo.status === 200 && rFolderInfo.json?.imported === 1 &&
+      rFolderInfo.json?.folderPath === newFolderPath &&
+      (rFolderInfo.json?.createdFolders ?? []).includes(`${tag}-清理夹`) &&
+      (rFolderInfo.json?.createdFolders ?? []).includes(newFolderPath),
+    `folderPath=${rFolderInfo.json?.folderPath} created=${JSON.stringify(rFolderInfo.json?.createdFolders)}`)
+  const opsCleanup = (await request('GET', '/ops?limit=30')).json?.ops ?? []
+  const importOp = opsCleanup.find((o) => o.action === 'import' && (o.items ?? []).some((it) => it.name === `${tag}-cleanup.png`))
+  // 按 id 校验（不能按名字：库里有别的测试夹也用过「子级」这个名字）
+  const beforeUndoFolders = (await request('GET', '/folders')).json?.folders ?? []
+  const cleanupRootRow = beforeUndoFolders.find((f) => f.name === `${tag}-清理夹`)
+  const cleanupChildRow = cleanupRootRow ? beforeUndoFolders.find((f) => f.parentId === cleanupRootRow.id) : null
+  const rUndoCleanup = importOp ? await request('POST', '/undo', JSON.stringify({ id: importOp.id })) : null
+  const foldersAfterUndo = (await request('GET', '/folders')).json?.folders ?? []
+  const afterIds = new Set(foldersAfterUndo.map((f) => f.id))
+  check('回退导入时清理本次新建的空文件夹(不留空壳夹)',
+    rUndoCleanup?.json?.ok === true && !!cleanupRootRow && !!cleanupChildRow &&
+      !afterIds.has(cleanupRootRow.id) && !afterIds.has(cleanupChildRow.id) &&
+      String(rUndoCleanup.json.message).includes('清理'),
+    `msg=${String(rUndoCleanup?.json?.message)} 根残留=${!!!cleanupRootRow || afterIds.has(cleanupRootRow.id)} 子残留=${!!!cleanupChildRow || afterIds.has(cleanupChildRow.id)}`)
+
+  // 部分回退时夹里还有素材 → 不能删
+  const keepPng1 = path.join(dupDir, `${tag}-keep1.png`)
+  const keepPng2 = path.join(dupDir, `${tag}-keep2.png`)
+  fs.writeFileSync(keepPng1, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 2, 7, 6]))
+  fs.writeFileSync(keepPng2, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 2, 8, 6]))
+  const keepFolder = `${tag}-半撤夹`
+  const rKeep = await request('POST', '/import', JSON.stringify({ paths: [keepPng1, keepPng2], folder: keepFolder }))
+  const keepOp = ((await request('GET', '/ops?limit=30')).json?.ops ?? []).find(
+    (o) => o.action === 'import' && (o.items ?? []).length === 2 && (o.items ?? []).every((it) => it.name.startsWith(`${tag}-keep`))
+  )
+  const keepItemId = keepOp?.items?.[0]?.id
+  const rPartial = keepOp && keepItemId ? await request('POST', '/undo', JSON.stringify({ id: keepOp.id, itemIds: [keepItemId] })) : null
+  const keepStill = ((await request('GET', '/folders')).json?.folders ?? []).some((f) => f.name === keepFolder)
+  check('部分回退时文件夹里还有素材 → 不删夹', rPartial?.json?.ok === true && keepStill && rKeep.json?.imported === 2,
+    `剩余=${rPartial?.json?.remaining} 夹仍在=${keepStill}`)
+  // 撤完剩下的项 → 夹变空 → 这时才清掉
+  const rRestOfKeep = keepOp ? await request('POST', '/undo', JSON.stringify({ id: keepOp.id })) : null
+  const keepGone = !((await request('GET', '/folders')).json?.folders ?? []).some((f) => f.name === keepFolder)
+  check('撤完全部项后空夹被清理', rRestOfKeep?.json?.ok === true && keepGone, `夹仍在=${!keepGone}`)
+
   /* ---------- 9. 里程碑 182:回退只撤本次改动 / 精确查重 / 危险动作权限 ---------- */
   // 9a. 素材先由"用户"打上标签(走渲染层 IPC,不经 Agent 通道 -> 不产生操作记录)
   const PRE_TAG = `${tag}-原有标签`
