@@ -588,6 +588,23 @@ async function main() {
   const isDesc = descNames.every((n, i) => i === 0 || String(descNames[i - 1]).localeCompare(String(n)) >= 0)
   check('/assets?sort=name&order=desc 按名称降序', descNames.length > 1 && isDesc, `前两个=${JSON.stringify(descNames.slice(0, 2))}`)
   // untagged：未打标签的素材
+  // 未归档筛选（里程碑 200）：把 adv 素材移出它唯一的文件夹后应出现在 folder=none
+  const advFolderId = rAdv.json?.folderId
+  await request('POST', '/unfolder', JSON.stringify({ ids: [advId], folder: advFolder }))
+  const rNoFolder = await request('GET', `/assets?folder=none&q=${encodeURIComponent(tag + '-adv')}`)
+  check('/assets?folder=none 只回未归档素材',
+    (rNoFolder.json?.assets ?? []).some((a2) => a2.id === advId),
+    `count=${rNoFolder.json?.count}`)
+  // 放回原夹，后面的 /asset 归属与整批回退断言依赖它在夹里
+  await request('POST', '/folder', JSON.stringify({ ids: [advId], folder: advFolder }))
+  // 尺寸/体积筛选：1x1 的真实图用 maxW=2 命中、minW=100 排除
+  const rMaxW = await request('GET', `/assets?maxW=2&q=${encodeURIComponent(tag + '-real')}`)
+  const rMinW = await request('GET', `/assets?minW=100&q=${encodeURIComponent(tag + '-real')}`)
+  check('/assets 尺寸筛选(maxW/minW)生效',
+    (rMaxW.json?.assets ?? []).some((a2) => a2.name === `${tag}-real.png`) && (rMinW.json?.count ?? 0) === 0,
+    `maxW=${rMaxW.json?.count} minW=${rMinW.json?.count}`)
+  const rMinKB = await request('GET', `/assets?minKB=100000&q=${encodeURIComponent(tag)}`)
+  check('/assets 体积筛选(minKB)生效(测试图都很小,应归零)', (rMinKB.json?.count ?? 0) === 0, `count=${rMinKB.json?.count}`)
   const rUntagged = await request('GET', '/assets?untagged=1&limit=20')
   check('/assets?untagged=1 只回未打标签素材',
     (rUntagged.json?.assets ?? []).length > 0 && (rUntagged.json?.assets ?? []).every((a) => (a.tags ?? []).length === 0),

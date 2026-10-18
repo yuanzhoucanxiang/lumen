@@ -681,6 +681,14 @@ export function startClipServer(
       // 全局预算（里程碑 192）：单根上限 120 条、所有根合计不超过 300 条，
       // 避免用户勾了很多可写文件夹时 /scope 响应无限膨胀
       let subfolderBudget = 300
+      // 子夹按父 id 建索引，遍历不再逐层全量扫
+      const childrenOf = new Map<number, typeof folders>()
+      for (const f of folders) {
+        if (f.parentId == null) continue
+        const arr = childrenOf.get(f.parentId) ?? []
+        arr.push(f)
+        childrenOf.set(f.parentId, arr)
+      }
       const descendantsOf = (rootId: number, limit = 120): { id: number; path: string; name: string }[] => {
         const out: { id: number; path: string; name: string }[] = []
         const cap = Math.min(limit, Math.max(0, subfolderBudget))
@@ -689,12 +697,11 @@ export function startClipServer(
         while (frontier.length > 0 && out.length < cap) {
           const next: number[] = []
           for (const fid of frontier) {
-            for (const f of folders) {
-              if (f.parentId === fid) {
-                out.push({ id: f.id, path: folderPathOf(f.id, byId), name: f.name })
-                next.push(f.id)
-                if (out.length >= cap) break
-              }
+            // childrenOf 索引（里程碑 200）：大库下避免每层都全量扫 folders（O(n^2)）
+            for (const f of childrenOf.get(fid) ?? []) {
+              out.push({ id: f.id, path: folderPathOf(f.id, byId), name: f.name })
+              next.push(f.id)
+              if (out.length >= cap) break
             }
             if (out.length >= cap) break
           }
@@ -780,7 +787,17 @@ export function startClipServer(
       const orderRaw = (q.get('order') ?? '').toLowerCase()
       const sortDesc = orderRaw === 'asc' ? false : orderRaw === 'desc' ? true : sortBy !== 'name'
       const folderRaw = Number(q.get('folder') ?? NaN)
+      // folder=none → 未归档（不属于任何文件夹），里程碑 200
+      const noFolder = (q.get('folder') ?? '').toLowerCase() === 'none' || undefined
       const folderId = Number.isInteger(folderRaw) ? folderRaw : undefined
+      const posInt = (raw: string | null): number | undefined => {
+        const n = Number(raw ?? 0)
+        return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined
+      }
+      const minW = posInt(q.get('minW'))
+      const maxW = posInt(q.get('maxW'))
+      const minKB = posInt(q.get('minKB'))
+      const maxKB = posInt(q.get('maxKB'))
       // source 参数归一：'' 与 'manual' 都表示手动导入（列值为 ''）；其余白名单直通；非法值忽略
       const sourceRaw = q.get('source')
       const source = sourceRaw === null ? undefined : sourceRaw === '' || sourceRaw === 'manual' ? '' : SOURCES_HTTP.has(sourceRaw) ? sourceRaw : undefined
@@ -802,6 +819,11 @@ export function startClipServer(
         sortBy,
         sortDesc,
         folderId,
+        noFolder,
+        minW,
+        maxW,
+        minSizeKB: minKB,
+        maxSizeKB: maxKB,
         limit: limit + 1,
         offset
       })

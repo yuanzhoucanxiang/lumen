@@ -155,6 +155,10 @@ export function queryAssets(q: AssetQuery): Asset[] {
   if (q.untagged) {
     where.push('id NOT IN (SELECT DISTINCT asset_id FROM asset_tags)')
   }
+  if (q.noFolder) {
+    // 不属于任何文件夹（里程碑 200）：整理时先找还没归档的
+    where.push('id NOT IN (SELECT DISTINCT asset_id FROM asset_folders)')
+  }
   if (q.folderId != null) {
     // 递归 CTE：查询该文件夹及所有后代文件夹的素材（联动子文件夹）
     where.push(

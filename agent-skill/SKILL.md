@@ -83,7 +83,8 @@ node "<本技能目录>/scripts/import.cjs" --paths "C:/图1.png" "C:/输出/整
 
 **1. 摸底（都是只读，可放心调）**
 - `GET /folders` — 现有文件夹树（含每个夹的素材数）；`GET /tags` — 标签及使用数；`GET /stats` — 库规模。
-- `GET /assets?untagged=1` — 还没打标签的；`GET /assets?folder=<id>` — 某个夹里有什么。
+- `GET /assets?untagged=1` — 还没打标签的；`GET /assets?folder=<id>` — 某个夹里有什么；
+  `GET /assets?folder=none` — **不属于任何文件夹**的（整理时先把这些捞出来）。
 - `GET /assets` 每行带 `folderIds`（当前归属），据此判断"它现在在哪、要不要挪"。
 - 不要逐条 `GET /asset` 去拼全库——先按条件筛出目标集合（数量、分布），再决定怎么处理。
 
@@ -165,7 +166,7 @@ curl -s -X POST http://127.0.0.1:45678/import \
 
 - `GET /scope` — **我的可写范围 + 已有分类**（只读）：`allowed`（允许写入的文件夹，`path` 可直接作为 `folder` 参数）、`allowed[].subfolders` 与 `defaultSubfolders`（**已有的子文件夹完整路径，优先复用**）、`defaultFolder`、`subfoldersAllowed`、`unrestricted`、`hint`。导入/归档前必看。
 - `GET /status` — 服务探测 + **技能版本自检**：`version`、`library`、`skill:{installed,upToDate}`；`upToDate:false` 时另带 `skillUpdateHint`（提醒用户去设置里更新技能）。
-- `GET /assets` — 查询素材（只读）。参数：`q`=关键词（搜名称和备注，含拼音，比如用 prompt 片段找图）、`ext`=逗号分隔扩展名、`tag`=标签名、`source`=来源（manual/agent/clip/watcher/screenshot）、`days`=最近 N 天、`star`=最低星级、`shape`=landscape/portrait/square、`untagged=1`=未打标签、`folder`=文件夹 id、`sort`=imported/name/size/star + `order`=asc/desc（按名字默认正序，其余默认倒序）、`limit`≤500、`offset` 分页。响应含 `count/truncated/assets`（窄列：id/name/ext/宽高/大小/来源/标签/**当前归属 folderIds**）。**生成或导入前先查一下库里有没有，避免重复劳动**。
+- `GET /assets` — 查询素材（只读）。参数：`q`=关键词（搜名称和备注，含拼音，比如用 prompt 片段找图）、`ext`=逗号分隔扩展名、`tag`=标签名、`source`=来源（manual/agent/clip/watcher/screenshot）、`days`=最近 N 天、`star`=最低星级、`shape`=landscape/portrait/square、`untagged=1`=未打标签、`folder`=文件夹 id（`folder=none` 只看**未归档**）、`minW`/`maxW` 宽度、`minKB`/`maxKB` 体积、`sort`=imported/name/size/star + `order`=asc/desc（按名字默认正序，其余默认倒序）、`limit`≤500、`offset` 分页。响应含 `count/truncated/assets`（窄列：id/name/ext/宽高/大小/来源/标签/**当前归属 folderIds**）。**生成或导入前先查一下库里有没有，避免重复劳动**。
 - `GET /similar?id=xxx&maxDistance=12&limit=60` — **以图搜图**（只读，确定性 dHash 检索）：给一个库内素材 id，返回库中与它相似的素材（含 `matchPct` 相似度百分比，按相似度降序）。适合'这张图还有没有近似版本/重复'类需求。
 - `POST /similar` — **外部图片查重**（只读）：body `{"dataUrl":"data:image/...;base64,...","maxDistance":12,"limit":60}`，`maxDistance` 0-32、`limit` 1-200、dataUrl 上限 20MB。适合"这张新图还没入库，先看看库里有没有近似的"；也接受 `{"assetId":"..."}`（等价于 GET）。响应同 GET（含 `matchPct`）。
 - `GET /asset?id=xxx` — 单素材详情：含 `comment`（生成信息存档在这里，可读回 prompt）、来源、标签、**归属文件夹 `folders`（完整路径）**。

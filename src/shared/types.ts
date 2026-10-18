@@ -266,6 +266,8 @@ export interface AssetQuery {
   source?: string
   tagIds?: number[]
   folderId?: number | null
+  /** true = 只显示不属于任何文件夹的素材（整理时找未归档的） */
+  noFolder?: boolean
   color?: string // hex，如 #FF0000
   colorTolerance?: number // 0-100
   exts?: string[]
