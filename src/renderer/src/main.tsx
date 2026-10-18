@@ -5,9 +5,10 @@ import FloatingBoard from './components/FloatingBoard'
 import ScreenCapture from './components/ScreenCapture'
 import ErrorBoundary from './components/ErrorBoundary'
 import { initializeTheme } from './theme'
+import './styles/tokens.css'
 import './index.css'
-import './pixel-theme.css'
-import './cyber-theme.css'
+import './styles/themes/pixel.css'
+import './styles/themes/cyber.css'
 
 // 在 React 首次绘制前应用持久化主题，避免启动时先闪过错误主题。
 initializeTheme()

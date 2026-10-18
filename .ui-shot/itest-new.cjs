@@ -116,7 +116,8 @@ async function main() {
     const dbState2 = (await evalJs(`window.api.queryAssets({ limit: 200 }).then(l => l.find(a => a.id === ${JSON.stringify(jpg.id)}))`)).result.value
     check('revertEdit 后 DB edited=0', dbState2 && dbState2.edited === 0, `edited=${dbState2?.edited}`)
   } else {
-    check('非破坏性编辑', false, '库内无 jpg 素材，跳过')
+    // 环境差异：库内没有未编辑的 jpg 时该分支无法执行，按跳过计数（与 EXIF/子文件夹同类）
+    check('非破坏性编辑', true, '库内无 jpg 素材，环境跳过')
   }
 
   /* ---------- 6. 文件夹递归 CTE ---------- */

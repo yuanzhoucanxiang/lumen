@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
+import { useDialogFocus } from '../useDialogFocus'
 import type { Asset } from '@shared/types'
 
 /** 清洗模板渲染结果（与主进程 safePathSegment 同口径：非法字符/控制字符/尾点尾空格） */
@@ -19,6 +20,8 @@ function cleanStem(s: string): string {
 export default function BatchRenameDialog({ assets, onClose }: { assets: Asset[]; onClose: () => void }) {
   const [template, setTemplate] = useState('{原名} {序号}')
   const [applying, setApplying] = useState(false)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogFocus(dialogRef, onClose)
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
 
   const plan = useMemo(() => {
@@ -62,6 +65,7 @@ export default function BatchRenameDialog({ assets, onClose }: { assets: Asset[]
   return (
     <div className="anim-overlay overlay fixed inset-0 z-[400] flex items-center justify-center p-4" onClick={onClose}>
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="批量重命名"

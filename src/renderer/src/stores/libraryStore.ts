@@ -116,6 +116,10 @@ interface LibraryState {
   boardViewMode: BoardViewMode
   /** 白板面板宽度（split 模式） */
   boardViewWidth: number
+  /** 右侧详情栏是否展开（里程碑 195，设备级 UI 偏好） */
+  inspectorOpen: boolean
+  /** 右侧详情栏宽度（195，220–360） */
+  inspectorWidth: number
   stats: { total: number; deleted: number; tombstones: number }
 
   view: ViewType
@@ -175,6 +179,8 @@ interface LibraryState {
   setActiveBoardId: (boardId: number | null) => void
   setBoardViewMode: (m: BoardViewMode) => void
   setBoardViewWidth: (w: number) => void
+  toggleInspector: () => void
+  setInspectorWidth: (w: number) => void
   /** 发送素材到当前白板（照抄 MOTZ：3 列错开摆放,返回已存在的 id） */
   sendAssetsToBoard: (ids: string[]) => Promise<string[]>
   refreshStats: () => Promise<void>
@@ -288,6 +294,21 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       return 480
     }
   })(),
+  inspectorOpen: (() => {
+    try {
+      return localStorage.getItem('lumen.inspector.open') !== '0'
+    } catch {
+      return true
+    }
+  })(),
+  inspectorWidth: (() => {
+    try {
+      const n = Number(localStorage.getItem('lumen.inspector.width'))
+      return Number.isFinite(n) && n >= 220 && n <= 360 ? n : 252
+    } catch {
+      return 252
+    }
+  })(),
   stats: { total: 0, deleted: 0, tombstones: 0 },
 
   view: { type: 'all' },
@@ -364,6 +385,24 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       /* 忽略 */
     }
     set({ boardViewWidth })
+  },
+  toggleInspector: () => {
+    const inspectorOpen = !get().inspectorOpen
+    try {
+      localStorage.setItem('lumen.inspector.open', inspectorOpen ? '1' : '0')
+    } catch {
+      /* 忽略 */
+    }
+    set({ inspectorOpen })
+  },
+  setInspectorWidth: (inspectorWidth) => {
+    const width = Math.min(360, Math.max(220, inspectorWidth))
+    try {
+      localStorage.setItem('lumen.inspector.width', String(width))
+    } catch {
+      /* 忽略 */
+    }
+    set({ inspectorWidth: width })
   },
   /** 发送素材到当前白板（照抄 MOTZ sendAssetsToBoard：3 列错开 + 按宽高比定尺寸） */
   sendAssetsToBoard: async (ids) => {

@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 import ConfirmDialog from './ConfirmDialog'
+import { useDialogFocus } from '../useDialogFocus'
 
 type PendingAction = { type: 'merge' } | { type: 'move' } | null
 
@@ -10,6 +11,9 @@ type PendingAction = { type: 'merge' } | { type: 'move' } | null
  * 用于快速收拾标签库（历史同义标签合并、批量归组等）。
  */
 export default function TagManagerDialog({ onClose }: { onClose: () => void }) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  // 行内重命名用 Esc 取消（组件自己的输入框处理），不在这里整窗关闭
+  useDialogFocus(dialogRef, onClose, { closeOnEscape: false })
   const tags = useLibraryStore((s) => s.tags)
   const tagGroups = useLibraryStore((s) => s.tagGroups)
   const [keyword, setKeyword] = useState('')
@@ -190,6 +194,7 @@ export default function TagManagerDialog({ onClose }: { onClose: () => void }) {
   return (
     <div className="anim-overlay overlay fixed inset-0 z-[400] flex items-center justify-center" onClick={onClose}>
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="标签管理"

@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
+import { useDialogFocus } from '../useDialogFocus'
 import type { DupeGroup } from '@shared/types'
 
 function fmtSize(n: number): string {
@@ -9,6 +10,8 @@ function fmtSize(n: number): string {
 }
 
 export default function DupeModal({ onClose }: { onClose: () => void }) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogFocus(dialogRef, onClose)
   const [groups, setGroups] = useState<DupeGroup[] | null>(null)
   const [checked, setChecked] = useState<Set<string>>(new Set())
 
@@ -49,6 +52,7 @@ export default function DupeModal({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="重复素材检测"

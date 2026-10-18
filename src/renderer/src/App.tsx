@@ -15,6 +15,7 @@ import AgentPanel from './components/AgentPanel'
 import BoardPanel from './components/BoardPanel'
 import BoardReferencePanel from './components/BoardReferencePanel'
 import ArchiveHeader from './components/ArchiveHeader'
+import SelectionBar from './components/SelectionBar'
 import { loadShortcuts, matchesShortcut } from './shortcuts'
 import type { UpdateStatus } from '@shared/types'
 
@@ -42,6 +43,71 @@ function BoardResizer() {
       title="拖动调整白板宽度"
       className="w-1 shrink-0 cursor-col-resize border-x border-[var(--border)] bg-[var(--bg-panel)] transition-colors duration-100 hover:bg-[var(--accent-deep)]"
       onPointerDown={onPointerDown}
+    />
+  )
+}
+
+const AGENT_WIDTH_KEY = 'lumen.agentWidth'
+const AGENT_WIDTH_DEFAULT = 384
+const AGENT_WIDTH_MIN = 320
+const AGENT_WIDTH_MAX = 520
+
+/** 详情栏拖拽手柄（里程碑 195，220–360） */
+function InspectorResizer() {
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = useLibraryStore.getState().inspectorWidth
+    const onMove = (ev: PointerEvent) => {
+      useLibraryStore.getState().setInspectorWidth(startW + (startX - ev.clientX))
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+  return (
+    <div
+      aria-label="拖动调整详情栏宽度"
+      title="拖动调整详情栏宽度（双击复位）"
+      className="w-1 shrink-0 cursor-col-resize border-x border-[var(--border)] bg-[var(--bg-panel)] transition-colors duration-100 hover:bg-[var(--accent-deep)]"
+      onPointerDown={onPointerDown}
+      onDoubleClick={() => useLibraryStore.getState().setInspectorWidth(252)}
+    />
+  )
+}
+
+/** 助手停靠面板的拖拽分隔条（里程碑 193） */
+function AgentResizer({
+  width,
+  setWidth
+}: {
+  width: number
+  setWidth: (width: number) => void
+}) {
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = width
+    const onMove = (ev: PointerEvent) => {
+      setWidth(Math.min(AGENT_WIDTH_MAX, Math.max(AGENT_WIDTH_MIN, startW - (ev.clientX - startX))))
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+  return (
+    <div
+      aria-label="拖动调整助手宽度"
+      title="拖动调整助手宽度（双击复位）"
+      className="w-1 shrink-0 cursor-col-resize border-x border-[var(--border)] bg-[var(--bg-panel)] transition-colors duration-100 hover:bg-[var(--accent-deep)]"
+      onPointerDown={onPointerDown}
+      onDoubleClick={() => setWidth(AGENT_WIDTH_DEFAULT)}
     />
   )
 }
@@ -84,6 +150,8 @@ export default function App() {
   const boardViewMode = useLibraryStore((s) => s.boardViewMode)
   const aiDialogOpen = useLibraryStore((s) => s.aiDialogOpen)
   const agentPanelOpen = useLibraryStore((s) => s.agentPanelOpen)
+  const inspectorOpen = useLibraryStore((s) => s.inspectorOpen)
+  const inspectorWidth = useLibraryStore((s) => s.inspectorWidth)
   const selection = useLibraryStore((s) => s.selection)
   const [dragOver, setDragOver] = useState(false)
   const [upd, setUpd] = useState<UpdateStatus | null>(null)
@@ -94,6 +162,33 @@ export default function App() {
   const [aiProgress, setAiProgress] = useState<{ done: number; total: number; failed: number } | null>(null)
   /** 导入进度（阶段 A 逐文件 + 阶段 B 提交后一次），照抄 aiProgress 卡片模式 */
   const [importProgress, setImportProgress] = useState<{ phase: string; done: number; total: number } | null>(null)
+
+  // 助手停靠（里程碑 193）：宽窗参与布局回流，窄窗/白板模式浮层。
+  const [viewportNarrow, setViewportNarrow] = useState(() => window.innerWidth < 1200)
+  const [agentWidth, setAgentWidth] = useState(() => {
+    const saved = Number(localStorage.getItem(AGENT_WIDTH_KEY))
+    return Number.isFinite(saved) && saved >= AGENT_WIDTH_MIN && saved <= AGENT_WIDTH_MAX
+      ? saved
+      : AGENT_WIDTH_DEFAULT
+  })
+  useEffect(() => {
+    const onResize = () => setViewportNarrow(window.innerWidth < 1200)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  useEffect(() => {
+    try {
+      localStorage.setItem(AGENT_WIDTH_KEY, String(agentWidth))
+    } catch {
+      /* 渲染层存储不可用时仅保持本次会话宽度 */
+    }
+  }, [agentWidth])
+  const agentDocked = agentPanelOpen && boardViewMode !== 'board' && !viewportNarrow
+  const inspectorVisible = boardViewMode !== 'board' && !agentDocked && inspectorOpen
+  /** 通知栈避开助手面板：停靠时让出面板+分隔条，浮层时让出 384px，避免盖住输入框/发送键 */
+  const activityRight = agentPanelOpen ? (agentDocked ? agentWidth + 4 : 384) + 16 : 24
+  /** 选区操作条在“侧栏与详情/助手之间”居中，不压到面板 */
+  const selectionBarRightInset = agentDocked ? agentWidth + 4 : inspectorVisible ? inspectorWidth + 4 : 0
 
   // 立即下载更新（失败反馈由主进程 error 状态推送 toast 承担,这里不重复提示）
   const startDownload = async () => {
@@ -235,6 +330,9 @@ export default function App() {
         // 助手面板开关(允许在输入框内触发——它是全局面板而非图库操作)
         e.preventDefault()
         useLibraryStore.getState().toggleAgentPanel()
+      } else if (matchesShortcut(e, sc.toggleInspector)) {
+        e.preventDefault()
+        useLibraryStore.getState().toggleInspector()
       } else if (/^[1-5]$/.test(e.key) && !e.ctrlKey && !e.metaKey) {
         if (inInput) return
         const id = s.selection[0]
@@ -365,21 +463,47 @@ export default function App() {
         </main>
         {/* 白板全屏时素材详情面板无意义(库里没有可见选中项),隐藏让画布更宽。
             局部错误边界:详情面板异常只降级面板本身,不拖垮图库 */}
-        {boardViewMode !== 'board' && (
-          <ErrorBoundary
-            fallback={
-              <aside className="w-[300px] shrink-0 border-l border-[var(--border)] bg-[var(--bg-panel)] p-4 text-[12px] text-[var(--text-faint)]">
-                详情面板异常。
-                <button className="ml-2 underline" onClick={() => location.reload()}>
-                  重新加载
-                </button>
-              </aside>
-            }
-          >
-            <Inspector />
-          </ErrorBoundary>
+        {inspectorVisible && (
+          <>
+            <InspectorResizer />
+            <ErrorBoundary
+              fallback={
+                <aside className="w-[300px] shrink-0 border-l border-[var(--border)] bg-[var(--bg-panel)] p-4 text-[12px] text-[var(--text-faint)]">
+                  详情面板异常。
+                  <button className="ml-2 underline" onClick={() => location.reload()}>
+                    重新加载
+                  </button>
+                </aside>
+              }
+            >
+              <Inspector width={inspectorWidth} />
+            </ErrorBoundary>
+          </>
+        )}
+        {agentDocked && <AgentResizer width={agentWidth} setWidth={setAgentWidth} />}
+        {agentDocked && (
+          <PanelBoundary name="找图助手">
+            <AgentPanel mode="docked" width={agentWidth} />
+          </PanelBoundary>
         )}
       </div>
+
+      {boardViewMode !== 'board' && (
+        <SelectionBar leftInset={220} rightInset={selectionBarRightInset} />
+      )}
+
+      {agentPanelOpen && !agentDocked && (
+        <>
+          <div
+            aria-hidden="true"
+            className="fixed inset-0 z-[130] bg-black/30 backdrop-blur-[1px]"
+            onClick={() => useLibraryStore.getState().closeAgentPanel()}
+          />
+          <PanelBoundary name="找图助手">
+            <AgentPanel mode="overlay" />
+          </PanelBoundary>
+        </>
+      )}
 
       {previewId && (
         <PanelBoundary name="预览">
@@ -396,11 +520,6 @@ export default function App() {
           selectionIds={selection}
           onClose={() => useLibraryStore.getState().closeAiDialog()}
         />
-      )}
-      {agentPanelOpen && (
-        <PanelBoundary name="找图助手">
-          <AgentPanel />
-        </PanelBoundary>
       )}
       {dragOver && (
         <div className="drag-over-overlay">
@@ -433,91 +552,117 @@ export default function App() {
         </div>
       )}
 
-      {/* AI 处理进度卡片 */}
-      {aiProgress && (
-        <div className="anim-dialog menu fixed bottom-6 right-6 z-[190] w-72 p-3.5">
-          <p className="text-[13px] font-medium">AI 智能处理中…</p>
-          <p className="mt-1 flex justify-between text-[12px] text-[var(--text-dim)]">
-            <span>
-              {aiProgress.done} / {aiProgress.total}
-            </span>
-            {aiProgress.failed > 0 && <span className="text-red-400">失败 {aiProgress.failed}</span>}
-          </p>
-          <div className="mt-2 h-1 w-full bg-[var(--bg-active)]">
-            <div
-              className="h-full bg-[var(--accent)] transition-all duration-200"
-              style={{ width: `${aiProgress.total > 0 ? (aiProgress.done / aiProgress.total) * 100 : 0}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* 导入进度卡片（照抄 AI 处理进度卡片模式） */}
-      {importProgress && (
-        <div className="anim-dialog menu fixed bottom-6 right-6 z-[190] w-72 p-3.5">
-          <p className="text-[13px] font-medium">
-            {importProgress.phase === 'commit' ? '导入完成' : '导入素材中…'}
-          </p>
-          <p className="mt-1 flex justify-between text-[12px] text-[var(--text-dim)]">
-            <span>
-              {Math.min(importProgress.done, importProgress.total)} / {importProgress.total}
-            </span>
-          </p>
-          <div className="mt-2 h-1 w-full bg-[var(--bg-active)]">
-            <div
-              className="h-full bg-[var(--accent)] transition-all duration-200"
-              style={{
-                width: `${importProgress.total > 0 ? (importProgress.done / importProgress.total) * 100 : 0}%`
-              }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* 更新提示卡片 */}
-      {upd && (upd.state === 'available' || upd.state === 'downloading') && !updDismissed && (
-        <div className="update-card anim-dialog menu fixed bottom-6 right-6 z-[190] w-72 p-3.5">
-          {upd.state === 'available' ? (
-            <>
-              <p className="text-[13px] font-medium">
-                发现新版本{' '}
-                <span className="mono text-[var(--accent-text)]">v{upd.version}</span>
-              </p>
-              {upd.notes && (
-                <div className="update-card__notes modal-scroll mt-2 max-h-28 overflow-y-auto border-l-2 border-[var(--accent-deep)] pl-2 text-[11px] leading-relaxed text-[var(--text-dim)]">
-                  <UpdateNotes notes={upd.notes} />
+      {/* 右下角活动栈：更新/下载/导入/AI 进度垂直排列，避免同坐标互相覆盖 */}
+      <div
+        data-testid="activity-stack"
+        className="pointer-events-none fixed bottom-6 z-[190] flex max-h-[calc(100vh-96px)] w-72 flex-col gap-2 overflow-y-auto"
+        style={{ right: activityRight }}
+      >
+        {/* 更新提示卡片 */}
+        {upd && (upd.state === 'available' || upd.state === 'downloading') && !updDismissed && (
+          <div
+            className="update-card anim-dialog menu pointer-events-auto w-full p-3.5"
+            role="region"
+            aria-label="更新提示"
+          >
+            {upd.state === 'available' ? (
+              <>
+                <p className="text-[13px] font-medium">
+                  发现新版本{' '}
+                  <span className="mono text-[var(--accent-text)]">v{upd.version}</span>
+                </p>
+                {upd.notes && (
+                  <div className="update-card__notes modal-scroll mt-2 max-h-28 overflow-y-auto border-l-2 border-[var(--accent-deep)] pl-2 text-[11px] leading-relaxed text-[var(--text-dim)]">
+                    <UpdateNotes notes={upd.notes} />
+                  </div>
+                )}
+                <p className="mt-1.5 text-[11px] text-[var(--text-faint)]">下载后重启即可完成安装</p>
+                <div className="mt-2.5 flex gap-2">
+                  <button
+                    className="btn-primary flex-1 disabled:opacity-40"
+                    disabled={downloading}
+                    onClick={() => void startDownload()}
+                  >
+                    {downloading ? '下载中…' : '立即下载'}
+                  </button>
+                  <button className="btn-ghost" onClick={() => setUpdDismissed(true)}>
+                    稍后
+                  </button>
                 </div>
-              )}
-              <p className="mt-1.5 text-[11px] text-[var(--text-faint)]">下载后重启即可完成安装</p>
-              <div className="mt-2.5 flex gap-2">
-                <button
-                  className="btn-primary flex-1 disabled:opacity-40"
-                  disabled={downloading}
-                  onClick={() => void startDownload()}
-                >
-                  {downloading ? '下载中…' : '立即下载'}
-                </button>
-                <button className="btn-ghost" onClick={() => setUpdDismissed(true)}>
-                  稍后
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="flex justify-between text-[12px] text-[var(--text-dim)]">
-                <span>正在下载更新…</span>
-                <span className="mono tnum">{upd.percent ?? 0}%</span>
-              </p>
-              <div className="mt-2 h-1 w-full bg-[var(--bg-active)]">
-                <div
-                  className="h-full bg-[var(--accent)] transition-all duration-200"
-                  style={{ width: `${upd.percent ?? 0}%` }}
-                />
-              </div>
-            </>
-          )}
-        </div>
-      )}
+              </>
+            ) : (
+              <>
+                <p className="flex justify-between text-[12px] text-[var(--text-dim)]">
+                  <span>正在下载更新…</span>
+                  <span className="mono tnum">{upd.percent ?? 0}%</span>
+                </p>
+                <div className="mt-2 h-1 w-full bg-[var(--bg-active)]">
+                  <div
+                    className="h-full bg-[var(--accent)] transition-all duration-200"
+                    style={{ width: `${upd.percent ?? 0}%` }}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* AI 处理进度卡片 */}
+        {aiProgress && (
+          <div role="status" aria-live="polite" className="anim-dialog menu pointer-events-auto w-full p-3.5">
+            <p className="text-[13px] font-medium">AI 智能处理中…</p>
+            <p className="mt-1 flex justify-between text-[12px] text-[var(--text-dim)]">
+              <span>
+                {aiProgress.done} / {aiProgress.total}
+              </span>
+              {aiProgress.failed > 0 && <span className="text-red-400">失败 {aiProgress.failed}</span>}
+            </p>
+            <div className="mt-2 h-1 w-full bg-[var(--bg-active)]">
+              <div
+                className="h-full bg-[var(--accent)] transition-all duration-200"
+                style={{ width: `${aiProgress.total > 0 ? (aiProgress.done / aiProgress.total) * 100 : 0}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* 导入进度卡片（照抄 AI 处理进度卡片模式） */}
+        {importProgress && (
+          <div role="status" aria-live="polite" className="anim-dialog menu pointer-events-auto w-full p-3.5">
+            <p className="text-[13px] font-medium">
+              {importProgress.phase === 'commit' ? '导入完成' : '导入素材中…'}
+            </p>
+            <p className="mt-1 flex justify-between text-[12px] text-[var(--text-dim)]">
+              <span>
+                {Math.min(importProgress.done, importProgress.total)} / {importProgress.total}
+              </span>
+            </p>
+            <div className="mt-2 h-1 w-full bg-[var(--bg-active)]">
+              <div
+                className="h-full bg-[var(--accent)] transition-all duration-200"
+                style={{
+                  width: `${importProgress.total > 0 ? (importProgress.done / importProgress.total) * 100 : 0}%`
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* 更新已就绪持久角标：弹窗关闭后仍可随时重启安装 */}
+        {upd?.state === 'downloaded' && updReadyHidden && (
+          <button
+            aria-label={`新版本 v${upd.version} 已就绪，点击重启安装`}
+            className="anim-dialog menu pointer-events-auto flex w-full items-center gap-2 px-3 py-2 text-[12px] transition-colors duration-100 hover:border-[var(--accent)]"
+            onClick={() => setUpdReadyHidden(false)}
+          >
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--accent)]" />
+            <span>
+              新版本 <span className="mono text-[var(--accent-text)]">v{upd.version}</span> 已就绪
+            </span>
+            <span className="text-[var(--text-faint)]">重启安装 →</span>
+          </button>
+        )}
+      </div>
 
       {/* 下载完成：重启安装确认(关闭后保留「已就绪」角标可重新打开) */}
       {upd?.state === 'downloaded' && !updReadyHidden && (
@@ -536,21 +681,6 @@ export default function App() {
           onConfirm={() => window.api.installUpdate()}
           onClose={() => setUpdReadyHidden(true)}
         />
-      )}
-
-      {/* 更新已就绪持久角标：弹窗关闭后仍可随时重启安装 */}
-      {upd?.state === 'downloaded' && updReadyHidden && (
-        <button
-          aria-label={`新版本 v${upd.version} 已就绪，点击重启安装`}
-          className="anim-dialog menu fixed bottom-6 right-6 z-[190] flex items-center gap-2 px-3 py-2 text-[12px] transition-colors duration-100 hover:border-[var(--accent)]"
-          onClick={() => setUpdReadyHidden(false)}
-        >
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--accent)]" />
-          <span>
-            新版本 <span className="mono text-[var(--accent-text)]">v{upd.version}</span> 已就绪
-          </span>
-          <span className="text-[var(--text-faint)]">重启安装 →</span>
-        </button>
       )}
     </div>
   )

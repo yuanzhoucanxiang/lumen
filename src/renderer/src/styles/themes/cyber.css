@@ -4,31 +4,6 @@
 /* Cyan = active channel, magenta = verification/error, content stays clean. */
 /* ========================================================================== */
 
-:root[data-theme='cyber-glitch'] {
-  --bg-base: #060a0f;
-  --bg-panel: #09121a;
-  --bg-raised: #0d1923;
-  --bg-hover: #122633;
-  --bg-active: #173746;
-  --paper: #d9fbff;
-  --paper-dim: #9fc4c9;
-  --film-edge: #142733;
-  --border: rgba(112, 221, 235, 0.13);
-  --border-strong: rgba(112, 229, 244, 0.34);
-  --accent: #63e7f4;
-  --accent-hover: #a1f7ff;
-  --accent-deep: #1f7a8c;
-  --accent-soft: rgba(99, 231, 244, 0.11);
-  --accent-text: #86f0fa;
-  --on-accent: #021014;
-  --text-main: #d4e9eb;
-  --text-dim: #89a5aa;
-  --text-faint: #506970;
-  --danger: #f15b9c;
-  --danger-soft: rgba(241, 91, 156, 0.11);
-  --ring: rgba(99, 231, 244, 0.72);
-}
-
 .theme-choice-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }

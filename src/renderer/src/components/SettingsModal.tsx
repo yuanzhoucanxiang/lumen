@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Icon from './Icon'
 import { useLibraryStore } from '../stores/libraryStore'
+import { useDialogFocus } from '../useDialogFocus'
 import { SHORTCUT_DEFS, eventToKeys, loadShortcuts, saveShortcut } from '../shortcuts'
 import { applyTheme, THEMES, useTheme } from '../theme'
 import type { AppSettings, Tag } from '@shared/types'
@@ -18,6 +19,18 @@ const AI_PROVIDERS: { name: string; baseUrl: string; models: string[] }[] = [
 ]
 
 type SettingsPage = 'preferences' | 'guide'
+
+/** 偏好设置分区索引（里程碑 196）：与模块 data-code 前缀一一对应 */
+const SETTINGS_SECTIONS = [
+  { id: '00', label: '外观' },
+  { id: '01', label: '导入' },
+  { id: '02', label: '监控' },
+  { id: '03', label: '备份' },
+  { id: '04', label: 'AI' },
+  { id: '05', label: '快捷键' },
+  { id: '06', label: 'Agent' },
+  { id: '07', label: '系统' }
+] as const
 
 /** 快捷键录制按钮：点击后按新键位保存，Esc 取消 */
 function ShortcutRecorder({ actionId }: { actionId: string }) {
@@ -64,9 +77,36 @@ function ShortcutRecorder({ actionId }: { actionId: string }) {
 }
 
 export default function SettingsModal({ onClose }: { onClose: () => void }) {
+  const dialogRef = useRef<HTMLDivElement>(null)
   const theme = useTheme()
   const [activePage, setActivePage] = useState<SettingsPage>('preferences')
   const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [activeSection, setActiveSection] = useState('00')
+  const prefsRef = useRef<HTMLDivElement>(null)
+  const scrollToSection = (id: string) => {
+    const root = prefsRef.current
+    const target = root?.querySelector<HTMLElement>(`[data-code^="${id}"]`)
+    if (root && target) {
+      const top =
+        target.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop - 44
+      root.scrollTo({ top, behavior: 'auto' })
+    }
+    setActiveSection(id)
+  }
+  const onPrefsScroll = () => {
+    const root = prefsRef.current
+    if (!root) return
+    const top = root.getBoundingClientRect().top + 52
+    let current = '00'
+    for (const section of root.querySelectorAll<HTMLElement>('[data-code]')) {
+      if (section.getBoundingClientRect().top <= top) current = (section.dataset.code ?? '00').slice(0, 2)
+    }
+    // 最后一个分区太短、滚到底也无法到视口顶部时，以“滚到底”判定为最后一项
+    if (root.scrollTop + root.clientHeight >= root.scrollHeight - 6) current = '07'
+    setActiveSection(current)
+  }
+  // 设置数据异步加载：首次渲染返回 null，等弹窗真正挂载后再启用焦点陷阱
+  useDialogFocus(dialogRef, onClose, { active: !!settings })
   const [version, setVersion] = useState('')
   const [checking, setChecking] = useState(false)
   const [backing, setBacking] = useState(false)
@@ -287,6 +327,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="设置与帮助"
@@ -341,7 +382,34 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <section className="settings-hub__content">
           {activePage === 'preferences' ? (
           /* 可滚动内容区（高度超出时内部滚动，标题与底部按钮固定） */
-          <div className="settings-preferences modal-scroll min-h-0 flex-1 space-y-5 overflow-y-auto">
+          <div
+            ref={prefsRef}
+            onScroll={onPrefsScroll}
+            className="settings-preferences modal-scroll min-h-0 flex-1 space-y-5 overflow-y-auto"
+          >
+        {/* 分区索引：长页面里给出方位，点击跳转 */}
+        <div
+          data-testid="settings-section-index"
+          className="settings-section-index sticky top-0 z-20 -mx-1 flex gap-1 overflow-x-auto border-b border-[var(--border)] bg-[var(--bg-panel)] px-1 py-2"
+        >
+          {SETTINGS_SECTIONS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              data-section={s.id}
+              aria-pressed={activeSection === s.id}
+              className={`shrink-0 px-2 py-1 text-[11px] transition-colors duration-100 ${
+                activeSection === s.id
+                  ? 'bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]'
+                  : 'text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]'
+              }`}
+              onClick={() => scrollToSection(s.id)}
+            >
+              <span className="mono mr-1 text-[10px] text-[var(--text-faint)]">{s.id}</span>
+              {s.label}
+            </button>
+          ))}
+        </div>
         {/* 主题 */}
         <section className="settings-module theme-settings" data-code="00 / INTERFACE" aria-labelledby="theme-settings-title">
           <div className="mb-2 flex items-end justify-between gap-4">

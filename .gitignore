@@ -33,3 +33,7 @@ Thumbs.db
 
 # 发布草稿（release.cjs 使用后即删除，不入库）
 notes.md
+
+# 视觉走查产物（本地基线/截图，体积大，不入库）
+.ui-shot/plan-shots/
+.ui-shot/ui-baseline/

@@ -60,6 +60,51 @@ async function cdpAlive(timeoutMs = 3000) {
   }
 }
 
+/** 让渲染进程进入“前台活跃”状态：窗口被终端遮挡时 Chromium 会冻结 rAF / 延迟 scroll，
+ *  导致滚动记忆、框选边缘滚动、ResizeObserver 类断言假红（里程碑 192/193 实测）。
+ *  CDP 的 focus emulation + active lifecycle 是无头/后台运行时的确定性兜底。 */
+async function prepareRenderer() {
+  try {
+    const targets = await new Promise((resolve, reject) => {
+      const req = http
+        .get(`http://127.0.0.1:${CDP_PORT}/json/list`, (r) => {
+          let d = ''
+          r.on('data', (c) => (d += c))
+          r.on('end', () => resolve(JSON.parse(d)))
+        })
+        .on('error', reject)
+      req.setTimeout(3000, () => req.destroy(new Error('timeout')))
+    })
+    const page = targets.find((t) => t.type === 'page' && !String(t.url).includes('floating'))
+    if (!page) return
+    const ws = new WebSocket(page.webSocketDebuggerUrl, { perMessageDeflate: false })
+    await new Promise((resolve, reject) => {
+      ws.on('open', resolve)
+      ws.on('error', reject)
+    })
+    let nextId = 0
+    const pending = new Map()
+    ws.on('message', (raw) => {
+      const message = JSON.parse(raw.toString())
+      if (message.id && pending.has(message.id)) {
+        pending.get(message.id)(message)
+        pending.delete(message.id)
+      }
+    })
+    const call = (method, params) =>
+      new Promise((resolve) => {
+        const id = ++nextId
+        pending.set(id, resolve)
+        ws.send(JSON.stringify({ id, method, params }))
+      })
+    await call('Emulation.setFocusEmulationEnabled', { enabled: true })
+    await call('Page.setWebLifecycleState', { state: 'active' })
+    ws.close()
+  } catch {
+    /* 兜底失败不阻断测试 */
+  }
+}
+
 /** 尽力把 dev 主窗口切到前台（只在重试前调用）：窗口被遮挡或最小化时 Chromium 会节流 rAF，
  *  依赖合帧效果的断言（白板滚轮缩放、视口落库等）会假红。失败不影响测试（里程碑 189）。 */
 async function bringDevToFront() {
@@ -166,6 +211,7 @@ async function main() {
     restarts++
     restarted++
     await waitForCdp()
+    await prepareRenderer()
     console.log('  ✓ dev 已重新就绪')
   }
 
@@ -192,10 +238,12 @@ async function main() {
   let failed = 0
   try {
     await waitForCdp()
+    await prepareRenderer()
     ok('dev 已就绪')
     for (const f of files) {
       // 关键：每个套件开跑前先探活——上一个套件把应用搞死了也不会连累这个套件（里程碑 186）
       await ensureDev(`进入 ${f} 前探活失败`)
+      await prepareRenderer()
       console.log(`\n----- 运行 ${f} -----`)
       let passed = false
       for (let attempt = 1; attempt <= 2 && !passed; attempt++) {
@@ -218,6 +266,7 @@ async function main() {
           restarts++
           restarted++
           await waitForCdp().catch(() => {})
+          await prepareRenderer()
         } else {
           // 断言失败通常应用还活着；只有应用真没了才重启
           await ensureDev(`${f} 失败后 CDP 无响应`).catch(() => {})

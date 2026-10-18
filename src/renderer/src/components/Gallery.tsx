@@ -131,7 +131,7 @@ const ListRow = memo(function ListRow({ item, selected, onClick, onDoubleClick, 
       <span className="w-14 shrink-0 text-[11px] text-[var(--amber)]">
         {a.star > 0 ? '★'.repeat(a.star) : ''}
       </span>
-      <span className="mono w-12 shrink-0 text-[10px] uppercase text-[var(--text-faint)]">.{a.ext}</span>
+      <span className="mono w-12 shrink-0 text-[11px] uppercase text-[var(--text-faint)]">.{a.ext}</span>
       {a.width > 0 && (
         <span className="mono tnum w-20 shrink-0 text-[11px] text-[var(--text-faint)]">
           {a.width} × {a.height}

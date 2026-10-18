@@ -1,0 +1,64 @@
+/* 基础层：reset / 字体 / 焦点可见性（自 index.css 机械拆分，顺序保持不变） */
+
+/* ============ RAVEN ARCHIVE：银盐鸦影（石墨 · 银灰 · 暗房红） ============ */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--text-main);
+  font-family:
+    'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+  font-size: 13.5px;
+  line-height: 1.6;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 银盐暗房质感：冷银天光 + 极轻胶片颗粒，不覆盖素材内容。 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1100px 360px at 48% -14%, rgba(211, 210, 204, 0.055), transparent 62%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Crect x='0' y='1' width='1' height='1' fill='%23d7d4cc' fill-opacity='.022'/%3E%3Crect x='4' y='0' width='1' height='1' fill='%23d7d4cc' fill-opacity='.016'/%3E%3Crect x='2' y='4' width='1' height='1' fill='%23d7d4cc' fill-opacity='.018'/%3E%3C/svg%3E");
+}
+
+input,
+textarea {
+  user-select: text;
+}
+
+::selection {
+  background: rgba(216, 91, 82, 0.34);
+  color: #fff4f1;
+}
+
+/* 等宽数据字体（DS 式读数） */
+.mono {
+  font-family: 'Cascadia Mono', 'JetBrains Mono', Consolas, 'Courier New', monospace;
+  letter-spacing: 0.02em;
+}
+
+/* ============ 焦点可见性 ============ */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 2px;
+}
+

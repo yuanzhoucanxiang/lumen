@@ -15,6 +15,13 @@ const PATHS = {
       <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
     </>
   ),
+  /* 详情栏开关：右侧分栏 */
+  panelRight: (
+    <>
+      <rect x="3.5" y="4.5" width="17" height="15" rx="1.5" />
+      <path d="M15 4.5v15" />
+    </>
+  ),
   masonry: (
     <>
       <rect x="3.5" y="3.5" width="7" height="10" rx="1" />

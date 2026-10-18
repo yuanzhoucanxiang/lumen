@@ -16,6 +16,9 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "test:itest": "node scripts/itest.cjs",
     "test:itest:ai": "node scripts/itest.cjs --only ai",
+    "test:ui-tokens": "node scripts/test-theme-tokens.cjs",
+    "capture:ui": "node scripts/capture-ui.cjs",
+    "compare:ui": "node scripts/compare-ui.cjs",
     "build:win": "npm run typecheck && electron-vite build && electron-builder --win",
     "build:mac": "node scripts/make-icons.cjs && npm run typecheck && electron-vite build && electron-builder --mac"
   },

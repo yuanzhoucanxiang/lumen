@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { assetEditable, useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
+import { useDialogFocus } from '../useDialogFocus'
 
 interface ZoomState {
   s: number
@@ -10,17 +11,29 @@ interface ZoomState {
 
 const ZOOM_RESET: ZoomState = { s: 1, x: 0, y: 0 }
 
+function fmtSize(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1024 / 1024).toFixed(2)} MB`
+}
+
 export default function Preview() {
   const assets = useLibraryStore((s) => s.assets)
   const previewId = useLibraryStore((s) => s.previewId)
   const openPreview = useLibraryStore((s) => s.openPreview)
+  const folders = useLibraryStore((s) => s.folders)
+  const view = useLibraryStore((s) => s.view)
 
   const index = useMemo(() => assets.findIndex((a) => a.id === previewId), [assets, previewId])
   const asset = index >= 0 ? assets[index] : null
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogFocus(dialogRef, () => openPreview(null), { active: !!asset })
 
   /* 缩放/拖动状态（仅图片） */
   const [zoom, setZoom] = useState<ZoomState>(ZOOM_RESET)
   const [panning, setPanning] = useState(false)
+  /** 右侧素材信息面板（里程碑 197） */
+  const [infoOpen, setInfoOpen] = useState(false)
   const stageRef = useRef<HTMLDivElement>(null)
   const imgRef = useRef<HTMLImageElement>(null)
   const panRef = useRef<{ startX: number; startY: number; zx: number; zy: number } | null>(null)
@@ -37,12 +50,28 @@ export default function Preview() {
       // 图库分页后预览列表只是「已加载」那部分：走到末尾就续借下一页，←→ 不会断在页边界
       else if (e.key === 'ArrowRight' && useLibraryStore.getState().assetsHasMore)
         void useLibraryStore.getState().loadMoreAssets()
+      else if (e.key === 'i' && !e.ctrlKey && !e.metaKey && !e.altKey) setInfoOpen((v) => !v)
+      else if ((e.key === '+' || e.key === '=') && !e.ctrlKey && !e.metaKey) {
+        setZoom((z) => ({ s: Math.min(8, z.s * 1.25), x: 0, y: 0 }))
+      } else if (e.key === '-' && !e.ctrlKey && !e.metaKey) {
+        setZoom((z) => ({ s: Math.max(1, z.s / 1.25), x: 0, y: 0 }))
+      } else if (e.key === '0' && !e.ctrlKey && !e.metaKey) {
+        setZoom(ZOOM_RESET)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [index, assets, openPreview])
 
   if (!asset) return null
+
+  const folderName = view.type === 'folder' ? folders.find((f) => f.id === view.id)?.name ?? null : null
+  let palette: number[][] = []
+  try {
+    palette = JSON.parse(asset.colors) as number[][]
+  } catch {
+    palette = []
+  }
 
   const setStar = async (star: number) => {
     await window.api.updateAsset(asset.id, { star })
@@ -102,6 +131,7 @@ export default function Preview() {
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label={`预览 ${asset.name}`}
@@ -133,6 +163,18 @@ export default function Preview() {
           <span className="tnum text-white/40">
             {index + 1} / {assets.length}
           </span>
+          <button
+            aria-label="显示/隐藏素材信息"
+            aria-pressed={infoOpen}
+            title="素材信息 (i)"
+            className={`flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-[12px] tracking-[0.04em] transition-colors duration-100 hover:bg-white/10 ${
+              infoOpen ? 'text-[var(--accent-text)]' : 'text-white/70'
+            }`}
+            onClick={() => setInfoOpen((v) => !v)}
+          >
+            <Icon name="eye" size={13} />
+            信息
+          </button>
           {canEdit && (
             <button
               className="flex items-center gap-1.5 rounded-sm bg-white/10 px-3 py-1.5 text-[12px] tracking-[0.04em] transition-colors duration-100 hover:bg-white/20"
@@ -143,6 +185,8 @@ export default function Preview() {
             </button>
           )}
           <button
+            autoFocus
+            data-autofocus="true"
             aria-label="关闭预览"
             className="flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-[12px] tracking-[0.04em] transition-colors duration-100 hover:bg-white/10"
             onClick={() => openPreview(null)}
@@ -229,26 +273,51 @@ export default function Preview() {
           </button>
         )}
 
-        {/* 缩放指示 + 1:1 按钮 */}
+        {/* 缩放控制（里程碑 197）：− / 百分比 / + / 适应 / 1:1 */}
         {isImage && (
-          <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
-            {zoom.s > 1 && (
-              <span className="mono bg-black/60 px-2 py-1 text-[10px] tracking-[0.1em] text-white/70">
-                {Math.round(zoom.s * 100)}% · 双击复位
-              </span>
-            )}
+          <div
+            className="absolute bottom-3 z-10 flex items-center gap-1"
+            style={{ right: infoOpen ? 292 : 12 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              aria-label="缩小"
+              title="缩小 (-)"
+              className="rounded-sm border border-white/20 bg-black/60 px-1.5 py-1 text-[11px] text-white/70 transition-colors hover:text-white disabled:opacity-30"
+              disabled={zoom.s <= 1}
+              onClick={() => setZoom((z) => ({ s: Math.max(1, z.s / 1.25), x: 0, y: 0 }))}
+            >
+              −
+            </button>
+            <span className="mono min-w-[48px] bg-black/60 px-1.5 py-1 text-center text-[11px] tnum tracking-[0.06em] text-white/70">
+              {Math.round(zoom.s * 100)}%
+            </span>
+            <button
+              aria-label="放大"
+              title="放大 (+)"
+              className="rounded-sm border border-white/20 bg-black/60 px-1.5 py-1 text-[11px] text-white/70 transition-colors hover:text-white disabled:opacity-30"
+              disabled={zoom.s >= 8}
+              onClick={() => setZoom((z) => ({ s: Math.min(8, z.s * 1.25), x: 0, y: 0 }))}
+            >
+              +
+            </button>
+            <button
+              aria-label="适应窗口"
+              title="适应窗口 (0)"
+              className="rounded-sm border border-white/20 bg-black/60 px-1.5 py-1 text-[11px] text-white/70 transition-colors hover:text-white"
+              onClick={() => setZoom(ZOOM_RESET)}
+            >
+              适应
+            </button>
             <button
               aria-label="100% 像素显示"
               title="100% 像素（1:1）"
-              className={`rounded-sm border px-1.5 py-1 text-[10px] transition-colors duration-100 ${
+              className={`rounded-sm border px-1.5 py-1 text-[11px] transition-colors duration-100 ${
                 zoom.s > 1.01
                   ? 'border-[var(--accent)] bg-black/60 text-[var(--accent)]'
                   : 'border-white/20 bg-black/60 text-white/70 hover:text-white'
               }`}
-              onClick={(e) => {
-                e.stopPropagation()
-                toggleOneToOne()
-              }}
+              onClick={() => toggleOneToOne()}
             >
               1:1
             </button>
@@ -256,18 +325,112 @@ export default function Preview() {
         )}
       </div>
 
+      {infoOpen && (
+        <aside
+          aria-label="素材信息"
+          className="absolute bottom-9 right-0 top-12 z-20 w-[280px] overflow-y-auto border-l border-[var(--border)] bg-black/75 p-4 backdrop-blur-md"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <span className="mono text-[10px] tracking-[0.16em] text-[var(--accent-text)]">ASSET INFO</span>
+            <button
+              aria-label="关闭素材信息"
+              className="flex h-5 w-5 items-center justify-center text-white/50 transition-colors hover:text-white"
+              onClick={() => setInfoOpen(false)}
+            >
+              <Icon name="close" size={12} />
+            </button>
+          </div>
+          <p className="mb-3 break-all text-[13px] font-medium leading-snug text-white/90">{asset.name}</p>
+          <dl className="space-y-2 text-[11px]">
+            <div className="flex justify-between gap-3">
+              <dt className="shrink-0 text-white/40">格式</dt>
+              <dd className="mono text-right uppercase text-white/75">.{asset.ext}</dd>
+            </div>
+            {asset.width > 0 && (
+              <div className="flex justify-between gap-3">
+                <dt className="shrink-0 text-white/40">尺寸</dt>
+                <dd className="mono tnum text-right text-white/75">
+                  {asset.width} × {asset.height}
+                </dd>
+              </div>
+            )}
+            <div className="flex justify-between gap-3">
+              <dt className="shrink-0 text-white/40">大小</dt>
+              <dd className="mono tnum text-right text-white/75">{fmtSize(asset.size)}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="shrink-0 text-white/40">导入时间</dt>
+              <dd className="text-right text-white/75">{new Date(asset.importedAt).toLocaleString('zh-CN')}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="shrink-0 text-white/40">所在文件夹</dt>
+              <dd className="truncate text-right text-white/75" title={folderName ?? undefined}>
+                {folderName ?? '—'}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="shrink-0 text-white/40">编辑状态</dt>
+              <dd className="text-right text-white/75">{asset.edited === 1 ? '已编辑（原图保留）' : '原图'}</dd>
+            </div>
+          </dl>
+
+          <div className="mt-4 border-t border-white/10 pt-3">
+            <p className="mb-1.5 text-[10px] tracking-[0.12em] text-white/35">标签</p>
+            {asset.tagNames.length > 0 ? (
+              <div className="flex flex-wrap gap-1">
+                {asset.tagNames.map((t) => (
+                  <span key={t} className="border border-white/15 px-1.5 py-0.5 text-[11px] text-white/70">
+                    {t}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11px] text-white/35">—</p>
+            )}
+          </div>
+
+          <div className="mt-4 border-t border-white/10 pt-3">
+            <p className="mb-1.5 text-[10px] tracking-[0.12em] text-white/35">备注</p>
+            <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-white/70">{asset.comment || '—'}</p>
+          </div>
+
+          {palette.length > 0 && (
+            <div className="mt-4 border-t border-white/10 pt-3">
+              <p className="mb-1.5 text-[10px] tracking-[0.12em] text-white/35">主色调</p>
+              <div className="flex flex-wrap gap-1">
+                {palette.slice(0, 10).map((c, i) => (
+                  <span
+                    key={i}
+                    className="h-5 w-5 border border-white/15"
+                    style={{ background: `rgb(${c[0]}, ${c[1]}, ${c[2]})` }}
+                    title={`rgb(${c[0]}, ${c[1]}, ${c[2]})`}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </aside>
+      )}
+
       {/* 底部信息 */}
       <div
-        className="flex h-9 shrink-0 items-center justify-center gap-4 text-[11px] tracking-wide text-white/45"
+        className="flex h-9 min-w-0 shrink-0 items-center justify-center gap-4 text-[11px] tracking-wide text-white/45"
+        style={infoOpen ? { paddingRight: 280 } : undefined}
         onClick={(e) => e.stopPropagation()}
       >
         <span className="uppercase">.{asset.ext}</span>
         {asset.width > 0 && (
-          <span className="tnum">
+          <span className="tnum shrink-0">
             {asset.width} × {asset.height}
           </span>
         )}
-        {asset.tagNames.length > 0 && <span>{asset.tagNames.join('、')}</span>}
+        {asset.tagNames.length > 0 && (
+          <span className="min-w-0 max-w-[45%] truncate" title={asset.tagNames.join('、')}>
+            {asset.tagNames.slice(0, 3).join('、')}
+            {asset.tagNames.length > 3 ? ` +${asset.tagNames.length - 3}` : ''}
+          </span>
+        )}
       </div>
     </div>
   )

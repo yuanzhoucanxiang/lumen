@@ -209,6 +209,25 @@ export default function Sidebar() {
       /* 隐私模式等场景忽略 */
     }
   }
+  /** 库模式侧栏收起为 56px 图标栏（里程碑 196） */
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('lumen.sidebar.collapsed') === '1'
+    } catch {
+      return false
+    }
+  })
+  const updateSidebarCollapsed = (collapsed: boolean): void => {
+    setSidebarCollapsed(collapsed)
+    try {
+      localStorage.setItem('lumen.sidebar.collapsed', collapsed ? '1' : '0')
+    } catch {
+      /* 忽略 */
+    }
+  }
+  /** 导航过滤：只筛文件夹/智能文件夹/白板/标签，不改当前视图 */
+  const [navFilter, setNavFilter] = useState('')
+  const navQuery = navFilter.trim().toLowerCase()
 
   /* 分区折叠状态（localStorage 持久化）：文件夹/智能文件夹/白板/标签 */
   // 白板默认折叠（列表短小,展开也限高,避免挤压文件夹/标签两大分区）
@@ -341,12 +360,37 @@ export default function Sidebar() {
     .filter((f) => f.isSmart)
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh-CN'))
 
+  /** 导航过滤的文件夹树：命中项 + 其祖先都保留，过滤时自动展开 */
+  const visibleNormalFolders = useMemo(() => {
+    if (!navQuery) return normalFolders
+    const byId = new Map(normalFolders.map((f) => [f.id, f]))
+    const keep = new Set<number>()
+    for (const f of normalFolders) {
+      if (!f.name.toLowerCase().includes(navQuery)) continue
+      let cur: Folder | undefined = f
+      while (cur) {
+        keep.add(cur.id)
+        cur = cur.parentId != null ? byId.get(cur.parentId) : undefined
+      }
+    }
+    return normalFolders.filter((f) => keep.has(f.id))
+  }, [normalFolders, navQuery])
+  const visibleSmartFolders = useMemo(
+    () => (navQuery ? smartFolders.filter((f) => f.name.toLowerCase().includes(navQuery)) : smartFolders),
+    [smartFolders, navQuery]
+  )
+  const visibleBoards = useMemo(
+    () => (navQuery ? boards.filter((b) => b.name.toLowerCase().includes(navQuery)) : boards),
+    [boards, navQuery]
+  )
+
   /* 标签按分组聚合（含空分组，便于管理），组内按 count 降序 */
   const { grouped, ungroupedTags } = useMemo(() => {
     const byCount = (a: Tag, b: Tag) => b.count - a.count || a.name.localeCompare(b.name, 'zh-CN')
     const byGroup = new Map<number, Tag[]>()
     const ungrouped: Tag[] = []
-    for (const t of tags) {
+    const source = navQuery ? tags.filter((t) => t.name.toLowerCase().includes(navQuery)) : tags
+    for (const t of source) {
       if (t.groupId != null) {
         const list = byGroup.get(t.groupId) ?? []
         list.push(t)
@@ -356,10 +400,12 @@ export default function Sidebar() {
       }
     }
     return {
-      grouped: tagGroups.map((g) => ({ group: g, tags: (byGroup.get(g.id) ?? []).sort(byCount) })),
+      grouped: tagGroups
+        .map((g) => ({ group: g, tags: (byGroup.get(g.id) ?? []).sort(byCount) }))
+        .filter((g) => !navQuery || g.tags.length > 0),
       ungroupedTags: ungrouped.sort(byCount)
     }
-  }, [tags, tagGroups])
+  }, [tags, tagGroups, navQuery])
 
   const toggleGroupCollapse = (id: number) => {
     setCollapsedGroups((prev) => {
@@ -465,7 +511,7 @@ export default function Sidebar() {
   type FolderNode = Folder & { children: FolderNode[] }
   const folderTree = useMemo<FolderNode[]>(() => {
     const map = new Map<number, FolderNode>()
-    for (const f of normalFolders) map.set(f.id, { ...f, children: [] })
+    for (const f of visibleNormalFolders) map.set(f.id, { ...f, children: [] })
     const roots: FolderNode[] = []
     for (const n of map.values()) {
       const parent = n.parentId != null ? map.get(n.parentId) : undefined
@@ -479,7 +525,7 @@ export default function Sidebar() {
     }
     sortRec(roots)
     return roots
-  }, [normalFolders])
+  }, [visibleNormalFolders])
 
   const addFolderInput = (
     <input
@@ -500,7 +546,7 @@ export default function Sidebar() {
   /** 递归渲染文件夹节点（缩进 + 折叠箭头 + 可拖放） */
   const renderFolderNode = (node: FolderNode, depth: number): React.ReactNode => {
     const hasKids = node.children.length > 0
-    const isCollapsed = collapsed.has(node.id)
+    const isCollapsed = collapsed.has(node.id) && !navQuery
     return (
       <div key={node.id}>
         <div
@@ -625,6 +671,79 @@ export default function Sidebar() {
     )
   }
 
+  // 过滤时强制展开所有分区，保证命中项可见
+  const foldersFolded = sectionFold.folders && !navQuery
+  const smartFolded = sectionFold.smart && !navQuery
+  const boardsFolded = sectionFold.boards && !navQuery
+  const tagsFolded = sectionFold.tags && !navQuery
+
+  /** 库模式收起为 56px 图标栏（里程碑 196） */
+  if (boardViewMode !== 'board' && sidebarCollapsed) {
+    const railItems: { key: string; label: string; icon: IconName; active: boolean; onClick: () => void }[] = [
+      { key: 'all', label: '全部素材', icon: 'grid', active: view.type === 'all', onClick: () => setView({ type: 'all' }) },
+      { key: 'star', label: '已收藏', icon: 'star', active: view.type === 'starred', onClick: () => setView({ type: 'starred' }) },
+      { key: 'board', label: '白板', icon: 'shapes', active: boardViewMode !== 'off', onClick: () => void enterBoard() },
+      { key: 'trash', label: '回收站', icon: 'trash', active: view.type === 'trash', onClick: () => setView({ type: 'trash' }) },
+      {
+        key: 'agent',
+        label: '助手',
+        icon: 'assistant',
+        active: agentPanelOpen,
+        onClick: () => useLibraryStore.getState().toggleAgentPanel()
+      }
+    ]
+    return (
+      <>
+        <nav
+          aria-label="素材库导航"
+          data-workspace-mode="library"
+          data-sidebar-collapsed="true"
+          className="archive-sidebar flex w-[56px] shrink-0 flex-col items-center gap-2 border-r border-[var(--border)] bg-[var(--bg-panel)] py-2"
+        >
+        <button
+          aria-label="展开侧栏"
+          title="展开侧栏"
+          className="flex h-7 w-7 items-center justify-center text-[var(--text-dim)] transition-colors duration-100 hover:text-[var(--text-main)]"
+          onClick={() => updateSidebarCollapsed(false)}
+        >
+          <Icon name="chevronRight" size={12} />
+        </button>
+        <img src={ravenMarkUrl} alt="LUMEN" className="h-8 w-8 border border-[var(--border-strong)] object-contain p-0.5" draggable={false} />
+        <div className="flex w-full flex-col items-center gap-1">
+          {railItems.map((item) => (
+            <button
+              key={item.key}
+              aria-label={item.label}
+              title={item.label}
+              aria-pressed={item.active}
+              className={`relative flex h-9 w-9 items-center justify-center transition-colors duration-100 ${
+                item.active
+                  ? 'bg-[var(--accent-soft)] text-[var(--accent-text)]'
+                  : 'text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]'
+              }`}
+              onClick={item.onClick}
+            >
+              {item.active && <span aria-hidden="true" className="absolute left-0 top-0 h-full w-[2px] bg-[var(--accent)]" />}
+              <Icon name={item.icon} size={16} />
+            </button>
+          ))}
+        </div>
+        <div className="mt-auto flex flex-col items-center gap-1">
+          <button
+            aria-label="打开设置"
+            title="设置"
+            className="flex h-9 w-9 items-center justify-center text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]"
+            onClick={() => setSettingsOpen(true)}
+          >
+            <Icon name="settings" size={16} />
+          </button>
+        </div>
+        </nav>
+        {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      </>
+    )
+  }
+
   if (boardViewMode === 'board' && boardSidebarCollapsed) {
     return (
       <nav
@@ -684,9 +803,52 @@ export default function Sidebar() {
             <Icon name="chevronLeft" size={11} />
           </button>
         )}
+        {boardViewMode !== 'board' && (
+          <button
+            aria-label="收起侧栏"
+            title="收起侧栏为图标栏"
+            className="flex h-6 w-6 shrink-0 items-center justify-center text-[var(--text-dim)] transition-colors duration-100 hover:text-[var(--text-main)]"
+            onClick={() => updateSidebarCollapsed(true)}
+          >
+            <Icon name="chevronLeft" size={11} />
+          </button>
+        )}
       </header>
 
       <div className="archive-sidebar__index modal-scroll">
+      {/* 导航过滤（里程碑 196）：只筛列表，不改当前视图 */}
+      <div className="px-2 pt-2">
+        <div className="relative">
+          <Icon
+            name="search"
+            size={11}
+            className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-faint)]"
+          />
+          <input
+            aria-label="筛选导航"
+            className="field-input w-full pl-6 pr-6 text-[11px]"
+            placeholder="筛选文件夹 / 标签…"
+            value={navFilter}
+            onChange={(e) => setNavFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.stopPropagation()
+                setNavFilter('')
+              }
+            }}
+          />
+          {navFilter && (
+            <button
+              aria-label="清除导航筛选"
+              title="清除"
+              className="absolute right-1.5 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--bg-hover)] text-[var(--text-faint)] hover:text-[var(--text-main)]"
+              onClick={() => setNavFilter('')}
+            >
+              <Icon name="close" size={9} />
+            </button>
+          )}
+        </div>
+      </div>
       {/* 主导航 */}
       <div className="mt-2 space-y-px px-2">
         <NavItem
@@ -741,11 +903,11 @@ export default function Sidebar() {
       </div>
 
       {/* 文件夹 */}
-      <section className={sectionCls(sectionFold.folders)} aria-label="文件夹">
+      <section className={sectionCls(foldersFolded)} aria-label="文件夹">
         <SectionHeader
           title="文件夹"
           addLabel="新建文件夹"
-          collapsed={sectionFold.folders}
+          collapsed={foldersFolded}
           onToggle={() => toggleSection('folders')}
           onAdd={() => {
             setAddingFolder({ parentId: null })
@@ -753,7 +915,7 @@ export default function Sidebar() {
             setInputVal('')
           }}
         />
-        {!sectionFold.folders && (
+        {!foldersFolded && (
           <div className="modal-scroll min-h-0 flex-1 space-y-0.5 overflow-y-auto">
           {addingFolder && addingFolder.parentId === null && addFolderInput}
           {folderTree.map((node) => renderFolderNode(node, 0))}
@@ -763,7 +925,7 @@ export default function Sidebar() {
           </div>
         )}
         {/* 拖文件夹时出现在列表下方的固定槽位（放在滚动区外，长列表滚到哪儿都看得见）*/}
-        {!sectionFold.folders && draggingFolder != null && (
+        {!foldersFolded && draggingFolder != null && (
           <div
             role="button"
             aria-label="拖到此处移到顶层"
@@ -794,17 +956,17 @@ export default function Sidebar() {
       </section>
 
       {/* 智能文件夹 */}
-      <section className={sectionCls(sectionFold.smart)} aria-label="智能文件夹">
+      <section className={sectionCls(smartFolded)} aria-label="智能文件夹">
         <SectionHeader
           title="智能文件夹"
           addLabel="新建智能文件夹"
-          collapsed={sectionFold.smart}
+          collapsed={smartFolded}
           onToggle={() => toggleSection('smart')}
           onAdd={() => setSmartDialog({ open: true, edit: null })}
         />
-        {!sectionFold.smart && (
+        {!smartFolded && (
           <div className="modal-scroll min-h-0 flex-1 space-y-0.5 overflow-y-auto">
-          {smartFolders.map((f) => (
+          {visibleSmartFolders.map((f) => (
             <NavItem
               key={f.id}
               active={view.type === 'folder' && view.id === f.id}
@@ -815,7 +977,7 @@ export default function Sidebar() {
               onContextMenu={(e) => openMenu(e, 'folder', f.id)}
             />
           ))}
-          {smartFolders.length === 0 && (
+          {visibleSmartFolders.length === 0 && (
             <p className="px-2.5 py-1.5 text-[12px] text-[var(--text-faint)]">按条件自动聚合素材</p>
           )}
           </div>
@@ -824,20 +986,20 @@ export default function Sidebar() {
 
       {/* 白板：固定高度块(展开限高内部滚动),不参与 flex-1 平分,避免挤压文件夹/标签 */}
       <section
-        className={sectionFold.boards ? 'mt-3 shrink-0 px-2' : 'mt-3 flex min-h-0 shrink-0 flex-col px-2'}
+        className={boardsFolded ? 'mt-3 shrink-0 px-2' : 'mt-3 flex min-h-0 shrink-0 flex-col px-2'}
         aria-label="白板"
       >
         <SectionHeader
           title="白板"
           addLabel="新建白板"
-          collapsed={sectionFold.boards}
+          collapsed={boardsFolded}
           onToggle={() => toggleSection('boards')}
           onAdd={() => {
             setBoardInputOpen(true)
             setBoardInputVal('')
           }}
         />
-        {!sectionFold.boards && (
+        {!boardsFolded && (
           <div className="modal-scroll max-h-44 min-h-0 space-y-0.5 overflow-y-auto">
           {boardInputOpen && (
             <input
@@ -854,7 +1016,7 @@ export default function Sidebar() {
               onBlur={() => void submitBoardAdd()}
             />
           )}
-          {boards.map((b) =>
+          {visibleBoards.map((b) =>
             renaming?.kind === 'board' && renaming.id === b.id ? (
               <input
                 key={b.id}
@@ -880,7 +1042,7 @@ export default function Sidebar() {
               />
             )
           )}
-          {boards.length === 0 && !boardInputOpen && (
+          {visibleBoards.length === 0 && !boardInputOpen && (
             <p className="px-2.5 py-1.5 text-[12px] text-[var(--text-faint)]">把参考素材摊开自由摆放</p>
           )}
           </div>
@@ -888,11 +1050,11 @@ export default function Sidebar() {
       </section>
 
       {/* 标签 */}
-      <section className={`${sectionCls(sectionFold.tags)} pb-2`} aria-label="标签">
+      <section className={`${sectionCls(tagsFolded)} pb-2`} aria-label="标签">
         <SectionHeader
           title="标签"
           addLabel="新建标签"
-          collapsed={sectionFold.tags}
+          collapsed={tagsFolded}
           onToggle={() => toggleSection('tags')}
           onManage={() => setTagManagerOpen(true)}
           manageLabel="管理标签"
@@ -902,7 +1064,7 @@ export default function Sidebar() {
             setInputVal('')
           }}
         />
-        {!sectionFold.tags && (
+        {!tagsFolded && (
           <div className="modal-scroll min-h-0 flex-1 space-y-0.5 overflow-y-auto">
           {addingTag && (
             <input
@@ -973,7 +1135,7 @@ export default function Sidebar() {
                     onContextMenu={(e) => openMenu(e, 'tagGroup', group.id)}
                   >
                     <span className="section-title truncate">{group.name}</span>
-                    <span className="mono ml-auto text-[10px] text-[var(--text-faint)]">{gts.length}</span>
+                    <span className="mono ml-auto text-[11px] text-[var(--text-faint)]">{gts.length}</span>
                   </button>
                 )}
               </div>

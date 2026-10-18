@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
+import { useDialogFocus } from '../useDialogFocus'
 import type { IconName } from './Icon'
 
 const PEN_COLORS = ['#ff5252', '#ffb300', '#ffee58', '#69f0ae', '#40c4ff', '#e040fb', '#ffffff', '#212121']
@@ -71,6 +72,10 @@ export default function Editor() {
   const assets = useLibraryStore((s) => s.assets)
   const openEditor = useLibraryStore((s) => s.openEditor)
   const asset = assets.find((a) => a.id === editorId)
+
+  const dialogRef = useRef<HTMLDivElement>(null)
+  // 文字输入用 Esc 退出编辑态（组件内处理），这里只做焦点陷阱与栈顺序
+  useDialogFocus(dialogRef, () => openEditor(null), { active: !!asset, closeOnEscape: false })
 
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<HTMLCanvasElement>(null)
@@ -369,6 +374,7 @@ export default function Editor() {
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label={`编辑 ${asset.name}`}

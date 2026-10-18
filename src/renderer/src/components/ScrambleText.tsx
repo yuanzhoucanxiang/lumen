@@ -18,8 +18,15 @@ export default function ScrambleText({
   speed?: number
 }) {
   const [out, setOut] = useState(text)
+  /** 系统开启“减少动态效果”时直接给最终文本；同时避免读屏逐帧播报乱码 */
+  const reduceMotion =
+    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
   useEffect(() => {
+    if (reduceMotion) {
+      setOut(text)
+      return
+    }
     let frame = 0
     const total = Math.max(10, text.length * 2)
     const id = setInterval(() => {
@@ -39,11 +46,12 @@ export default function ScrambleText({
       }
     }, speed)
     return () => clearInterval(id)
-  }, [text, speed])
+  }, [text, speed, reduceMotion])
 
   return (
-    <span aria-label={text} className={className}>
-      {out}
+    <span className={className}>
+      <span aria-hidden="true">{reduceMotion ? text : out}</span>
+      <span className="sr-only">{text}</span>
     </span>
   )
 }

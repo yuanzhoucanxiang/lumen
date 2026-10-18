@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
+import IconButton from './ui/IconButton'
 import { useTheme } from '../theme'
 
 /**
@@ -21,6 +22,7 @@ export default function ArchiveHeader() {
   const tags = useLibraryStore((s) => s.tags)
   const selection = useLibraryStore((s) => s.selection)
   const loading = useLibraryStore((s) => s.loading)
+  const inspectorOpen = useLibraryStore((s) => s.inspectorOpen)
 
   const title = useMemo(() => {
     if (view.type === 'all') return '全部素材'
@@ -72,6 +74,15 @@ export default function ArchiveHeader() {
 
       <div className="archive-masthead__readout" aria-label="当前档案状态">
         <span className="archive-selection-readout mono tnum">{pixel ? 'SEL' : cyber ? 'BUF' : '已选'} {String(selection.length).padStart(2, '0')}</span>
+        <IconButton
+          label={inspectorOpen ? '收起详情' : '显示详情'}
+          active={inspectorOpen}
+          size="sm"
+          title="显示/隐藏详情栏 (Ctrl+I)"
+          onClick={() => useLibraryStore.getState().toggleInspector()}
+        >
+          <Icon name="panelRight" size={14} />
+        </IconButton>
         <div className={`archive-safe-light ${loading ? 'is-working' : ''}`} title={loading ? (pixel ? '正在编制索引' : cyber ? '正在扫描信号' : '正在显影素材') : (pixel ? '索引已就绪' : cyber ? '信号链路已就绪' : '档案已就绪')}>
           <span className="archive-safe-light__lamp" aria-hidden="true" />
           <span>

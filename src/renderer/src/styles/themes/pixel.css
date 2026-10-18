@@ -4,40 +4,6 @@
 /* 素材本身始终保持原色；点阵与故障只属于系统反馈层。                          */
 /* ========================================================================== */
 
-:root[data-theme='pixel-glitch'] {
-  --bg-base: #060807;
-  --bg-panel: #0a0c0b;
-  --bg-raised: #111412;
-  --bg-hover: #191d1a;
-  --bg-active: #222723;
-  --bg-input: #040605;
-  --paper: #ecece7;
-  --paper-dim: #b9bbb6;
-  --film-edge: #222623;
-  --border: rgba(222, 224, 218, 0.12);
-  --border-strong: rgba(231, 232, 227, 0.3);
-  --accent: #e5e6e1;
-  --accent-hover: #ffffff;
-  --accent-deep: #3f5fc8;
-  --accent-soft: rgba(63, 95, 200, 0.16);
-  --accent-text: #f0f0eb;
-  --on-accent: #060706;
-  --text-main: #dedfd9;
-  --text-dim: #929791;
-  --text-faint: #5d635e;
-  --amber: #b7aa70;
-  --danger: #d45158;
-  --danger-soft: rgba(212, 81, 88, 0.12);
-  --ring: rgba(229, 230, 225, 0.72);
-  --radius: 0px;
-  --font-display: 'Arial Narrow', 'Bahnschrift Condensed', 'Microsoft YaHei UI', sans-serif;
-  --font-ui: 'Cascadia Mono', 'JetBrains Mono', 'Microsoft YaHei UI', 'Noto Sans CJK SC', monospace;
-  --font-data: 'Cascadia Mono', 'JetBrains Mono', Consolas, monospace;
-  --shadow-menu: 4px 4px 0 rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(235, 236, 231, 0.08);
-  --shadow-dialog: 7px 7px 0 rgba(0, 0, 0, 0.76), 0 0 0 1px rgba(235, 236, 231, 0.08);
-  --archive-dither: radial-gradient(circle, rgba(229, 230, 225, 0.34) 0 0.7px, transparent 0.9px) 0 0 / 4px 4px;
-}
-
 [data-theme='pixel-glitch'] body {
   color: var(--text-main);
   font-family: var(--font-ui);

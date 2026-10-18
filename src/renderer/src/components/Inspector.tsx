@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { assetThumbUrl, useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
+import IconButton from './ui/IconButton'
 import Markdown from './Markdown'
 import { useTheme } from '../theme'
 
@@ -10,7 +11,7 @@ function fmtSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(2)} MB`
 }
 
-export default function Inspector() {
+export default function Inspector({ width = 252 }: { width?: number }) {
   const theme = useTheme()
   const pixel = theme === 'pixel-glitch'
   const cyber = theme === 'cyber-glitch'
@@ -25,34 +26,8 @@ export default function Inspector() {
 
   const [tagInput, setTagInput] = useState('')
   const [comment, setComment] = useState('')
-  const [batchTag, setBatchTag] = useState('')
   /** 注释编辑/预览切换 */
   const [commentView, setCommentView] = useState<'edit' | 'preview'>('edit')
-
-  /** AI 智能处理：打开配置对话框 */
-  const applyAiProcess = async () => {
-    if (selection.length === 0) return
-    useLibraryStore.getState().openAiDialog()
-  }
-
-  /** 批量打标签：追加到所有选中素材 */
-  const applyBatchTag = async () => {
-    const name = batchTag.trim()
-    if (!name || selection.length === 0) return
-    await window.api.addTagToAssets(selection, name)
-    useLibraryStore.getState().showToast(`已为 ${selection.length} 个素材添加标签「${name}」`)
-    setBatchTag('')
-    await useLibraryStore.getState().refreshAssets()
-    await useLibraryStore.getState().refreshTags()
-  }
-
-  /** 批量评分：统一设置所有选中素材的星级 */
-  const applyBatchStar = async (star: number) => {
-    if (selection.length === 0) return
-    await Promise.all(selection.map((id) => window.api.updateAsset(id, { star })))
-    useLibraryStore.getState().showToast(`已将 ${selection.length} 个素材评为 ${star} 星`)
-    await useLibraryStore.getState().refreshAssets()
-  }
 
   /** 批量发送选中素材到当前白板（照抄 MOTZ sendSelectionToBoard） */
   const sendSelectionToBoard = async () => {
@@ -104,14 +79,25 @@ export default function Inspector() {
     <aside
       aria-label="素材详情"
       data-inspector
-      className="archive-inspector flex w-[252px] shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-panel)]"
+      className="archive-inspector flex shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-panel)]"
+      style={{ width }}
     >
       <header className="archive-inspector__header">
         <div>
           <span className="mono">{pixel ? 'INDEX LOG' : cyber ? 'TRACE PANEL' : 'INSPECTION RECORD'}</span>
           <strong>{asset ? (pixel ? '素材记录' : cyber ? '缓冲记录' : '素材检视记录') : (pixel ? '等待索引' : cyber ? '等待信号' : '等待选片')}</strong>
         </div>
-        <span className="archive-inspector__folio mono">{asset ? String(asset.id).slice(-4).padStart(4, '0') : '----'}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="archive-inspector__folio mono">{asset ? String(asset.id).slice(-4).padStart(4, '0') : '----'}</span>
+          <IconButton
+            label="收起详情"
+            size="sm"
+            title="收起详情 (Ctrl+I)"
+            onClick={() => useLibraryStore.getState().toggleInspector()}
+          >
+            <Icon name="chevronRight" size={11} />
+          </IconButton>
+        </div>
       </header>
       {!asset ? (
         <div className="archive-inspector__empty flex flex-1 flex-col items-center justify-center gap-2.5 p-4 text-center text-[12px] text-[var(--text-dim)]">
@@ -124,70 +110,21 @@ export default function Inspector() {
           {selection.length > 1 ? (
             <div className="w-full">
               <p className="mono text-[12px] tracking-[0.08em]">已选择 {selection.length} 个素材</p>
-              {/* 批量发送到白板（照抄 MOTZ sendSelectionToBoard） */}
-              <div className="mt-3 text-left">
-                <button
-                  className="btn-ghost w-full text-[12px]"
-                  onClick={() => void sendSelectionToBoard()}
-                >
-                  发送到当前白板
-                </button>
-              </div>
-              {/* 批量评分 */}
-              <div className="mt-4 text-left">
-                <div className="section-title mb-1.5">批量评分</div>
-                <div className="flex gap-1" role="group" aria-label="批量评分">
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <button
-                      key={n}
-                      aria-label={`全部评为 ${n} 星`}
-                      className="text-lg text-[var(--text-faint)] transition-all duration-100 hover:scale-125 hover:text-[var(--amber)]"
-                      onClick={() => void applyBatchStar(n)}
-                    >
-                      ★
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {/* 批量打标签 */}
-              <div className="mt-4 text-left">
-                <label htmlFor="batch-tag" className="section-title mb-1.5 block">
-                  批量添加标签
-                </label>
-                <input
-                  id="batch-tag"
-                  className="field-input w-full"
-                  placeholder={`为 ${selection.length} 个素材加标签，回车确认`}
-                  value={batchTag}
-                  list="tag-suggestions"
-                  onChange={(e) => setBatchTag(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void applyBatchTag()
-                  }}
-                />
-                <datalist id="tag-suggestions">
-                  {tags.map((t) => (
-                    <option key={t.id} value={t.name} />
-                  ))}
-                </datalist>
-                <button
-                  className="btn-primary mt-2 w-full disabled:opacity-40"
-                  disabled={!batchTag.trim()}
-                  onClick={() => void applyBatchTag()}
-                >
-                  应用到 {selection.length} 个素材
-                </button>
-              </div>
-              {/* AI 智能处理 */}
-              <div className="mt-4 text-left">
-                <div className="section-title mb-1.5">AI 智能处理</div>
-                <button
-                  className="btn-ghost w-full"
-                  onClick={() => void applyAiProcess()}
-                >
-                  AI 改名+打标签（{selection.length} 个）
-                </button>
-              </div>
+              <p className="mt-2 text-[11px] leading-relaxed text-[var(--text-faint)]">
+                使用图库底部的选区操作条：标签 / 文件夹 / 发送白板 / 导出 / AI 处理 / 删除。
+              </p>
+              <button
+                className="btn-ghost mt-3 w-full text-[12px]"
+                onClick={() => void sendSelectionToBoard()}
+              >
+                发送到当前白板
+              </button>
+              <button
+                className="btn-ghost mt-2 w-full text-[12px]"
+                onClick={() => useLibraryStore.getState().setSelection([])}
+              >
+                取消选择
+              </button>
             </div>
           ) : (
             '选择一个素材查看详情'

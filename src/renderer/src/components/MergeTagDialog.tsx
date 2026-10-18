@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
+import { useDialogFocus } from '../useDialogFocus'
 
 /**
  * 标签合并对话框：把源标签合并到另一个标签（源标签的素材全部打上目标标签，再删除源标签）。
@@ -16,6 +17,8 @@ export default function MergeTagDialog({
   const tags = useLibraryStore((s) => s.tags)
   const [keyword, setKeyword] = useState('')
   const [targetId, setTargetId] = useState<number | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogFocus(dialogRef, onClose)
 
   const source = tags.find((t) => t.id === sourceId)
   const target = tags.find((t) => t.id === targetId)
@@ -45,6 +48,7 @@ export default function MergeTagDialog({
   return (
     <div className="anim-overlay overlay fixed inset-0 z-[400] flex items-center justify-center" onClick={onClose}>
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="合并标签"

@@ -1,0 +1,8 @@
+/* 工具覆盖：设置页分区索引等跨组件微调 */
+/* ---------- 设置页分区索引（里程碑 196） ---------- */
+.settings-preferences [data-code] {
+  scroll-margin-top: 44px;
+}
+.settings-section-index::-webkit-scrollbar {
+  display: none;
+}

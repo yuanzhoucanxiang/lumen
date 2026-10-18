@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
+import { useDialogFocus } from '../useDialogFocus'
 import type { ExportNaming, ExportOptions } from '@shared/types'
 
 const NAMING_OPTIONS: { key: ExportNaming; label: string; hint: string }[] = [
@@ -22,6 +23,8 @@ export default function ExportDialog({
   const [groupByTag, setGroupByTag] = useState(false)
   const [mode, setMode] = useState<'folder' | 'zip'>('folder')
   const [exporting, setExporting] = useState(false)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogFocus(dialogRef, onClose)
 
   const doExport = async () => {
     if (ids.length === 0 || exporting) return
@@ -43,6 +46,7 @@ export default function ExportDialog({
   return (
     <div className="anim-overlay overlay fixed inset-0 z-[400] flex items-center justify-center p-4" onClick={onClose}>
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="导出素材"

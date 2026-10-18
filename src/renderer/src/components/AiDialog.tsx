@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
+import { useDialogFocus } from '../useDialogFocus'
 import type {
   AiProcessItem,
   AiProcessOptions,
@@ -52,6 +53,9 @@ export default function AiDialog({
   onClose: () => void
 }) {
   const [phase, setPhase] = useState<Phase>('config')
+  const dialogRef = useRef<HTMLDivElement>(null)
+  // 处理中禁止 Esc 关闭（与遮罩点击的保护一致）；焦点陷阱仍生效
+  useDialogFocus(dialogRef, onClose, { closeOnEscape: phase !== 'processing' })
   const [scopeType, setScopeType] = useState<AiScope['type']>('selection')
   const [doRename, setDoRename] = useState(true)
   const [doTag, setDoTag] = useState(true)
@@ -243,6 +247,7 @@ export default function AiDialog({
       onClick={phase === 'processing' ? undefined : onClose}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="AI 智能处理"

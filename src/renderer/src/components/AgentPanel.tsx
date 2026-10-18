@@ -28,7 +28,14 @@ const EXAMPLES = [
  * 「存为智能文件夹」（把本轮条件存成可复用的活查询）。
  * 对话状态在 store（关闭面板/切换视图不丢）。
  */
-export default function AgentPanel() {
+export default function AgentPanel({
+  mode = 'overlay',
+  width
+}: {
+  /** docked=参与主布局回流；overlay=窄窗/白板模式的浮层 */
+  mode?: 'docked' | 'overlay'
+  width?: number
+}) {
   const openPreview = useLibraryStore((s) => s.openPreview)
   const closeAgentPanel = useLibraryStore((s) => s.closeAgentPanel)
   const messages = useLibraryStore((s) => s.agentMessages)
@@ -355,7 +362,18 @@ export default function AgentPanel() {
                 <span>
                   {new Date(op.ts).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                   {' · '}
-                  {op.action}
+                  {{
+                    import: '导入',
+                    tag: '打标签',
+                    untag: '摘标签',
+                    folder: '归档',
+                    unfolder: '移出文件夹',
+                    star: '星级',
+                    board: '上板',
+                    note: '备注',
+                    rename: '改名',
+                    tagmerge: '合并标签'
+                  }[op.action] ?? op.action}
                   {op.items.length > 0
                     ? ` · 已回退 ${op.undoneCount}/${op.items.length}`
                     : op.affected > 0
@@ -420,9 +438,13 @@ export default function AgentPanel() {
 
   return (
     <aside
-      className="agent-panel anim-slide-left fixed right-0 top-0 z-[140] flex h-full w-[384px] flex-col border-l border-[var(--border)] bg-[var(--bg-panel)] shadow-2xl"
+      className={`agent-panel anim-slide-left flex h-full flex-col border-l border-[var(--border)] bg-[var(--bg-panel)] shadow-2xl ${
+        mode === 'overlay' ? 'fixed right-0 top-0 z-[140] w-[384px]' : 'relative shrink-0'
+      }`}
+      style={mode === 'docked' ? { width: width ?? 384 } : undefined}
       aria-label="找图助手"
       data-testid="agent-panel"
+      data-mode={mode}
       onDragOver={(e) => {
         if (e.dataTransfer?.types.includes('Files')) {
           e.preventDefault()

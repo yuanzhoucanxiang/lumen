@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
+import { useDialogFocus } from '../useDialogFocus'
 import type { Folder, SmartConditions } from '@shared/types'
 
 const EXT_GROUPS = [
@@ -52,6 +53,8 @@ export default function SmartFolderDialog({
   editFolder?: Folder | null
   onClose: () => void
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogFocus(dialogRef, onClose)
   const tags = useLibraryStore((s) => s.tags)
   const initial: SmartConditions = editFolder
     ? (() => {
@@ -124,6 +127,7 @@ export default function SmartFolderDialog({
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={editFolder ? '编辑智能文件夹' : '新建智能文件夹'}

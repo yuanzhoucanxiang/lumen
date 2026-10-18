@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
+import { useDialogFocus } from '../useDialogFocus'
 
 export default function ConfirmDialog({
   title,
@@ -15,6 +16,10 @@ export default function ConfirmDialog({
   onConfirm: () => void | Promise<void>
   onClose: () => void
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  // 已有自己的 Esc 处理（保留 stopPropagation 语义）；这里只需要焦点陷阱与栈顺序
+  useDialogFocus(dialogRef, onClose, { closeOnEscape: false })
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -32,6 +37,7 @@ export default function ConfirmDialog({
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}

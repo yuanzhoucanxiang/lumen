@@ -1,0 +1,177 @@
+/* ==========================================================================
+ * LUMEN DESIGN TOKENS（里程碑 198）
+ * --------------------------------------------------------------------------
+ * 唯一语义令牌来源：颜色 / 文字 / 圆角 / 字体 / 阴影 / 间距 / 字号 / 动效 / 层级。
+ * 组件 CSS 只消费 var(--token)，不再各自写主题色；主题皮肤文件只保留结构差异。
+ *
+ * 兼容策略：银色作为 :root 默认值（data-theme=silver-gelatin 时同样命中）；
+ * 像素/信号通过 :root[data-theme=...] 覆盖。新增主题必须补齐全部语义令牌。
+ * ========================================================================== */
+
+:root {
+  /* 表面：石墨工作区 → 抬升面板 */
+  --bg-base: #090907;
+  --bg-panel: #11110f;
+  --bg-raised: #191815;
+  --bg-hover: #23211d;
+  --bg-active: #2d2924;
+  --bg-input: #0c0c0a;
+
+  /* 相纸 / 底片结构 */
+  --paper: #d7d2c5;
+  --paper-dim: #aaa59a;
+  --film-edge: #24221d;
+
+  /* 边框 */
+  --border: rgba(215, 210, 197, 0.1);
+  --border-strong: rgba(215, 210, 197, 0.23);
+
+  /* 暗房安全灯红：选择、主操作、真实处理状态 */
+  --accent: #b94c42;
+  --accent-hover: #cf6257;
+  --accent-deep: #78342f;
+  --accent-soft: rgba(185, 76, 66, 0.13);
+  --accent-text: #dc776d;
+  --on-accent: #180806;
+  --ring: rgba(185, 76, 66, 0.62);
+
+  /* 评分暖银 */
+  --amber: #c8b990;
+  --amber-soft: rgba(200, 185, 144, 0.13);
+
+  /* 危险操作 */
+  --danger: #ff8178;
+  --danger-soft: rgba(255, 129, 120, 0.12);
+
+  /* 文字：main / dim / faint / 纯装饰 */
+  --text-main: #ddd9cf;
+  --text-dim: #a09c92;
+  --text-faint: #8a8881;
+  --text-decor: #6d6961;
+
+  /* 字体 */
+  --font-display: 'Iowan Old Style', 'Noto Serif SC', 'Songti SC', 'STSong', Georgia, serif;
+  --font-ui: 'Segoe UI Variable', 'Aptos', 'PingFang SC', 'Microsoft YaHei UI', system-ui, sans-serif;
+  --font-data: 'Cascadia Mono', 'IBM Plex Mono', 'JetBrains Mono', Consolas, monospace;
+
+  /* 形状 / 阴影 */
+  --radius: 3px;
+  --shadow-menu: 0 16px 44px rgba(0, 0, 0, 0.58);
+  --shadow-dialog: 0 30px 90px rgba(0, 0, 0, 0.72);
+
+  /* 间距阶梯（新组件使用） */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* 字号阶梯（新组件使用；现有紧凑界面逐步迁移） */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-lg: 15px;
+  --text-xl: 20px;
+
+  /* 动效（与项目风格卡一致，禁止无限循环） */
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --motion-slow: 420ms;
+  --ease-standard: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* 层级 */
+  --z-panel: 90;
+  --z-overlay: 400;
+  --z-toast: 500;
+
+  color-scheme: dark;
+}
+
+/* 像素故障 PX-03.1：复古科幻终端 / 伪档案系统 */
+:root[data-theme='pixel-glitch'] {
+  --bg-base: #060807;
+  --bg-panel: #0a0c0b;
+  --bg-raised: #111412;
+  --bg-hover: #191d1a;
+  --bg-active: #222723;
+  --bg-input: #040605;
+
+  --paper: #ecece7;
+  --paper-dim: #b9bbb6;
+  --film-edge: #222623;
+
+  --border: rgba(222, 224, 218, 0.12);
+  --border-strong: rgba(231, 232, 227, 0.3);
+
+  --accent: #e5e6e1;
+  --accent-hover: #ffffff;
+  --accent-deep: #3f5fc8;
+  --accent-soft: rgba(63, 95, 200, 0.16);
+  --accent-text: #f0f0eb;
+  --on-accent: #060706;
+  --ring: rgba(229, 230, 225, 0.72);
+
+  --amber: #b7aa70;
+  --amber-soft: rgba(183, 170, 112, 0.13);
+
+  --danger: #d45158;
+  --danger-soft: rgba(212, 81, 88, 0.12);
+
+  --text-main: #dedfd9;
+  --text-dim: #929791;
+  --text-faint: #7c847e;
+  --text-decor: #5d635e;
+
+  --font-display: 'Arial Narrow', 'Bahnschrift Condensed', 'Microsoft YaHei UI', sans-serif;
+  --font-ui: 'Cascadia Mono', 'JetBrains Mono', 'Microsoft YaHei UI', 'Noto Sans CJK SC', monospace;
+  --font-data: 'Cascadia Mono', 'JetBrains Mono', Consolas, monospace;
+
+  --radius: 0px;
+  --shadow-menu: 4px 4px 0 rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(235, 236, 231, 0.08);
+  --shadow-dialog: 7px 7px 0 rgba(0, 0, 0, 0.76), 0 0 0 1px rgba(235, 236, 231, 0.08);
+}
+
+/* 信号故障 PX-02R：海军黑信号台 / 磷光青 / 洋红校验位 */
+:root[data-theme='cyber-glitch'] {
+  --bg-base: #060a0f;
+  --bg-panel: #09121a;
+  --bg-raised: #0d1923;
+  --bg-hover: #122633;
+  --bg-active: #173746;
+  --bg-input: #06090d;
+
+  --paper: #d8f5f5;
+  --paper-dim: #9bb9bd;
+  --film-edge: #14212b;
+
+  --border: rgba(112, 221, 235, 0.13);
+  --border-strong: rgba(112, 229, 244, 0.34);
+
+  --accent: #63e7f4;
+  --accent-hover: #a1f7ff;
+  --accent-deep: #1f7a8c;
+  --accent-soft: rgba(99, 231, 244, 0.11);
+  --accent-text: #86f0fa;
+  --on-accent: #021014;
+  --ring: rgba(99, 231, 244, 0.72);
+
+  --amber: #f3c969;
+  --amber-soft: rgba(243, 201, 105, 0.13);
+
+  --danger: #f15b9c;
+  --danger-soft: rgba(241, 91, 156, 0.11);
+
+  --text-main: #d4e9eb;
+  --text-dim: #89a5aa;
+  --text-faint: #72888e;
+  --text-decor: #506970;
+
+  --font-display: 'Bahnschrift SemiCondensed', 'Arial Narrow', 'Microsoft YaHei UI', sans-serif;
+  --font-ui: 'Cascadia Mono', 'JetBrains Mono', 'Microsoft YaHei UI', monospace;
+  --font-data: 'Cascadia Mono', 'JetBrains Mono', Consolas, monospace;
+
+  --radius: 0px;
+  --shadow-menu: 8px 8px 0 rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(103, 232, 249, 0.08);
+  --shadow-dialog: 16px 16px 0 rgba(0, 0, 0, 0.56), 0 0 70px rgba(13, 86, 103, 0.13);
+}

@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Icon from './Icon'
 import ConfirmDialog from './ConfirmDialog'
 import { useLibraryStore } from '../stores/libraryStore'
+import { useDialogFocus } from '../useDialogFocus'
 import type { DbBackupInfo, ZipBackupInfo } from '@shared/types'
 
 /** 格式化字节大小 */
@@ -28,6 +29,9 @@ export default function RestoreDialog({ onClose }: { onClose: () => void }) {
   const [selected, setSelected] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [restoring, setRestoring] = useState(false)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  // 恢复进行中不能按 Esc 关窗；Esc 仍由组件自己的 guarded 处理器负责
+  useDialogFocus(dialogRef, onClose, { closeOnEscape: false })
 
   useEffect(() => {
     void window.api.listDbBackups().then((list) => {
@@ -39,7 +43,11 @@ export default function RestoreDialog({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !confirming) onClose()
+      if (e.key !== 'Escape') return
+      // 阻止冒泡到设置页的焦点陷阱：恢复确认时 Esc 只应被本弹窗消费
+      e.stopPropagation()
+      e.preventDefault()
+      if (!confirming) onClose()
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
@@ -66,6 +74,7 @@ export default function RestoreDialog({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="从备份恢复"
