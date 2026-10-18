@@ -33,7 +33,17 @@ import {
   updateAsset
 } from './repository'
 
-export type AgentOpAction = 'import' | 'tag' | 'untag' | 'folder' | 'unfolder' | 'star' | 'board' | 'note'
+export type AgentOpAction =
+  | 'import'
+  | 'tag'
+  | 'untag'
+  | 'folder'
+  | 'unfolder'
+  | 'star'
+  | 'board'
+  | 'note'
+  | 'rename'
+  | 'tagmerge'
 
 /** 记录中的一个受影响项 */
 export interface AgentOpItem {
@@ -89,6 +99,9 @@ export function logAgentOp(
     createdFolders?: { id: number; path: string }[]
     /** 本次操作新建的标签 id（里程碑 197）：回退后若该标签已无素材则删掉，避免留下空标签 */
     createdTagId?: number
+    /** tagmerge：来源/目标标签名（里程碑 201） */
+    fromTag?: string
+    toTag?: string
     boardId?: number
     undoable?: boolean
   },
@@ -234,6 +247,8 @@ export function undoAgentOp(
     folderName?: string
     createdFolders?: { id: number; path: string }[]
     createdTagId?: number
+    fromTag?: string
+    toTag?: string
     undoable?: boolean
   }>(row.payload, {})
   if (p.undoable === false) return { ok: false, message: '该操作不可回退（移动导入的源文件已删除）' }
@@ -301,6 +316,32 @@ export function undoAgentOp(
         }
         message = `已恢复 ${n} 个素材的原星级`
         if (kept > 0) message += `（${kept} 个已被后续修改，保持不动）`
+        break
+      }
+      case 'rename': {
+        // 恢复原文件名（里程碑 201）
+        let n = 0
+        for (const t of targets) {
+          if (!getAssetById(t.id)) continue
+          if (typeof t.prev === 'string' && t.prev) updateAsset(t.id, { name: t.prev })
+          n++
+        }
+        message = `已恢复 ${n} 个素材的原文件名`
+        break
+      }
+      case 'tagmerge': {
+        // 撤销合并（里程碑 201）：重建来源标签并挂回原素材；
+        // 合并时才获得目标标签的素材，把目标标签摘掉（合并前就有目标标签的不动）
+        const fromTag = String(p.fromTag ?? '')
+        const toTag = String(p.toTag ?? '')
+        let n = 0
+        for (const t of targets) {
+          if (!getAssetById(t.id)) continue
+          addTagToAssets([t.id], fromTag)
+          if (t.prev === false) removeTagFromAssets([t.id], toTag)
+          n++
+        }
+        message = `已撤销合并：${n} 个素材恢复「${fromTag}」标签`
         break
       }
       case 'note': {

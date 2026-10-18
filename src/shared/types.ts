@@ -266,6 +266,8 @@ export interface AssetQuery {
   source?: string
   tagIds?: number[]
   folderId?: number | null
+  /** true = folderId 查询包含所有子孙文件夹（默认只查直接成员，与侧栏计数一致） */
+  folderDeep?: boolean
   /** true = 只显示不属于任何文件夹的素材（整理时找未归档的） */
   noFolder?: boolean
   color?: string // hex，如 #FF0000

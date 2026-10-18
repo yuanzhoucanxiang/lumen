@@ -160,17 +160,23 @@ export function queryAssets(q: AssetQuery): Asset[] {
     where.push('id NOT IN (SELECT DISTINCT asset_id FROM asset_folders)')
   }
   if (q.folderId != null) {
-    // 递归 CTE：查询该文件夹及所有后代文件夹的素材（联动子文件夹）
-    where.push(
-      `id IN (
-        WITH RECURSIVE subtree(id) AS (
-          SELECT id FROM folders WHERE id = ?
-          UNION ALL
-          SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
-        )
-        SELECT asset_id FROM asset_folders WHERE folder_id IN (SELECT id FROM subtree)
-      )`
-    )
+    if (q.folderDeep) {
+      // 显式要求含子孙（里程碑 201）：递归 CTE 查该文件夹及所有后代的素材
+      where.push(
+        `id IN (
+          WITH RECURSIVE subtree(id) AS (
+            SELECT id FROM folders WHERE id = ?
+            UNION ALL
+            SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+          )
+          SELECT asset_id FROM asset_folders WHERE folder_id IN (SELECT id FROM subtree)
+        )`
+      )
+    } else {
+      // 默认只查直接成员（里程碑 201）：与 /folders 的 count、侧栏角标同口径，
+      // 避免"角标 8 个、点进去 12 个"的不一致；需要子树时显式传 deep
+      where.push('id IN (SELECT asset_id FROM asset_folders WHERE folder_id = ?)')
+    }
     params.push(q.folderId)
   }
   if (q.tagIds && q.tagIds.length > 0) {

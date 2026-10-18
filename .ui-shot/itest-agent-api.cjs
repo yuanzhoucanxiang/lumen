@@ -740,6 +740,89 @@ async function main() {
     rUndoUnfolder?.json?.ok === true && Array.isArray(afterUndoMove?.folderIds) && afterUndoMove.folderIds.includes(orgFolderAId),
     `folderIds=${JSON.stringify(afterUndoMove?.folderIds)} msg=${String(rUndoUnfolder?.json?.message)}`)
 
+  /* ---------- 9n. 改名 / 标签合并 / 文件夹直查与 deep(里程碑 201) ---------- */
+  // 准备两张素材
+  const rnA = path.join(dupDir, `${tag}-rn-a.png`)
+  const rnB = path.join(dupDir, `${tag}-rn-b.png`)
+  // 内容必须唯一：固定字节可能和库内已有素材相同 → sha256 判重会跳过（实测踩过）
+  const rnHead = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+  fs.writeFileSync(rnA, Buffer.concat([rnHead, require('crypto').randomBytes(16)]))
+  fs.writeFileSync(rnB, Buffer.concat([rnHead, require('crypto').randomBytes(16)]))
+  const rRn = await request('POST', '/import', JSON.stringify({ paths: [rnA, rnB] }))
+  const [rnAId, rnBId] = rRn.json?.importedIds ?? []
+  // 单张改名：name 覆盖主干，扩展名保留
+  const rRename = await request('POST', '/rename', JSON.stringify({ ids: [rnAId], name: `${tag}-新名字` }))
+  const afterRename = (await request('GET', `/asset?id=${rnAId}`)).json?.asset?.name
+  check('/rename 单张改名且保留扩展名',
+    rRename.status === 200 && rRename.json?.renamed === 1 && afterRename === `${tag}-新名字.png`,
+    `name=${afterRename}`)
+  // 批量用 pattern
+  const rRenameBatch = await request('POST', '/rename', JSON.stringify({ ids: [rnAId, rnBId], pattern: `${tag}-批{序号}` }))
+  const namesAfterBatch = await Promise.all(
+    [rnAId, rnBId].map(async (id) => (await request('GET', `/asset?id=${id}`)).json?.asset?.name)
+  )
+  check('/rename 批量模板 {序号} 生效',
+    rRenameBatch.status === 200 && rRenameBatch.json?.renamed === 2 &&
+      namesAfterBatch[0] === `${tag}-批01.png` && namesAfterBatch[1] === `${tag}-批02.png`,
+    `names=${JSON.stringify(namesAfterBatch)}`)
+  // name 用于多张 → 400
+  const rRenameMany = await request('POST', '/rename', JSON.stringify({ ids: [rnAId, rnBId], name: 'x' }))
+  check('/rename 多张用 name 返回 400(提示用 pattern)', rRenameMany.status === 400, `status=${rRenameMany.status}`)
+  // 回退改名恢复原名
+  // 这个素材先后被"单张改名"和"批量改名"动过，两条都要撤才回到原名
+  const renameOps = ((await request('GET', '/ops?limit=50')).json?.ops ?? []).filter(
+    (o) => o.action === 'rename' && (o.items ?? []).some((it) => it.id === rnAId)
+  )
+  let undoRenameOk = renameOps.length > 0
+  for (const o of renameOps) {
+    const r = await request('POST', '/undo', JSON.stringify({ id: o.id }))
+    if (r.json?.ok !== true) undoRenameOk = false
+  }
+  const afterUndoRename = (await request('GET', `/asset?id=${rnAId}`)).json?.asset?.name
+  check('回退改名恢复原文件名',
+    undoRenameOk && afterUndoRename === `${tag}-rn-a.png`,
+    `ops=${renameOps.length} name=${afterUndoRename}`)
+  // 标签合并：两个素材分别打上 A / A+B，把 A 合并进 B
+  const mergeFrom = `${tag}-合并源`
+  const mergeTo = `${tag}-合并目标`
+  await request('POST', '/tag', JSON.stringify({ ids: [rnAId], tag: mergeFrom }))
+  await request('POST', '/tag', JSON.stringify({ ids: [rnBId], tag: mergeFrom }))
+  await request('POST', '/tag', JSON.stringify({ ids: [rnBId], tag: mergeTo }))
+  const rMerge = await request('POST', '/tag/merge', JSON.stringify({ from: mergeFrom, to: mergeTo }))
+  const tagsAfterMerge = (await request('GET', '/tags')).json?.tags ?? []
+  const aTagsAfter = (await request('GET', `/asset?id=${rnAId}`)).json?.asset?.tags ?? []
+  check('/tag/merge 合并标签(源消失、目标覆盖全部)',
+    rMerge.status === 200 && rMerge.json?.merged === 2 &&
+      !tagsAfterMerge.some((t) => t.name === mergeFrom) &&
+      tagsAfterMerge.some((t) => t.name === mergeTo && t.count >= 2) && aTagsAfter.includes(mergeTo),
+    `merged=${rMerge.json?.merged} fromGone=${!tagsAfterMerge.some((t) => t.name === mergeFrom)}`)
+  // 回退合并：来源标签恢复，合并带过去的目标标签被摘掉
+  const mergeOp = ((await request('GET', '/ops?limit=30')).json?.ops ?? []).find((o) => o.action === 'tagmerge')
+  const rUndoMerge = mergeOp ? await request('POST', '/undo', JSON.stringify({ id: mergeOp.id })) : null
+  const aTagsRestored = (await request('GET', `/asset?id=${rnAId}`)).json?.asset?.tags ?? []
+  const bTagsRestored = (await request('GET', `/asset?id=${rnBId}`)).json?.asset?.tags ?? []
+  check('回退合并:来源标签恢复且只摘掉合并带过去的那份',
+    rUndoMerge?.json?.ok === true && aTagsRestored.includes(mergeFrom) && !aTagsRestored.includes(mergeTo) && bTagsRestored.includes(mergeTo),
+    `a=${JSON.stringify(aTagsRestored)} b=${JSON.stringify(bTagsRestored)}`)
+  // 文件夹直查 vs deep：父夹只回直接成员，deep=1 才含子夹
+  const directParentFolder = await run(`return await window.api.createFolder(${JSON.stringify(`${tag}-直查父`)}, null)`)
+  const directChildFolder = await run(`return await window.api.createFolder(${JSON.stringify('直查子')}, ${directParentFolder.id})`)
+  const rDirect = await request('POST', '/import', JSON.stringify({ paths: [rnA], folder: `${tag}-直查父` }))
+  const childPng = path.join(dupDir, `${tag}-child.png`)
+  fs.writeFileSync(childPng, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 6, 8, 8]))
+  const rChild = await request('POST', '/import', JSON.stringify({ paths: [childPng], folder: `${tag}-直查父/直查子` }))
+  const directList = await request('GET', `/assets?folder=${directParentFolder.id}`)
+  const deepList = await request('GET', `/assets?folder=${directParentFolder.id}&deep=1`)
+  const folderRow = ((await request('GET', '/folders')).json?.folders ?? []).find((f) => f.id === directParentFolder.id)
+  const directExpectedId = rDirect.json?.importedIds?.[0] ?? rDirect.json?.matchedIds?.[0]
+  check('文件夹查询默认只回直接成员(与角标计数一致)',
+    (directList.json?.assets ?? []).length === folderRow?.count &&
+      (directList.json?.assets ?? []).every((a2) => a2.id === directExpectedId),
+    `direct=${(directList.json?.assets ?? []).length} count=${folderRow?.count} expect=${directExpectedId}`)
+  check('deep=1 时才包含子文件夹素材',
+    (deepList.json?.assets ?? []).length === 2 && (deepList.json?.assets ?? []).some((a2) => a2.id === rChild.json?.importedIds?.[0]),
+    `deep=${(deepList.json?.assets ?? []).length}`)
+
   /* ---------- 9. 里程碑 182:回退只撤本次改动 / 精确查重 / 危险动作权限 ---------- */
   // 9a. 素材先由"用户"打上标签(走渲染层 IPC,不经 Agent 通道 -> 不产生操作记录)
   const PRE_TAG = `${tag}-原有标签`

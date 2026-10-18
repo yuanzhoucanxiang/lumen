@@ -15,6 +15,8 @@ import {
   assetFolderIds,
   assetsHavingTag,
   assetsInFolder,
+  createTag,
+  mergeTags,
   removeFromFolder,
   findTagId,
   createFolder,
@@ -293,6 +295,43 @@ function agentFolderAllowed(segments: string[], cfg: AppConfig): boolean {
     parentId = found.id
   }
   return parentId !== null && scope.has(parentId)
+}
+
+/** 批量改名规划（里程碑 201）：与 UI 的批量重命名同口径——模板占位符 {原名}/{序号}/{日期}、
+ *  扩展名自动保留、批内重名加 (2)、结果与原名相同则跳过。显式 name 用于单张素材。 */
+function planRenames(
+  assets: { id: string; name: string; ext: string }[],
+  opts: { name?: string; pattern?: string }
+): { id: string; name: string; prev: string }[] {
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const clean = (raw: string): string =>
+    raw
+      .replace(/[ -]/g, '')
+      .replace(/[\/:*?"<>|]/g, '')
+      .replace(/[. ]+$/g, '')
+      .trim()
+  const used = new Set<string>()
+  const out: { id: string; name: string; prev: string }[] = []
+  assets.forEach((a, i) => {
+    const ext = a.ext ? `.${a.ext}` : ''
+    const tpl = opts.name !== undefined ? opts.name : opts.pattern ?? ''
+    let stem = clean(
+      tpl
+        .replaceAll('{原名}', a.name.replace(/\.[^.]+$/, ''))
+        .replaceAll('{序号}', String(i + 1).padStart(2, '0'))
+        .replaceAll('{日期}', today)
+    )
+    // 显式 name 若已带本素材扩展名，避免变成 foo.png.png
+    if (opts.name !== undefined && ext && stem.toLowerCase().endsWith(ext.toLowerCase())) {
+      stem = stem.slice(0, stem.length - ext.length)
+    }
+    let final = stem ? `${stem}${ext}` : a.name
+    let n = 2
+    while (used.has(final.toLowerCase())) final = `${stem} (${n++})${ext}`
+    used.add(final.toLowerCase())
+    if (final !== a.name) out.push({ id: a.id, name: final, prev: a.name })
+  })
+  return out
 }
 
 /** 路径上某一层只有同名**智能文件夹**时返回该层名字（里程碑 197）。
@@ -787,6 +826,8 @@ export function startClipServer(
       const orderRaw = (q.get('order') ?? '').toLowerCase()
       const sortDesc = orderRaw === 'asc' ? false : orderRaw === 'desc' ? true : sortBy !== 'name'
       const folderRaw = Number(q.get('folder') ?? NaN)
+      // deep=1 → folder 查询包含子孙文件夹（默认只查直接成员，里程碑 201）
+      const folderDeep = ['1', 'true', 'yes'].includes((q.get('deep') ?? '').toLowerCase()) || undefined
       // folder=none → 未归档（不属于任何文件夹），里程碑 200
       const noFolder = (q.get('folder') ?? '').toLowerCase() === 'none' || undefined
       const folderId = Number.isInteger(folderRaw) ? folderRaw : undefined
@@ -819,6 +860,7 @@ export function startClipServer(
         sortBy,
         sortDesc,
         folderId,
+        folderDeep,
         noFolder,
         minW,
         maxW,
@@ -1204,6 +1246,99 @@ ${note}` : note
             onImported?.(0, 'agent')
           }
           json(res, 200, { ok: true, updated: noteItems.length })
+        })
+        .catch((err: Error) => {
+          if (!res.headersSent) json(res, 400, { ok: false, error: err.message })
+        })
+      return
+    }
+
+    // 改名（里程碑 201）：单张用 name，批量用 pattern（{原名}/{序号}/{日期}）。记录原名，可回退。
+    if (req.method === 'POST' && url.pathname === '/rename') {
+      readBody(req, res)
+        .then(async (body) => {
+          const payload = JSON.parse(body) as {
+            ids?: string[]
+            conditions?: unknown
+            name?: string
+            pattern?: string
+          }
+          const hasName = typeof payload.name === 'string' && payload.name.trim() !== ''
+          const hasPattern = typeof payload.pattern === 'string' && payload.pattern.trim() !== ''
+          if (hasName === hasPattern) throw new Error('name 与 pattern 二选一（单张用 name，批量用 pattern）')
+          if (hasName && String(payload.name).length > 300) throw new Error('name too long (max 300)')
+          if (hasPattern && String(payload.pattern).length > 300) throw new Error('pattern too long (max 300)')
+          const ids = await resolveAgentIds(payload)
+          if (ids.length === 0) {
+            json(res, 200, { ok: true, renamed: 0 })
+            return
+          }
+          if (hasName && ids.length > 1) throw new Error('批量改名请用 pattern（例如 "{原名} {序号}"），name 只用于单张')
+          const rows = ids
+            .map((id) => getAssetById(id))
+            .filter((x): x is NonNullable<typeof x> => !!x && x.deletedAt == null)
+            .map((x) => ({ id: x.id, name: x.name, ext: x.ext }))
+          const plan = planRenames(rows, {
+            name: hasName ? String(payload.name) : undefined,
+            pattern: hasPattern ? String(payload.pattern) : undefined
+          })
+          for (const r of plan) updateAsset(r.id, { name: r.name })
+          if (plan.length > 0) {
+            logAgentOp(
+              'rename',
+              `重命名 ${plan.length} 个素材为 ${hasPattern ? `模板「${String(payload.pattern)}」` : `「${String(payload.name)}」`}`,
+              { items: plan.map((r) => ({ id: r.id, name: r.name, prev: r.prev })) },
+              plan.length
+            )
+            onImported?.(0, 'agent')
+          }
+          json(res, 200, { ok: true, renamed: plan.length, unchanged: rows.length - plan.length })
+        })
+        .catch((err: Error) => {
+          if (!res.headersSent) json(res, 400, { ok: false, error: err.message })
+        })
+      return
+    }
+
+    // 合并标签（里程碑 201）：把 from 合并进 to（to 不存在则创建）。合并会删除 from，记录明细可回退。
+    if (req.method === 'POST' && url.pathname === '/tag/merge') {
+      readBody(req, res)
+        .then(async (body) => {
+          const payload = JSON.parse(body) as { from?: string; to?: string }
+          const fromName = sanitizeName(payload.from)
+          const toName = sanitizeName(payload.to)
+          if (!fromName || !toName) throw new Error('from 与 to 都是必填')
+          if (fromName === toName) throw new Error('from 与 to 不能相同')
+          const tags = listTags()
+          const src = tags.find((t) => t.name === fromName)
+          if (!src) {
+            json(res, 404, { ok: false, error: `标签「${fromName}」不存在` })
+            return
+          }
+          let dst = tags.find((t) => t.name === toName)
+          if (!dst) dst = createTag(toName)
+          // 记录明细：每个带 from 的素材 + 它当时是否已有 to（撤销时据此摘掉合并带过去的那份）
+          const links = getDb()
+            .prepare('SELECT asset_id FROM asset_tags WHERE tag_id = ?')
+            .all(src.id) as { asset_id: string }[]
+          const items = links.map((l) => ({
+            id: l.asset_id,
+            name: getAssetById(l.asset_id)?.name ?? l.asset_id,
+            prev: !!getDb()
+              .prepare('SELECT 1 FROM asset_tags WHERE tag_id = ? AND asset_id = ?')
+              .get(dst!.id, l.asset_id)
+          }))
+          mergeTags(src.id, dst.id)
+          if (items.length > 0) {
+            logAgentOp(
+              'tagmerge',
+              `把标签「${fromName}」合并到「${toName}」（${items.length} 个素材）`,
+              { items, fromTag: fromName, toTag: toName },
+              items.length
+            )
+            onImported?.(0, 'agent')
+          }
+          json(res, 200, { ok: true, merged: items.length, from: fromName, to: toName, toTagId: dst.id })
         })
         .catch((err: Error) => {
           if (!res.headersSent) json(res, 400, { ok: false, error: err.message })
