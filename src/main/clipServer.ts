@@ -875,6 +875,39 @@ export function startClipServer(
       return
     }
 
+    // 以图搜图（外部图片，里程碑 198）：新生成、还没入库的图也能先查"库里有没有近似的"。
+    // 走 POST 是因为 dataUrl 可能很大（GET 的 URL 长度不可靠）；也接受 assetId（等价于 GET）。
+    if (req.method === 'POST' && url.pathname === '/similar') {
+      readBody(req, res)
+        .then(async (body) => {
+          const payload = JSON.parse(body) as {
+            dataUrl?: string
+            assetId?: string
+            maxDistance?: number
+            limit?: number
+          }
+          const maxDistanceRaw = Number(payload.maxDistance ?? 12)
+          const maxDistance = Math.min(Math.max(Number.isFinite(maxDistanceRaw) ? Math.floor(maxDistanceRaw) : 12, 0), 32)
+          const limitRaw = Number(payload.limit ?? 60)
+          const limit = Math.min(Math.max(Number.isFinite(limitRaw) ? Math.floor(limitRaw) : 60, 1), 200)
+          if (typeof payload.assetId === 'string' && /^[0-9a-f]{16}$/i.test(payload.assetId.trim())) {
+            const r = await agentFindSimilar({ assetId: payload.assetId.trim() }, maxDistance, limit)
+            json(res, 200, { ok: true, ...r })
+            return
+          }
+          const dataUrl = typeof payload.dataUrl === 'string' ? payload.dataUrl : ''
+          if (!dataUrl) throw new Error('dataUrl required (data:image/...;base64,...) 或 assetId')
+          if (!/^data:image\/[a-z+.-]+;base64,/.test(dataUrl)) throw new Error('dataUrl must be a base64 image data URL')
+          if (dataUrl.length > 20 * 1024 * 1024) throw new Error('image too large (max 20MB dataUrl)')
+          const r = await agentFindSimilar({ dataUrl }, maxDistance, limit)
+          json(res, 200, { ok: true, ...r })
+        })
+        .catch((err: Error) => {
+          if (!res.headersSent) json(res, 400, { ok: false, error: err.message })
+        })
+      return
+    }
+
     // 打标签:按 ids 或 conditions 给素材打标签(可撤销——/untag 摘除)
     if (req.method === 'POST' && url.pathname === '/tag') {
       readBody(req, res)

@@ -657,6 +657,21 @@ async function main() {
   check('没有被偷偷建出重名普通夹', normalDup.length === 1 && normalDup[0].isSmart === 1,
     `同名夹数=${normalDup.length} isSmart=${normalDup[0]?.isSmart}`)
 
+  /* ---------- 9l. POST /similar 外部图片查重(里程碑 198) ---------- */
+  // 用 5b 段 /clip 导入过的同内容 PNG 做参考图：库里有同图，应能命中
+  const rSimPost = await request('POST', '/similar', JSON.stringify({ dataUrl: `data:image/png;base64,${CLIP_PNG_B64}`, maxDistance: 12, limit: 10 }))
+  check('POST /similar 外部图片能查到库内近似素材',
+    rSimPost.status === 200 && rSimPost.json?.ok === true && (rSimPost.json?.total ?? 0) >= 1 &&
+      (rSimPost.json?.assets ?? []).every((a) => typeof a.matchPct === 'number'),
+    `status=${rSimPost.status} total=${rSimPost.json?.total}`)
+  const rSimPostBad = await request('POST', '/similar', JSON.stringify({ dataUrl: 'data:text/plain;base64,aGk=' }))
+  check('POST /similar 非图片 dataUrl 返回 400', rSimPostBad.status === 400, `status=${rSimPostBad.status}`)
+  const rSimPostEmpty = await request('POST', '/similar', JSON.stringify({}))
+  check('POST /similar 缺 dataUrl/assetId 返回 400', rSimPostEmpty.status === 400, `status=${rSimPostEmpty.status}`)
+  const rSimPostId = await request('POST', '/similar', JSON.stringify({ assetId: firstId, limit: 5 }))
+  check('POST /similar 传 assetId 等价于 GET', rSimPostId.status === 200 && rSimPostId.json?.ok === true,
+    `status=${rSimPostId.status} total=${rSimPostId.json?.total}`)
+
   /* ---------- 9. 里程碑 182:回退只撤本次改动 / 精确查重 / 危险动作权限 ---------- */
   // 9a. 素材先由"用户"打上标签(走渲染层 IPC,不经 Agent 通道 -> 不产生操作记录)
   const PRE_TAG = `${tag}-原有标签`

@@ -136,6 +136,7 @@ curl -s -X POST http://127.0.0.1:45678/import \
 - `GET /status` — 服务探测 + **技能版本自检**：`version`、`library`、`skill:{installed,upToDate}`；`upToDate:false` 时另带 `skillUpdateHint`（提醒用户去设置里更新技能）。
 - `GET /assets` — 查询素材（只读）。参数：`q`=关键词（搜名称和备注，含拼音，比如用 prompt 片段找图）、`ext`=逗号分隔扩展名、`tag`=标签名、`source`=来源（manual/agent/clip/watcher/screenshot）、`days`=最近 N 天、`star`=最低星级、`shape`=landscape/portrait/square、`untagged=1`=未打标签、`folder`=文件夹 id、`sort`=imported/name/size/star + `order`=asc/desc（按名字默认正序，其余默认倒序）、`limit`≤500、`offset` 分页。响应含 `count/truncated/assets`（窄列：id/name/ext/宽高/大小/来源/标签）。**生成或导入前先查一下库里有没有，避免重复劳动**。
 - `GET /similar?id=xxx&maxDistance=12&limit=60` — **以图搜图**（只读，确定性 dHash 检索）：给一个库内素材 id，返回库中与它相似的素材（含 `matchPct` 相似度百分比，按相似度降序）。适合'这张图还有没有近似版本/重复'类需求。
+- `POST /similar` — **外部图片查重**（只读）：body `{"dataUrl":"data:image/...;base64,...","maxDistance":12,"limit":60}`，`maxDistance` 0-32、`limit` 1-200、dataUrl 上限 20MB。适合"这张新图还没入库，先看看库里有没有近似的"；也接受 `{"assetId":"..."}`（等价于 GET）。响应同 GET（含 `matchPct`）。
 - `GET /asset?id=xxx` — 单素材详情：含 `comment`（生成信息存档在这里，可读回 prompt）、来源、标签、**归属文件夹 `folders`（完整路径）**。
 - `POST /tag` — 打标签：body `{"tag":"标签名","conditions":{...}}` 或 `{"tag":"...","ids":["..."]}`，给全部命中素材打标签（幂等）。
 - `POST /untag` — 摘标签：参数同上，从命中素材上移除该标签（可逆）。
