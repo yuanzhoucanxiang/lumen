@@ -14,6 +14,7 @@ import {
   assetFolderIds,
   assetsHavingTag,
   assetsInFolder,
+  findTagId,
   createFolder,
   findSimilar,
   getAssetById,
@@ -292,6 +293,25 @@ function agentFolderAllowed(segments: string[], cfg: AppConfig): boolean {
   return parentId !== null && scope.has(parentId)
 }
 
+/** 路径上某一层只有同名**智能文件夹**时返回该层名字（里程碑 197）。
+ *  智能文件夹不能作为落位目标；若不提前拦，`resolveFolderId` 会在旁边新建一个重名的普通夹，
+ *  用户会看到两个同名夹、分不清哪个是智能的。 */
+function smartFolderConflict(segments: string[]): string | null {
+  if (segments.length === 0) return null
+  const folders = listFolders()
+  let parentId: number | null = null
+  for (const seg of segments) {
+    const normal = folders.find((f) => f.parentId === parentId && !f.isSmart && f.name === seg)
+    if (normal) {
+      parentId = normal.id
+      continue
+    }
+    const smart = folders.find((f) => f.parentId === parentId && f.isSmart && f.name === seg)
+    return smart ? seg : null
+  }
+  return null
+}
+
 /** 文件夹全路径（从库根起，用 / 连接）。供 /scope 回传可写范围，让 agent 自己找位置。 */
 function folderPathOf(id: number, byId: Map<number, { id: number; name: string; parentId: number | null }>): string {
   const parts: string[] = []
@@ -438,8 +458,13 @@ async function importFromPaths(
       ? []
       : [payload.tags]
   const tagNames = (tags as unknown[]).slice(0, MAX_TAGS_PER_CALL).map(sanitizeName).filter(Boolean)
+  // 记录每个标签"应用前是否已存在"（里程碑 197）：本次新建的标签在回退后若无素材则一并清掉
+  const tagWasNew = new Map<string, boolean>()
   if (applyIds.length > 0) {
-    for (const t of tagNames) tagPre.set(t, assetsHavingTag(applyIds, t))
+    for (const t of tagNames) {
+      tagPre.set(t, assetsHavingTag(applyIds, t))
+      tagWasNew.set(t, findTagId(t) === null)
+    }
     for (const t of tagNames) addTagToAssets(applyIds, t)
   }
 
@@ -510,7 +535,14 @@ async function importFromPaths(
       const already = tagPre.get(t) ?? new Set<string>()
       const changedTagIds = applyIds.filter((id) => !already.has(id))
       if (changedTagIds.length === 0) continue
-      logAgentOp('tag', `给 ${changedTagIds.length} 个素材打标签「${t}」`, { items: itemsFromAssetIds(changedTagIds), tag: t }, changedTagIds.length, gk)
+      const createdTagId = tagWasNew.get(t) ? findTagId(t) ?? undefined : undefined
+      logAgentOp(
+        'tag',
+        `给 ${changedTagIds.length} 个素材打标签「${t}」`,
+        { items: itemsFromAssetIds(changedTagIds), tag: t, createdTagId },
+        changedTagIds.length,
+        gk
+      )
     }
   }
   // ④上板
@@ -859,9 +891,15 @@ export function startClipServer(
           // 回退时才不会摘掉用户原有的标签（里程碑 182）
           const already = assetsHavingTag(ids, tag)
           const changed = ids.filter((id) => !already.has(id))
+          const tagIsNew = findTagId(tag) === null
           addTagToAssets(ids, tag)
           if (changed.length > 0) {
-            logAgentOp('tag', `给 ${changed.length} 个素材打标签「${tag}」`, { items: itemsFromAssetIds(changed), tag }, changed.length)
+            logAgentOp(
+              'tag',
+              `给 ${changed.length} 个素材打标签「${tag}」`,
+              { items: itemsFromAssetIds(changed), tag, createdTagId: tagIsNew ? findTagId(tag) ?? undefined : undefined },
+              changed.length
+            )
           }
           if (ids.length > 0) onImported?.(0, 'agent')
           json(res, 200, { ok: true, tagged: ids.length, changed: changed.length })
@@ -903,6 +941,14 @@ export function startClipServer(
           const payload = JSON.parse(body) as { ids?: string[]; conditions?: unknown; folder?: string }
           const { segments: segs } = agentFolderSegments(String(payload.folder ?? ''))
           if (segs.length === 0) throw new Error('folder required')
+          const smartClash = smartFolderConflict(segs)
+          if (smartClash) {
+            json(res, 409, {
+              ok: false,
+              error: `「${smartClash}」是同名智能文件夹，不能作为落位目标；请换一个文件夹名`
+            })
+            return
+          }
           // 可写范围校验同样先于建档（里程碑 183）；与 /import 一致返回 403
           if (!agentFolderAllowed(segs, loadConfig())) {
             json(res, 403, { ok: false, error: SCOPE_HINT })
@@ -1053,7 +1099,7 @@ ${note}` : note
           const payload = JSON.parse(body) as { id?: number; itemIds?: string[]; groupKey?: string }
           // 整批回退（里程碑 196）：一次请求产生的多条记录（导入/标签/归档）用一个 groupKey 一起撤
           if (typeof payload.groupKey === 'string' && payload.groupKey.trim()) {
-            const g = undoAgentGroup(payload.groupKey)
+            const g = undoAgentGroup(payload.groupKey.trim().slice(0, 64))
             if (g.ok) onImported?.(0, 'agent')
             json(res, g.ok ? 200 : 400, { ok: g.ok, message: g.message, undone: g.undone, remaining: g.remaining })
             return
@@ -1112,6 +1158,14 @@ ${note}` : note
           const agentCfg = loadConfig()
           // 可写范围（里程碑 183）：目标文件夹不在范围内直接拒——不建文件夹、不导文件
           const scopeSegments = agentFolderSegments(payload.folder == null ? '' : String(payload.folder)).segments
+          const smartClash = smartFolderConflict(scopeSegments)
+          if (smartClash) {
+            json(res, 409, {
+              ok: false,
+              error: `「${smartClash}」是同名智能文件夹，不能作为落位目标；请换一个文件夹名（智能文件夹按条件自动聚合，不接受归档）`
+            })
+            return
+          }
           if (!agentFolderAllowed(scopeSegments, agentCfg)) {
             json(res, 403, { ok: false, error: SCOPE_HINT })
             return

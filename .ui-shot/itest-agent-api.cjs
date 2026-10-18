@@ -614,6 +614,49 @@ async function main() {
   const rUndoNoKey = await request('POST', '/undo', JSON.stringify({}))
   check('/undo 缺 id 与 groupKey 返回 400', rUndoNoKey.status === 400, `status=${rUndoNoKey.status}`)
 
+  /* ---------- 9j. 回退清理本次新建的空标签(里程碑 197) ---------- */
+  const newTagName = `${tag}-一次性标签`
+  const tagPng = path.join(dupDir, `${tag}-tagclean.png`)
+  fs.writeFileSync(tagPng, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 3, 8, 8]))
+  const rTagNew = await request('POST', '/import', JSON.stringify({ paths: [tagPng], tags: [newTagName] }))
+  const tagOpNew = ((await request('GET', '/ops?limit=30')).json?.ops ?? []).find(
+    (o) => o.action === 'tag' && (o.items ?? []).some((it) => it.name === `${tag}-tagclean.png`)
+  )
+  const rUndoTagNew = tagOpNew ? await request('POST', '/undo', JSON.stringify({ id: tagOpNew.id })) : null
+  const newTagRemoved = !((await request('GET', '/tags')).json?.tags ?? []).some((x) => x.name === newTagName)
+  check('回退时清理本次新建的空标签',
+    rTagNew.json?.imported === 1 && rUndoTagNew?.json?.ok === true && newTagRemoved &&
+      String(rUndoTagNew.json.message).includes('空标签'),
+    `removed=${newTagRemoved} msg=${String(rUndoTagNew?.json?.message)}`)
+  // 已存在的标签不能被误删：先建标签并留一个素材，再用同标签打第二个素材，回退第二个标签操作
+  const existingTag = `${tag}-保留标签`
+  const keepAPng = path.join(dupDir, `${tag}-tagkeep-a.png`)
+  fs.writeFileSync(keepAPng, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 3, 7, 8]))
+  await request('POST', '/import', JSON.stringify({ paths: [keepAPng], tags: [existingTag] }))
+  const keepBPng = path.join(dupDir, `${tag}-tagkeep-b.png`)
+  fs.writeFileSync(keepBPng, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 3, 6, 8]))
+  await request('POST', '/import', JSON.stringify({ paths: [keepBPng], tags: [existingTag] }))
+  const tagOpsKeep = ((await request('GET', '/ops?limit=30')).json?.ops ?? []).filter(
+    (o) => o.action === 'tag' && (o.items ?? []).some((it) => it.name === `${tag}-tagkeep-b.png`)
+  )
+  const keepTagUndo = tagOpsKeep[0] ? await request('POST', '/undo', JSON.stringify({ id: tagOpsKeep[0].id })) : null
+  const existingTagStill = ((await request('GET', '/tags')).json?.tags ?? []).some((x) => x.name === existingTag && x.count >= 1)
+  check('回退时不会误删仍在使用的既有标签', keepTagUndo?.json?.ok === true && existingTagStill,
+    `still=${existingTagStill} msg=${String(keepTagUndo?.json?.message)}`)
+
+  /* ---------- 9k. 同名智能文件夹冲突明确拒绝(里程碑 197) ---------- */
+  const smartName = `${tag}-智能夹`
+  await run(`return await window.api.createFolder(${JSON.stringify(smartName)}, null, 1, '{}')`)
+  const clashPng = path.join(dupDir, `${tag}-clash.png`)
+  fs.writeFileSync(clashPng, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 4, 5, 5]))
+  const rClash = await request('POST', '/import', JSON.stringify({ paths: [clashPng], folder: smartName }))
+  check('同名智能文件夹被明确拒绝(409 + 说明原因)',
+    rClash.status === 409 && String(rClash.json?.error || '').includes('智能文件夹'),
+    `status=${rClash.status} error=${String(rClash.json?.error).slice(0, 60)}`)
+  const normalDup = ((await request('GET', '/folders')).json?.folders ?? []).filter((f) => f.name === smartName)
+  check('没有被偷偷建出重名普通夹', normalDup.length === 1 && normalDup[0].isSmart === 1,
+    `同名夹数=${normalDup.length} isSmart=${normalDup[0]?.isSmart}`)
+
   /* ---------- 9. 里程碑 182:回退只撤本次改动 / 精确查重 / 危险动作权限 ---------- */
   // 9a. 素材先由"用户"打上标签(走渲染层 IPC,不经 Agent 通道 -> 不产生操作记录)
   const PRE_TAG = `${tag}-原有标签`

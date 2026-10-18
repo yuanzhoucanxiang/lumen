@@ -12,6 +12,25 @@ export function listTags(): Tag[] {
   ).all() as Tag[]
 }
 
+/** 按名查标签 id（不存在返回 null）。Agent 操作记录用：判断这次是不是"新建了标签"（里程碑 197） */
+export function findTagId(name: string): number | null {
+  const row = getDb().prepare('SELECT id FROM tags WHERE name = ?').get(String(name ?? '').trim()) as
+    | { id: number }
+    | undefined
+  return row ? row.id : null
+}
+
+/** 标签下未删除素材的数量（Agent 回退清理空标签用） */
+export function tagAssetCount(tagId: number): number {
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS n FROM asset_tags at JOIN assets a ON a.id = at.asset_id
+       WHERE at.tag_id = ? AND a.deleted_at IS NULL`
+    )
+    .get(tagId) as { n: number }
+  return row?.n ?? 0
+}
+
 export function createTag(name: string, color = ''): Tag {
   const db = getDb()
   const existing = db

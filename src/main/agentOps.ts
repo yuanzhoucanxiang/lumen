@@ -23,8 +23,10 @@ import {
   deleteAssets,
   deleteBoardItem,
   deleteFolder,
+  deleteTag,
   getAssetById,
   isFolderEmpty,
+  tagAssetCount,
   removeFromFolder,
   removeTagFromAssets,
   updateAsset
@@ -84,6 +86,8 @@ export function logAgentOp(
     folderName?: string
     /** 本次操作新建的文件夹（里程碑 192）：回退时若已空则一并删掉，避免留下空壳夹 */
     createdFolders?: { id: number; path: string }[]
+    /** 本次操作新建的标签 id（里程碑 197）：回退后若该标签已无素材则删掉，避免留下空标签 */
+    createdTagId?: number
     boardId?: number
     undoable?: boolean
   },
@@ -228,6 +232,7 @@ export function undoAgentOp(
     folderId?: number
     folderName?: string
     createdFolders?: { id: number; path: string }[]
+    createdTagId?: number
     undoable?: boolean
   }>(row.payload, {})
   if (p.undoable === false) return { ok: false, message: '该操作不可回退（移动导入的源文件已删除）' }
@@ -252,6 +257,11 @@ export function undoAgentOp(
         const tag = String(p.tag ?? '')
         const n = removeTagFromAssets(targets.map((t) => t.id), tag)
         message = `已摘除 ${n} 个素材的「${tag}」标签`
+        // 这个标签是本次操作新建的、且回退后已无素材 → 一并删掉，别留空标签（里程碑 197）
+        if (Number.isInteger(p.createdTagId) && tagAssetCount(p.createdTagId!) === 0) {
+          deleteTag(p.createdTagId!)
+          message += '（并删除了本次新建的空标签）'
+        }
         break
       }
       case 'untag': {
