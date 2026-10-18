@@ -302,6 +302,10 @@ async function main() {
     `wouldImport=${rDry2.json?.wouldImport} wouldSkip=${rDry2.json?.wouldSkip}`)
 
   const rStats = await request('GET', '/stats')
+  check('/stats 含整理缺口计数(unfiled/untagged/starred)',
+    Number.isInteger(rStats.json?.unfiled) && Number.isInteger(rStats.json?.untagged) && Number.isInteger(rStats.json?.starred) &&
+      rStats.json.unfiled >= 0 && rStats.json.untagged >= 0 && rStats.json.starred >= 1,
+    `unfiled=${rStats.json?.unfiled} untagged=${rStats.json?.untagged} starred=${rStats.json?.starred}`)
   check('GET /stats 返回库汇总(agentImported>=1)', rStats.status === 200 && rStats.json?.ok === true && rStats.json?.assets > 0 && (rStats.json?.agentImported ?? 0) >= 1 && Number.isInteger(rStats.json?.tags),
     `assets=${rStats.json?.assets} agentImported=${rStats.json?.agentImported} tags=${rStats.json?.tags}`)
 

@@ -82,7 +82,7 @@ node "<本技能目录>/scripts/import.cjs" --paths "C:/图1.png" "C:/输出/整
 不要一上来就大批量改，用户没法预判你会动什么。
 
 **1. 摸底（都是只读，可放心调）**
-- `GET /folders` — 现有文件夹树（含每个夹的素材数）；`GET /tags` — 标签及使用数；`GET /stats` — 库规模。
+- `GET /folders` — 现有文件夹树（含每个夹的素材数）；`GET /tags` — 标签及使用数；`GET /stats` — 库规模 + **未归档/未打标签/已标星的数量**（先看缺口有多大）。
 - `GET /assets?untagged=1` — 还没打标签的；`GET /assets?folder=<id>` — 某个夹里有什么；
   `GET /assets?folder=none` — **不属于任何文件夹**的（整理时先把这些捞出来）。
 - `GET /assets` 每行带 `folderIds`（当前归属），据此判断"它现在在哪、要不要挪"。
@@ -179,7 +179,7 @@ curl -s -X POST http://127.0.0.1:45678/import \
 - `POST /note` — 备注：`{"note":"...","mode":"append","ids":[...]}`（mode 缺省为改写），给已有素材写/追加备注。
 - `GET /ops` — **操作记录**：列出你做过的写操作（**含逐项明细 `items[]`** 与能否回退）。改动用户素材后建议主动向用户汇报；用户可在 LUMEN 助手面板查看并**逐项或整条回退**。
 - `POST /undo` — 回退：`{"id":N}` 整条、`{"id":N,"itemIds":[...]}` 逐项、**`{"groupKey":"…"}` 一次撤掉同一批请求产生的全部记录**（一次带标签+归档的导入会生成多条记录，用 groupKey 最省事）。回退时本次新建、且已变空的文件夹与标签会被一并清理（有内容的不动）。
-- `GET /stats` — 库汇总（只读）：素材总数、回收站数、标签/文件夹数、Agent 导入文件夹张数（`agentImported`）。汇报时用它说"库内共 X 张，Agent 收纳了 Y 张"。
+- `GET /stats` — 库汇总（只读）：素材总数、回收站数、标签/文件夹数、Agent 来源数，以及**整理缺口 `unfiled`（未归档）/ `untagged`（未打标签）/ `starred`（已标星）**——摸底时一次拿全。
 - `GET /tags` — 列出现有标签（含 id/name/count）。打标签前可先看看有没有语义相近的既有标签，优先复用，避免同义标签泛滥。
 - `GET /folders` — 列出现有文件夹（含 id/name/parentId/count）。同理优先归入既有文件夹。
 - `GET /boards` — 列出现有白板（id/name），配合 `--board` 使用。

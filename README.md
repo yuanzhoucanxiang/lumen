@@ -130,7 +130,7 @@ LUMEN 运行时在本机 `127.0.0.1:45678` 提供 HTTP 接口（仅监听回环�
 | `POST /folder` / `POST /unfolder` / `POST /star` / `POST /board` / `POST /note` | 归档到文件夹 / 移出文件夹 / 设星级 / 追加到白板 / 写备注（均支持 `ids` 或 `conditions` 定位） |
 | `GET /ops` / `POST /undo` | Agent 操作记录（逐项明细，含可否回退）与回退（整条、`itemIds` 逐项、或按 `groupKey` 整批；回退会清理本次新建的空文件夹与空标签）；助手面板可查看并逐项回退 |
 | `GET /boards` | 列出现有白板（id/name），配合 `boardId` 使用 |
-| `GET /stats` | 库汇总（只读）：素材总数、回收站数、标签/文件夹数、Agent 来源素材数 |
+| `GET /stats` | 库汇总（只读）：素材总数、回收站数、标签/文件夹数、Agent 来源数、未归档 `unfiled` / 未打标签 `untagged` / 已标星 `starred` |
 | `GET /tags` / `GET /folders` | 列出现有标签 / 文件夹 |
 | `GET /scope` | 可写范围 + 已有分类（只读）：允许写入的文件夹完整路径、默认文件夹、能否建子文件夹、是否不限制；并回传这些位置下**已存在的子文件夹**，供 Agent 优先复用 |
 | `GET /status` | 服务探测：版本号、素材库路径、**内置技能版本自检**（`skill.upToDate` 与安装目录 `skill.dirs`，落后时附 `skillUpdateHint`，更新后可按该目录重读技能） |

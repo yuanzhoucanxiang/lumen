@@ -1248,6 +1248,24 @@ ${note}` : note
     if (req.method === 'GET' && url.pathname === '/stats') {
       const s = libraryStats()
       const folders = listFolders()
+      // 整理用的三个"待处理"计数（里程碑 200）：Agent 摸底时一次就能拿到缺口规模，
+      // 不用再跑 /assets?untagged=1 和 ?folder=none 去数
+      const db = getDb()
+      const unfiled = (db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM assets a
+           WHERE a.deleted_at IS NULL AND a.id NOT IN (SELECT DISTINCT asset_id FROM asset_folders)`
+        )
+        .get() as { n: number }).n
+      const untagged = (db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM assets a
+           WHERE a.deleted_at IS NULL AND a.id NOT IN (SELECT DISTINCT asset_id FROM asset_tags)`
+        )
+        .get() as { n: number }).n
+      const starred = (db.prepare('SELECT COUNT(*) AS n FROM assets WHERE deleted_at IS NULL AND star > 0').get() as {
+        n: number
+      }).n
       json(res, 200, {
         ok: true,
         version: app.getVersion(),
@@ -1256,7 +1274,10 @@ ${note}` : note
         trash: s.deleted,
         tags: listTags().length,
         folders: folders.length,
-        agentImported: s.agent
+        agentImported: s.agent,
+        unfiled,
+        untagged,
+        starred
       })
       return
     }
