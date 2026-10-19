@@ -189,6 +189,8 @@ interface LibraryState {
   importDialog: () => Promise<void>
   importFiles: (files: File[]) => Promise<void>
   updateAssetLocal: (id: string, patch: Partial<Asset>) => void
+  /** 批量加标签的就地更新（里程碑 209）：一次 set 完成，不整页重查（避免滚动被顶回） */
+  addTagLocal: (ids: string[], tag: string) => void
   deleteSelection: (permanent?: boolean) => Promise<void>
   restoreSelection: () => Promise<void>
   emptyTrash: () => Promise<void>
@@ -642,6 +644,15 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   updateAssetLocal: (id, patch) =>
     set({ assets: get().assets.map((a) => (a.id === id ? { ...a, ...patch } : a)) }),
+
+  addTagLocal: (ids, tag) => {
+    const want = new Set(ids)
+    set({
+      assets: get().assets.map((a) =>
+        want.has(a.id) && !a.tagNames.includes(tag) ? { ...a, tagNames: [...a.tagNames, tag] } : a
+      )
+    })
+  },
 
   deleteSelection: async (permanent = false) => {
     const ids = get().selection

@@ -137,6 +137,41 @@ async function main() {
     check('标签已写入库', (tagged.json?.count ?? 0) >= 1, `count=${tagged.json?.count}`)
   }
 
+  // ①b 批量打标签（选区操作条）同样不能把滚动顶回上方
+  const batchTag = tag + '-batchtag'
+  const batch = await run(`
+    const cards = [...document.querySelectorAll('.asset-card')]
+    if (cards.length < 2) return { ok: false, reason: 'less than 2 cards' }
+    const el = cards[0].closest('.modal-scroll')
+    if (!el) return { ok: false, reason: 'no scroll container' }
+    el.scrollTop = Math.max(el.scrollTop, 200)
+    await new Promise((r) => setTimeout(r, 200))
+    // 先点空白清空选择，否则点"已选中的单张"会把它取消掉（toggle 语义）
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await new Promise((r) => setTimeout(r, 200))
+    cards[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await new Promise((r) => setTimeout(r, 200))
+    cards[1].dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+    await new Promise((r) => setTimeout(r, 400))
+    const openBtn = document.querySelector('button[aria-label="为所选素材添加标签"]')
+    if (!openBtn) return { ok: false, reason: 'no selection bar tag button' }
+    openBtn.click()
+    await new Promise((r) => setTimeout(r, 200))
+    const input = document.querySelector('input[aria-label="批量标签名"]')
+    if (!input) return { ok: false, reason: 'no batch tag input' }
+    const topBefore = el.scrollTop
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(input, ${JSON.stringify(batchTag)})
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await new Promise((r) => setTimeout(r, 900))
+    return { ok: true, topBefore, topAfter: el.scrollTop, cards: document.querySelectorAll('.asset-card').length }
+  `)
+  check('批量打标签后滚动位置保持不变', batch.ok && batch.topAfter === batch.topBefore, JSON.stringify(batch))
+  const batchCount = await request('GET', `/assets?tag=${encodeURIComponent(batchTag)}&limit=10`)
+  check('批量标签已写入两件素材', (batchCount.json?.count ?? 0) === 2, `count=${batchCount.json?.count}`)
+  await run(`document.querySelector('button[aria-label="清除选择"]')?.click()`)
+
   // ② 预览信息面板：加标签 / 输入框打字不触发快捷键 / 删标签
   const preview = await run(`
     const card = document.querySelector('.asset-card')

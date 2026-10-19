@@ -63,19 +63,25 @@ export default function SelectionBar({ leftInset, rightInset }: { leftInset: num
     const name = tagInput.trim()
     if (!name) return
     await window.api.addTagToAssets(selection, name)
-    useLibraryStore.getState().showToast(`已为 ${selection.length} 个素材添加标签「${name}」`)
+    const store = useLibraryStore.getState()
+    // 就地更新：批量打标签后整页重查会把已加载的多页截回第一页，滚动位置被顶回上方
+    store.addTagLocal(selection, name)
+    store.showToast(`已为 ${selection.length} 个素材添加标签「${name}」`)
     setTagInput('')
     setTagOpen(false)
-    await useLibraryStore.getState().refreshAssets()
-    await useLibraryStore.getState().refreshTags()
+    await store.refreshTags()
+    // 仅"未打标签"/标签视图的成员资格会变，才需要重查列表
+    if (store.untagged || store.view.type === 'tag') await store.refreshAssets()
   }
 
   const moveToFolder = async (folder: Folder) => {
     await window.api.addAssetsToFolder([...selection], folder.id)
-    useLibraryStore.getState().showToast(`已把 ${selection.length} 个素材移入「${folder.name}」`)
+    const store = useLibraryStore.getState()
+    store.showToast(`已把 ${selection.length} 个素材移入「${folder.name}」`)
     setFolderOpen(false)
-    await useLibraryStore.getState().refreshAssets()
-    await useLibraryStore.getState().refreshFolders()
+    await store.refreshFolders()
+    // 只有在"文件夹视图"里成员资格才会变化（素材可能离开当前夹）；其它视图重查只会白丢滚动位置
+    if (store.view.type === 'folder') await store.refreshAssets()
   }
 
   const sendToBoard = async () => {

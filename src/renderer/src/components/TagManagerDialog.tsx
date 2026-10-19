@@ -58,11 +58,13 @@ export default function TagManagerDialog({ onClose }: { onClose: () => void }) {
     })
   }
 
-  /** 操作后统一刷新 */
+  /** 操作后统一刷新（里程碑 209）：素材列表行不显示标签，只有"标签视图"的成员资格会随标签增删改变化；
+   *  其它视图不必重查列表——整页重查会把已加载的多页截回第一页，用户关闭对话框后发现位置被顶回上方 */
   const afterMutate = async () => {
-    await useLibraryStore.getState().refreshTags()
-    await useLibraryStore.getState().refreshTagGroups()
-    await useLibraryStore.getState().refreshAssets()
+    const store = useLibraryStore.getState()
+    await store.refreshTags()
+    await store.refreshTagGroups()
+    if (store.view.type === 'tag') await store.refreshAssets()
     setSelected(new Set())
   }
 
