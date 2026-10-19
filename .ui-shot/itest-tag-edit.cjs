@@ -172,6 +172,22 @@ async function main() {
   check('批量标签已写入两件素材', (batchCount.json?.count ?? 0) === 2, `count=${batchCount.json?.count}`)
   await run(`document.querySelector('button[aria-label="清除选择"]')?.click()`)
 
+  // ①c 回到顶部按钮（里程碑 211）
+  const backTop = await run(`
+    const card = document.querySelector('.asset-card')
+    const el = card ? card.closest('.modal-scroll') : null
+    if (!el || el.scrollHeight - el.clientHeight < 800) return { skip: true }
+    el.scrollTop = Math.min(1200, el.scrollHeight - el.clientHeight)
+    await new Promise((r) => setTimeout(r, 350))
+    const btn = document.querySelector('button[aria-label="回到顶部"]')
+    const visible = !!btn
+    if (btn) btn.click()
+    await new Promise((r) => setTimeout(r, 1000))
+    return { skip: false, visible, top: el.scrollTop, gone: !document.querySelector('button[aria-label="回到顶部"]') }
+  `)
+  if (backTop.skip) check('回到顶部按钮(素材不足跳过)', true, 'skip')
+  else check('回到顶部按钮:滚动后出现,点击回顶并自动隐藏', backTop.visible && backTop.top === 0 && backTop.gone, JSON.stringify(backTop))
+
   // ② 预览信息面板：加标签 / 输入框打字不触发快捷键 / 删标签
   const preview = await run(`
     const card = document.querySelector('.asset-card')

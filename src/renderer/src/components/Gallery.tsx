@@ -737,7 +737,7 @@ export default function Gallery() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
       {/* 以图搜图横幅 */}
       {similarTo && (
         <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--bg-panel)] px-4 text-[12px]">
@@ -1197,6 +1197,17 @@ export default function Gallery() {
         <BatchRenameDialog assets={renameAssets} onClose={() => setRenameAssets(null)} />
       )}
       </div>
+      {/* 回到顶部（里程碑 211）：滚过一屏后出现；相对图库区域定位，避免压住右下角活动栈 */}
+      {scrollTop > 480 && (
+        <button
+          aria-label="回到顶部"
+          title="回到顶部"
+          className="archive-backtotop absolute bottom-4 right-4 z-20 flex h-8 w-8 items-center justify-center rounded-[var(--radius)] border border-[var(--border-strong)] bg-[var(--bg-panel)] text-[var(--text-dim)] shadow-[var(--shadow-menu)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]"
+          onClick={() => containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+        >
+          <Icon name="arrowUp" size={14} />
+        </button>
+      )}
     </div>
   )
 }
