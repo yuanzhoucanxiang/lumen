@@ -62,8 +62,13 @@ export default function Inspector({ width = 252 }: { width?: number }) {
   const saveTags = async (names: string[]) => {
     if (!asset) return
     await window.api.setAssetTags(asset.id, names)
-    await useLibraryStore.getState().refreshAssets()
-    await useLibraryStore.getState().refreshTags()
+    const store = useLibraryStore.getState()
+    // 就地更新，不整页刷新（里程碑 208）：refreshAssets 会把已加载的多页素材截回第一页，
+    // 图库内容变矮后滚动位置被顶回上方（用户反馈"图一多，打标签就往上跳"）。
+    store.updateAssetLocal(asset.id, { tagNames: names })
+    await store.refreshTags()
+    // 只有"未打标签"/标签视图的成员资格会随标签变化，才需要重查列表
+    if (store.untagged || store.view.type === 'tag') await store.refreshAssets()
   }
 
   const addTag = async () => {

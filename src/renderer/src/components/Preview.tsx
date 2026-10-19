@@ -22,6 +22,7 @@ export default function Preview() {
   const previewId = useLibraryStore((s) => s.previewId)
   const openPreview = useLibraryStore((s) => s.openPreview)
   const folders = useLibraryStore((s) => s.folders)
+  const allTags = useLibraryStore((s) => s.tags)
   const view = useLibraryStore((s) => s.view)
 
   const index = useMemo(() => assets.findIndex((a) => a.id === previewId), [assets, previewId])
@@ -34,6 +35,8 @@ export default function Preview() {
   const [panning, setPanning] = useState(false)
   /** 右侧素材信息面板（里程碑 197） */
   const [infoOpen, setInfoOpen] = useState(false)
+  /** 信息面板里的标签输入（里程碑 208） */
+  const [tagInput, setTagInput] = useState('')
   const stageRef = useRef<HTMLDivElement>(null)
   const imgRef = useRef<HTMLImageElement>(null)
   const panRef = useRef<{ startX: number; startY: number; zx: number; zy: number } | null>(null)
@@ -41,10 +44,14 @@ export default function Preview() {
   useEffect(() => {
     setZoom(ZOOM_RESET)
     setPanning(false)
+    setTagInput('')
   }, [asset?.id])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // 输入框里打字不触发预览快捷键（标签输入框会被 i/0/+/- 误伤）
+      const el = e.target as HTMLElement | null
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
       if (e.key === 'ArrowLeft' && index > 0) openPreview(assets[index - 1].id)
       if (e.key === 'ArrowRight' && index < assets.length - 1) openPreview(assets[index + 1].id)
       // 图库分页后预览列表只是「已加载」那部分：走到末尾就续借下一页，←→ 不会断在页边界
@@ -71,6 +78,22 @@ export default function Preview() {
     palette = JSON.parse(asset.colors) as number[][]
   } catch {
     palette = []
+  }
+
+  /** 保存标签：就地更新素材与标签统计，不重查列表（避免滚动位置被顶回上方） */
+  const saveTags = async (names: string[]) => {
+    if (!asset) return
+    await window.api.setAssetTags(asset.id, names)
+    const store = useLibraryStore.getState()
+    store.updateAssetLocal(asset.id, { tagNames: names })
+    await store.refreshTags()
+    if (store.untagged || store.view.type === 'tag') await store.refreshAssets()
+  }
+  const addTag = async () => {
+    const name = tagInput.trim()
+    if (!asset || !name) return
+    if (!asset.tagNames.includes(name)) await saveTags([...asset.tagNames, name])
+    setTagInput('')
   }
 
   const setStar = async (star: number) => {
@@ -380,14 +403,43 @@ export default function Preview() {
             {asset.tagNames.length > 0 ? (
               <div className="flex flex-wrap gap-1">
                 {asset.tagNames.map((t) => (
-                  <span key={t} className="border border-white/15 px-1.5 py-0.5 text-[11px] text-white/70">
+                  <span
+                    key={t}
+                    className="flex items-center gap-1 border border-white/15 px-1.5 py-0.5 text-[11px] text-white/70"
+                  >
                     {t}
+                    <button
+                      aria-label={`删除标签 ${t}`}
+                      className="text-white/35 transition-colors duration-100 hover:text-white/80"
+                      onClick={() => void saveTags(asset.tagNames.filter((x) => x !== t))}
+                    >
+                      <Icon name="close" size={9} strokeWidth={2.2} />
+                    </button>
                   </span>
                 ))}
               </div>
             ) : (
               <p className="text-[11px] text-white/35">—</p>
             )}
+            <input
+              aria-label="添加标签"
+              className="mt-2 w-full border border-dashed border-white/20 bg-transparent px-2 py-1 text-[11px] text-white/80 outline-none transition-colors duration-100 placeholder:text-white/30 focus:border-white/40"
+              placeholder="+ 添加标签，回车确认"
+              value={tagInput}
+              list="preview-tag-suggestions"
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  void addTag()
+                }
+              }}
+            />
+            <datalist id="preview-tag-suggestions">
+              {allTags.map((t) => (
+                <option key={t.id} value={t.name} />
+              ))}
+            </datalist>
           </div>
 
           <div className="mt-4 border-t border-white/10 pt-3">
