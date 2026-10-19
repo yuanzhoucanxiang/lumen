@@ -53,9 +53,11 @@ jobs:
           #      opacity-guides/tools/workspace、context-menu、drop-path、import-async、new、stage5、
           #      theme、toolbar；里程碑 192/193 新增的 agent-drawer/ui-layout 依赖窗口宽度切换与
           #      主题重载，也先留在本地）——崩溃现在不会再连累其它套件，但这几个本身在无头下过不去。
-          #      itest-ui-a11y（DOM 级焦点/对比度/动效）保留在 CI。
+          #      itest-ui-a11y（DOM 级焦点/对比度/动效）保留在 CI;
+          #      **itest-board-perf 已于 2026-10-19 移出**:连续两次运行都在同一处把无头渲染器搞崩
+          #      (崩溃本身由重启兜住,但会拖长整轮并让后续 asset:// 断言抖动),与其它白板性能套件同待遇。
           # 完整 36 套在本地发布前跑（npm run test:itest）。
-          ITEST_EXCLUDE: itest-ai,itest-update-dialog,itest-board-file,itest-board-floating,itest-board-multi,itest-board-nav,itest-board-opacity-guides,itest-board-tools,itest-board-workspace,itest-context-menu,itest-drop-path,itest-import-async,itest-new,itest-stage5,itest-theme,itest-toolbar,itest-agent-drawer,itest-ui-layout,itest-selection-bar,itest-sidebar-settings,itest-preview-info
+          ITEST_EXCLUDE: itest-ai,itest-update-dialog,itest-board-file,itest-board-floating,itest-board-multi,itest-board-nav,itest-board-opacity-guides,itest-board-tools,itest-board-workspace,itest-board-perf,itest-context-menu,itest-drop-path,itest-import-async,itest-new,itest-stage5,itest-theme,itest-toolbar,itest-agent-drawer,itest-ui-layout,itest-selection-bar,itest-sidebar-settings,itest-preview-info
           # 单套件超时与重启上限（默认 8 分钟 / 6 次，这里显式写出便于按 CI 观察调整）
           ITEST_SUITE_TIMEOUT_MS: "480000"
           ITEST_MAX_RESTARTS: "6"

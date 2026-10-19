@@ -212,6 +212,8 @@ async function main() {
     restarted++
     await waitForCdp()
     await prepareRenderer()
+    // 重启后多等一拍：应用刚起来时 asset:// 协议/图库还没完全就绪，紧接着跑会出现图片加载假红
+    await sleep(2500)
     console.log('  ✓ dev 已重新就绪')
   }
 
