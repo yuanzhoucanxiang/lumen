@@ -564,6 +564,30 @@ export default function Gallery() {
    * 可见区间索引：布局项按它占用的桶登记，查询只扫与视口相交的桶。
    * 此前每帧对全布局做线性 filter，万级素材时光标滚动就把主线程吃满。
    */
+  // 关闭预览后把瀑布流滚到刚看的那张（里程碑 210）：
+  // 方向键翻到很后面再关预览，列表若还停在原处，点回去会很割裂
+  const previewId = useLibraryStore((s) => s.previewId)
+  const lastPreviewIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (previewId) {
+      lastPreviewIdRef.current = previewId
+      return
+    }
+    const id = lastPreviewIdRef.current
+    if (!id) return
+    lastPreviewIdRef.current = null
+    const el = containerRef.current
+    const item = layout.find((it) => it.a.id === id)
+    if (!el || !item) return
+    // 已在视口内就别动（点开再关、什么都没翻时不该发生任何滚动）
+    const viewTop = el.scrollTop
+    const viewBottom = viewTop + el.clientHeight
+    if (item.y >= viewTop + 8 && item.y + item.h <= viewBottom - 8) return
+    // 居中显示，并钳制在可滚动范围内；scroll 事件会同步 scrollMemory 与虚拟化窗口
+    const target = item.y + item.h / 2 - el.clientHeight / 2
+    el.scrollTop = Math.max(0, Math.min(Math.max(0, totalH - el.clientHeight), target))
+  }, [previewId, layout, totalH])
+
   const buckets = useMemo(() => {
     const n = totalH > 0 ? Math.floor(totalH / BUCKET_H) + 1 : 0
     const b: LayoutItem[][] = Array.from({ length: n }, () => [])

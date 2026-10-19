@@ -208,6 +208,29 @@ async function main() {
   check('预览里删标签生效', removed.ok && removed.gone && (previewTagLeft.json?.count ?? 0) === 0, JSON.stringify({ removed, left: previewTagLeft.json?.count }))
   await run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
 
+  // ③ 方向键翻到很后面再关预览 → 瀑布流跟到最后看的那张（里程碑 210）
+  const nav = await run(`
+    const cards = [...document.querySelectorAll('.asset-card')]
+    if (!cards.length) return { ok: false, reason: 'no cards' }
+    const el = cards[0].closest('.modal-scroll')
+    if (!el) return { ok: false, reason: 'no scroll container' }
+    el.scrollTop = 0
+    await new Promise((r) => setTimeout(r, 250))
+    cards[0].dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await new Promise((r) => setTimeout(r, 700))
+    for (let i = 0; i < 40; i++) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+      await new Promise((r) => setTimeout(r, 40))
+    }
+    await new Promise((r) => setTimeout(r, 300))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await new Promise((r) => setTimeout(r, 600))
+    const card = document.querySelector('.asset-card')
+    const sc = card ? card.closest('.modal-scroll') : el
+    return { ok: true, top: sc ? sc.scrollTop : -1, cards: document.querySelectorAll('.asset-card').length }
+  `)
+  check('方向键翻页后关闭预览，瀑布流跟到最后看的那张', nav.ok && nav.top > 0 && nav.cards > 0, JSON.stringify(nav))
+
   // 清理：软删测试素材 + 删测试标签
   const cleanup = await run(`
     const all = await window.api.queryAssets({ limit: 5000 })
