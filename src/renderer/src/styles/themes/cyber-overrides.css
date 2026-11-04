@@ -67,9 +67,9 @@
 }
 
 [data-theme='cyber-glitch'] .archive-brand {
-  min-height: 58px;
+  min-height: 56px;
   gap: 11px;
-  padding: 7px 10px;
+  padding: 6px 10px;
   background:
     repeating-linear-gradient(90deg, rgba(103,232,249,.04) 0 1px, transparent 1px 8px),
     #080d13;

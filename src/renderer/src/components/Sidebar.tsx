@@ -47,7 +47,7 @@ function NavItem({
       aria-current={active ? 'page' : undefined}
       onClick={onClick}
       onContextMenu={onContextMenu}
-      className={`archive-nav-item relative flex w-full cursor-pointer items-center gap-2.5 px-2.5 py-[7px] text-left text-[13px] transition-colors duration-100 ${
+      className={`archive-nav-item relative flex w-full cursor-pointer items-center gap-2.5 px-2.5 py-[6px] text-left text-[13px] transition-colors duration-100 ${
         active
           ? 'bg-[var(--accent-soft)] font-medium text-[var(--text-main)]'
           : 'text-[var(--text-main)] hover:bg-[var(--bg-hover)]'
@@ -86,7 +86,7 @@ function NavItem({
         </span>
       )}
       {count !== undefined && count > 0 && (
-        <span className="tnum mono text-[11px] text-[var(--text-faint)]">{count}</span>
+        <span className="tnum mono ml-auto w-[34px] shrink-0 text-right text-[11px] text-[var(--text-faint)]">{count}</span>
       )}
     </button>
   )
@@ -111,7 +111,7 @@ function SectionHeader({
   onToggle: () => void
 }) {
   return (
-    <div className="mb-1 flex items-center justify-between border-b border-[var(--border)] px-1 pb-2 pt-0">
+    <div className="mb-1 flex items-center justify-between px-1 pb-1.5 pt-1">
       <button
         aria-expanded={!collapsed}
         aria-label={`${collapsed ? '展开' : '折叠'}${title}`}
@@ -253,9 +253,9 @@ export default function Sidebar() {
       return next
     })
   }
-  /** 展开的分区：平分空间 + 内容独立滚动；折叠：只占标题 */
+  /** 分区：单栏滚动（对齐 Eagle），展开/折叠只影响高度，不产生分区内嵌滚动 */
   const sectionCls = (collapsed: boolean): string =>
-    collapsed ? 'mt-4 shrink-0 px-2' : 'mt-4 flex min-h-0 flex-1 flex-col px-2'
+    collapsed ? 'mt-3 shrink-0 px-2' : 'mt-3 flex flex-col px-2'
 
   const ASSET_MIME = 'application/x-eaglelike-assets'
   /** 文件夹拖拽改层级用的独立类型：与素材拖入（copy 语义）区分，避免两套 drop 逻辑互相误判 */
@@ -817,7 +817,7 @@ export default function Sidebar() {
 
       <div className="archive-sidebar__index modal-scroll">
       {/* 导航过滤（里程碑 196）：只筛列表，不改当前视图 */}
-      <div className="px-2 pt-2">
+      <div className="archive-sidebar__filter px-2 pt-1.5">
         <div className="relative">
           <Icon
             name="search"
@@ -887,7 +887,7 @@ export default function Sidebar() {
           aria-label="助手"
           aria-pressed={agentPanelOpen}
           title="助手：对话式找图（用一句话描述条件，可追问收窄）"
-          className={`relative flex w-full cursor-pointer items-center gap-2.5 px-2.5 py-[7px] text-left text-[13px] transition-colors duration-100 ${
+          className={`relative flex w-full cursor-pointer items-center gap-2.5 px-2.5 py-1.5 text-left text-[13px] transition-colors duration-100 ${
             agentPanelOpen
               ? 'bg-[var(--accent-soft)] font-medium text-[var(--text-main)]'
               : 'text-[var(--text-main)] hover:bg-[var(--bg-hover)]'
@@ -916,7 +916,7 @@ export default function Sidebar() {
           }}
         />
         {!foldersFolded && (
-          <div className="modal-scroll min-h-0 flex-1 space-y-0.5 overflow-y-auto">
+          <div className="space-y-0.5">
           {addingFolder && addingFolder.parentId === null && addFolderInput}
           {folderTree.map((node) => renderFolderNode(node, 0))}
           {folderTree.length === 0 && !addingFolder && (
@@ -965,7 +965,7 @@ export default function Sidebar() {
           onAdd={() => setSmartDialog({ open: true, edit: null })}
         />
         {!smartFolded && (
-          <div className="modal-scroll min-h-0 flex-1 space-y-0.5 overflow-y-auto">
+          <div className="space-y-0.5">
           {visibleSmartFolders.map((f) => (
             <NavItem
               key={f.id}
@@ -984,11 +984,8 @@ export default function Sidebar() {
         )}
       </section>
 
-      {/* 白板：固定高度块(展开限高内部滚动),不参与 flex-1 平分,避免挤压文件夹/标签 */}
-      <section
-        className={boardsFolded ? 'mt-3 shrink-0 px-2' : 'mt-3 flex min-h-0 shrink-0 flex-col px-2'}
-        aria-label="白板"
-      >
+      {/* 白板：与其它分区一致，随单栏滚动（对齐 Eagle） */}
+      <section className="mt-3 shrink-0 px-2" aria-label="白板">
         <SectionHeader
           title="白板"
           addLabel="新建白板"
@@ -1000,7 +997,7 @@ export default function Sidebar() {
           }}
         />
         {!boardsFolded && (
-          <div className="modal-scroll max-h-44 min-h-0 space-y-0.5 overflow-y-auto">
+          <div className="modal-scroll space-y-0.5">
           {boardInputOpen && (
             <input
               autoFocus
@@ -1065,7 +1062,7 @@ export default function Sidebar() {
           }}
         />
         {!tagsFolded && (
-          <div className="modal-scroll min-h-0 flex-1 space-y-0.5 overflow-y-auto">
+          <div className="space-y-0.5">
           {addingTag && (
             <input
               autoFocus
@@ -1428,14 +1425,8 @@ export default function Sidebar() {
         <SmartFolderDialog editFolder={smartDialog.edit} onClose={() => setSmartDialog({ open: false, edit: null })} />
       )}
 
-      {/* 状态行 */}
-      <div className="mono flex items-center gap-1.5 border-t border-[var(--border)] px-3.5 pt-2 text-[11px] uppercase tracking-[0.16em] text-[var(--text-faint)]">
-        <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
-        {pixel ? 'LOCAL INDEX · READY' : cyber ? 'SIGNAL BUS · ONLINE' : 'LOCAL ARCHIVE · READY'}
-      </div>
-
-      {/* 库切换器 + 设置 */}
-      <footer className="relative flex items-center gap-1 p-2">
+      {/* 底栏：状态点 + 库切换 + 设置（合并原状态行，省出一行垂直空间） */}
+      <footer className="relative flex items-center gap-1 border-t border-[var(--border)] px-2 py-1.5">
         {libMenuOpen && libs && (
           <div className="anim-menu menu absolute bottom-full left-2 right-2 z-[250] mb-1.5 py-1">
             {libs.libraries.map((l) => (
@@ -1476,27 +1467,32 @@ export default function Sidebar() {
             </button>
           </div>
         )}
+        <span
+          aria-hidden="true"
+          title={pixel ? 'LOCAL INDEX · READY' : cyber ? 'SIGNAL BUS · ONLINE' : 'LOCAL ARCHIVE · READY'}
+          className="ml-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]"
+        />
         <button
           aria-label="切换素材库"
-          className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-[12px] transition-colors duration-100 hover:bg-[var(--bg-hover)]"
+          className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-1 text-[11.5px] transition-colors duration-100 hover:bg-[var(--bg-hover)]"
           onClick={() => setLibMenuOpen(!libMenuOpen)}
           title={libs?.current ?? ''}
         >
-          <Icon name="library" size={15} className="text-[var(--text-dim)]" />
+          <Icon name="library" size={13} className="text-[var(--text-dim)]" />
           <span className="min-w-0 flex-1 truncate text-left">{currentLib?.name ?? '…'}</span>
           <Icon
             name={libMenuOpen ? 'chevronDown' : 'chevronUp'}
-            size={13}
+            size={12}
             className="text-[var(--text-faint)]"
           />
         </button>
         <button
           aria-label="打开设置"
-          className="flex items-center px-2 py-1.5 text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
+          className="flex items-center px-1.5 py-1 text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
           title="设置"
           onClick={() => setSettingsOpen(true)}
         >
-          <Icon name="settings" size={15} />
+          <Icon name="settings" size={14} />
         </button>
       </footer>
 

@@ -189,9 +189,9 @@
 }
 
 [data-theme='pixel-glitch'] .archive-brand {
-  min-height: 58px;
+  min-height: 56px;
   gap: 10px;
-  padding: 7px 10px;
+  padding: 6px 10px;
   border-bottom: 1px solid rgba(229, 230, 225, 0.16);
   background: #070908;
 }
