@@ -192,6 +192,99 @@ body::before {
   font-size: 11.5px;
 }
 
+/* ---------- 侧栏交互细节（里程碑 214b）：图标区分 + 悬停反馈 + 展开动效 ---------- */
+
+/* 图标随行状态提亮：非选中行悬停时图标从 text-dim 提到 text-main；选中行保持 accent */
+.archive-nav-item svg {
+  transition: color 120ms ease;
+}
+.archive-nav-item:not([aria-current='page']):hover svg {
+  color: var(--text-main);
+}
+
+/* 悬停时的左侧强调条预览（选中行由自身 2px 实条承担，这里排除避免双条） */
+.archive-nav-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+.archive-nav-item:not([aria-current='page']):hover::before {
+  opacity: 0.34;
+}
+
+/* 分区标题：类型图标 + 悬停提亮；新增/管理按钮默认收敛、悬停浮现 */
+.archive-section-icon {
+  display: inline-block;
+  margin-right: 6px;
+  vertical-align: -1px;
+  color: var(--text-decor);
+  transition: color 120ms ease;
+}
+.archive-section-head .section-title {
+  transition: color 120ms ease;
+}
+.archive-section-head:hover .section-title {
+  color: var(--text-main);
+}
+.archive-section-head:hover .archive-section-icon {
+  color: var(--text-dim);
+}
+.archive-section-action {
+  opacity: 0.55;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease;
+}
+.archive-section-head:hover .archive-section-action {
+  opacity: 1;
+}
+.archive-section-action:hover {
+  transform: scale(1.08);
+}
+
+/* 文件夹行：折叠箭头默认收暗，行悬停时提亮 */
+.archive-folder-row .archive-folder-arrow {
+  opacity: 0.55;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease;
+}
+.archive-folder-row:hover .archive-folder-arrow {
+  opacity: 1;
+}
+
+/* 标签分组标题悬停提亮 */
+.archive-tag-group-head .section-title {
+  transition: color 120ms ease;
+}
+.archive-tag-group-head:hover .section-title {
+  color: var(--text-main);
+}
+
+/* 分区展开：内容淡入 + 3px 上浮（减弱动效由 components.css 的全局规则降为瞬时） */
+@keyframes section-body-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.archive-section-body {
+  animation: section-body-in 160ms cubic-bezier(0.2, 0.75, 0.2, 1) both;
+}
+
 /* ---------- 抬头：接触印样的批次信息 ---------- */
 
 .archive-masthead {

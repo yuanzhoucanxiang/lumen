@@ -60,17 +60,17 @@ function NavItem({
         />
       )}
       {dot ? (
-        <span
-          aria-hidden="true"
-          className="h-2.5 w-2.5 shrink-0 rounded-full"
-          style={{ background: dot }}
-        />
+        <span aria-hidden="true" className="flex w-[15px] shrink-0 items-center justify-center">
+          <span className="h-2.5 w-2.5 rounded-full" style={{ background: dot }} />
+        </span>
       ) : (
-        <Icon
-          name={icon}
-          size={15}
-          className={active ? 'text-[var(--accent-text)]' : 'text-[var(--text-dim)]'}
-        />
+        <span aria-hidden="true" className="flex w-[15px] shrink-0 items-center justify-center">
+          <Icon
+            name={icon}
+            size={15}
+            className={active ? 'text-[var(--accent-text)]' : 'text-[var(--text-dim)]'}
+          />
+        </span>
       )}
       <span className={`min-w-0 flex-1 truncate ${excluded ? 'opacity-50' : ''}`}>
         {excluded && (
@@ -94,6 +94,7 @@ function NavItem({
 
 function SectionHeader({
   title,
+  icon,
   onAdd,
   addLabel,
   onManage,
@@ -102,6 +103,8 @@ function SectionHeader({
   onToggle
 }: {
   title: string
+  /** 分区类型图标（文件夹/智能文件夹/白板/标签），让折叠标题也能一眼区分 */
+  icon: IconName
   onAdd?: () => void
   addLabel?: string
   onManage?: () => void
@@ -111,7 +114,7 @@ function SectionHeader({
   onToggle: () => void
 }) {
   return (
-    <div className="mb-1 flex items-center justify-between px-1 pb-1.5 pt-1">
+    <div className="archive-section-head mb-1 flex items-center justify-between px-1 pb-1.5 pt-1">
       <button
         aria-expanded={!collapsed}
         aria-label={`${collapsed ? '展开' : '折叠'}${title}`}
@@ -124,7 +127,7 @@ function SectionHeader({
           className={`shrink-0 text-[var(--text-faint)] transition-transform duration-150 ${collapsed ? '-rotate-90' : ''}`}
         />
         <h3 className="section-title truncate">
-          <span aria-hidden="true" className="pixel-dot" />
+          <Icon name={icon} size={10} className="archive-section-icon" />
           {title}
         </h3>
       </button>
@@ -132,7 +135,7 @@ function SectionHeader({
         <button
           aria-label={manageLabel ?? `管理${title}`}
           title={manageLabel ?? `管理${title}`}
-          className="flex h-5 w-5 items-center justify-center text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
+          className="archive-section-action flex h-5 w-5 items-center justify-center text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
           onClick={(e) => {
             e.stopPropagation()
             onManage()
@@ -145,7 +148,7 @@ function SectionHeader({
         <button
           aria-label={addLabel ?? `新建${title}`}
           title={addLabel ?? `新建${title}`}
-          className="flex h-5 w-5 items-center justify-center text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
+          className="archive-section-action flex h-5 w-5 items-center justify-center text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
           onClick={(e) => {
             e.stopPropagation()
             onAdd()
@@ -550,7 +553,7 @@ export default function Sidebar() {
     return (
       <div key={node.id}>
         <div
-          className={`flex items-center transition-shadow duration-100 ${
+          className={`archive-folder-row flex items-center transition-shadow duration-100 ${
             dropTargetFolder === node.id
               ? 'bg-[var(--accent-soft)] outline outline-1 outline-[var(--accent)]'
               : ''
@@ -590,7 +593,7 @@ export default function Sidebar() {
           {hasKids ? (
             <button
               aria-label={isCollapsed ? `展开 ${node.name}` : `折叠 ${node.name}`}
-              className="flex h-4 w-4 shrink-0 items-center justify-center text-[var(--text-faint)] transition-colors duration-100 hover:text-[var(--text-main)]"
+              className="archive-folder-arrow flex h-4 w-4 shrink-0 items-center justify-center text-[var(--text-faint)] transition-colors duration-100 hover:text-[var(--text-main)]"
               onClick={(e) => {
                 e.stopPropagation()
                 toggleCollapse(node.id)
@@ -906,6 +909,7 @@ export default function Sidebar() {
       <section className={sectionCls(foldersFolded)} aria-label="文件夹">
         <SectionHeader
           title="文件夹"
+          icon="folder"
           addLabel="新建文件夹"
           collapsed={foldersFolded}
           onToggle={() => toggleSection('folders')}
@@ -916,7 +920,7 @@ export default function Sidebar() {
           }}
         />
         {!foldersFolded && (
-          <div className="space-y-0.5">
+          <div className="archive-section-body space-y-0.5">
           {addingFolder && addingFolder.parentId === null && addFolderInput}
           {folderTree.map((node) => renderFolderNode(node, 0))}
           {folderTree.length === 0 && !addingFolder && (
@@ -959,13 +963,14 @@ export default function Sidebar() {
       <section className={sectionCls(smartFolded)} aria-label="智能文件夹">
         <SectionHeader
           title="智能文件夹"
+          icon="sparkles"
           addLabel="新建智能文件夹"
           collapsed={smartFolded}
           onToggle={() => toggleSection('smart')}
           onAdd={() => setSmartDialog({ open: true, edit: null })}
         />
         {!smartFolded && (
-          <div className="space-y-0.5">
+          <div className="archive-section-body space-y-0.5">
           {visibleSmartFolders.map((f) => (
             <NavItem
               key={f.id}
@@ -988,6 +993,7 @@ export default function Sidebar() {
       <section className="mt-3 shrink-0 px-2" aria-label="白板">
         <SectionHeader
           title="白板"
+          icon="shapes"
           addLabel="新建白板"
           collapsed={boardsFolded}
           onToggle={() => toggleSection('boards')}
@@ -997,7 +1003,7 @@ export default function Sidebar() {
           }}
         />
         {!boardsFolded && (
-          <div className="modal-scroll space-y-0.5">
+          <div className="archive-section-body modal-scroll space-y-0.5">
           {boardInputOpen && (
             <input
               autoFocus
@@ -1050,6 +1056,7 @@ export default function Sidebar() {
       <section className={`${sectionCls(tagsFolded)} pb-2`} aria-label="标签">
         <SectionHeader
           title="标签"
+          icon="tag"
           addLabel="新建标签"
           collapsed={tagsFolded}
           onToggle={() => toggleSection('tags')}
@@ -1062,7 +1069,7 @@ export default function Sidebar() {
           }}
         />
         {!tagsFolded && (
-          <div className="space-y-0.5">
+          <div className="archive-section-body space-y-0.5">
           {addingTag && (
             <input
               autoFocus
@@ -1100,7 +1107,7 @@ export default function Sidebar() {
           {/* 分组 */}
           {grouped.map(({ group, tags: gts }) => (
             <div key={group.id}>
-              <div className="flex items-center">
+              <div className="archive-tag-group-head flex items-center">
                 <button
                   aria-label={collapsedGroups.has(group.id) ? `展开分组 ${group.name}` : `折叠分组 ${group.name}`}
                   className="flex h-4 w-4 shrink-0 items-center justify-center text-[var(--text-faint)] transition-colors duration-100 hover:text-[var(--text-main)]"
