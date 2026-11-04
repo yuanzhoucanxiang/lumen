@@ -463,6 +463,8 @@ export default function Gallery() {
   // 橡皮筋框选(对标 Eagle):空白处按下拖拽,命中布局矩形的素材全部选中;Ctrl/Shift 拖拽在原选中上追加
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
   const marqueeSuppressClickRef = useRef(false)
+  /** 本次按下是否落在卡片/按钮上：拖到别处松手时 click 会落在容器，不能当成“点空白”清空选中 */
+  const pointerDownOnCardRef = useRef(false)
   const marqueeAdditiveRef = useRef(false)
   const marqueeBaseRef = useRef<string[]>([])
   const marqueeLastClientRef = useRef({ x: 0, y: 0 })
@@ -790,7 +792,8 @@ export default function Gallery() {
         // 橡皮筋框选:仅左键、且起点不在素材卡片/按钮上(卡片自带点击语义)
         if (e.button !== 0) return
         const el = e.target as HTMLElement
-        if (el.closest('[role="button"]') || el.closest('button')) return
+        pointerDownOnCardRef.current = !!el.closest('[role="button"]') || !!el.closest('button')
+        if (pointerDownOnCardRef.current) return
         const rect = containerRef.current?.getBoundingClientRect()
         const px = e.clientX - (rect?.left ?? 0)
         const py = e.clientY - (rect?.top ?? 0) + (containerRef.current?.scrollTop ?? 0)
@@ -855,10 +858,14 @@ export default function Gallery() {
         setSelection(marqueeAdditiveRef.current ? [...new Set([...marqueeBaseRef.current, ...hits])] : hits)
       }}
       onClick={() => {
+        const downOnCard = pointerDownOnCardRef.current
+        pointerDownOnCardRef.current = false
         if (marqueeSuppressClickRef.current) {
           marqueeSuppressClickRef.current = false
           return
         }
+        // 从卡片上按下、拖到别处松手:click 命中容器(按下/松开共祖先),不能当成“点空白”清空选中
+        if (downOnCard) return
         setSelection([])
         setMenu(null)
         endHover()

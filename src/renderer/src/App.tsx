@@ -392,6 +392,24 @@ export default function App() {
     return () => window.removeEventListener('paste', onPaste)
   }, [importFiles])
 
+  // 拖放遮罩兜底：白板画布对系统文件拖入有自己的 onDrop/onDragOver（并 stopPropagation），
+  // 根节点收不到 drop 就永远清不掉 dragOver，遮罩会残留。捕获阶段监听 window 兜底清理，
+  // 不受子元素 stopPropagation 影响；relatedTarget 为 null 即拖出窗口或拖拽被取消。
+  useEffect(() => {
+    const clearDragOver = () => setDragOver(false)
+    const onLeaveWindow = (e: DragEvent) => {
+      if (!e.relatedTarget) clearDragOver()
+    }
+    window.addEventListener('drop', clearDragOver, true)
+    window.addEventListener('dragend', clearDragOver, true)
+    window.addEventListener('dragleave', onLeaveWindow, true)
+    return () => {
+      window.removeEventListener('drop', clearDragOver, true)
+      window.removeEventListener('dragend', clearDragOver, true)
+      window.removeEventListener('dragleave', onLeaveWindow, true)
+    }
+  }, [])
+
   return (
     <div
       className="archive-shell flex h-full flex-col"

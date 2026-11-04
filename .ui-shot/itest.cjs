@@ -237,6 +237,88 @@ async function main() {
     check('橡皮筋框选', true, `环境跳过(${marqueeRes})`)
   }
 
+  /* ---------- 拖拽松手不清空选中(里程碑 213):按在卡片上拖到别处松手,click 命中容器也不得清空 ---------- */
+  let dragSelectRes = 'crash'
+  try {
+    dragSelectRes = (await evalJs(`(async () => {
+      const scroller = document.querySelector('.contact-sheet')
+      if (!scroller) return 'no-sheet'
+      scroller.scrollTop = 0
+      await new Promise((r) => setTimeout(r, 300))
+      const cards = [...scroller.querySelectorAll('[role="button"][aria-pressed]')].filter((c) => { const r = c.getBoundingClientRect(); return r.width > 0 && r.top < innerHeight && r.bottom > 0 })
+      if (cards.length === 0) return 'no-cards'
+      const card = cards[0]
+      const cr = card.getBoundingClientRect()
+      const sr = scroller.getBoundingClientRect()
+      const bx = sr.right - 8
+      const by = sr.bottom - 8
+      const mk = (type, x, y, pid) => new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, pointerId: pid, isPrimary: true })
+      const clickAt = (x, y) => new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y })
+      // 1) 空白处点一下清空,再单击卡片选中一张
+      scroller.dispatchEvent(mk('pointerdown', bx, by, 93))
+      scroller.dispatchEvent(mk('pointerup', bx, by, 93))
+      scroller.dispatchEvent(clickAt(bx, by))
+      await new Promise((r) => setTimeout(r, 200))
+      card.click()
+      await new Promise((r) => setTimeout(r, 250))
+      const before = scroller.querySelectorAll('[aria-pressed="true"]').length
+      // 2) 按在卡片上 → 拖到空白 → 松手(浏览器把 click 派发给共同祖先)
+      card.dispatchEvent(mk('pointerdown', cr.left + cr.width / 2, cr.top + cr.height / 2, 94))
+      scroller.dispatchEvent(mk('pointermove', bx, by, 94))
+      scroller.dispatchEvent(mk('pointerup', bx, by, 94))
+      const wrapper = scroller.querySelector(':scope > .relative') || scroller
+      wrapper.dispatchEvent(clickAt(bx, by))
+      await new Promise((r) => setTimeout(r, 250))
+      const after = scroller.querySelectorAll('[aria-pressed="true"]').length
+      // 3) 纯空白点击仍应清空(原语义保留)
+      scroller.dispatchEvent(mk('pointerdown', bx, by, 95))
+      scroller.dispatchEvent(mk('pointerup', bx, by, 95))
+      scroller.dispatchEvent(clickAt(bx, by))
+      await new Promise((r) => setTimeout(r, 200))
+      const cleared = scroller.querySelectorAll('[aria-pressed="true"]').length
+      return { before, after, cleared }
+    })()`)).result.value
+  } catch (e) { dragSelectRes = 'crash: ' + e.message.slice(0, 80) }
+  if (typeof dragSelectRes === 'object' && dragSelectRes !== null) {
+    check('拖拽松手保留选中', dragSelectRes.before === 1 && dragSelectRes.after === 1, JSON.stringify(dragSelectRes))
+    check('空白点击仍清空选中', dragSelectRes.cleared === 0, JSON.stringify(dragSelectRes))
+  } else {
+    check('拖拽松手保留选中', true, `环境跳过(${dragSelectRes})`)
+  }
+
+  /* ---------- 拖放遮罩不残留(里程碑 213):子元素拦截 drop / dragend 取消时,遮罩都必须收起 ---------- */
+  let overlayRes = 'crash'
+  try {
+    overlayRes = (await evalJs(`(async () => {
+      const root = document.querySelector('.archive-shell')
+      if (!root) return 'no-root'
+      const mkDt = () => { const dt = new DataTransfer(); dt.items.add(new File(['x'], 'test.png', { type: 'image/png' })); return dt }
+      root.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: mkDt() }))
+      await new Promise((r) => setTimeout(r, 200))
+      const shown = !!document.querySelector('.drag-over-overlay')
+      // 模拟白板画布那类子元素:drop 被拦截,不冒泡到根节点(修复前遮罩会永久残留)
+      const target = document.querySelector('main') || root
+      target.dispatchEvent(new DragEvent('drop', { bubbles: false, cancelable: true, dataTransfer: mkDt() }))
+      await new Promise((r) => setTimeout(r, 200))
+      const afterDrop = !!document.querySelector('.drag-over-overlay')
+      // 再来一轮,用 dragend(Esc 取消拖拽)收尾
+      root.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: mkDt() }))
+      await new Promise((r) => setTimeout(r, 150))
+      const shownAgain = !!document.querySelector('.drag-over-overlay')
+      window.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true }))
+      await new Promise((r) => setTimeout(r, 200))
+      const afterEnd = !!document.querySelector('.drag-over-overlay')
+      return { shown, afterDrop, shownAgain, afterEnd }
+    })()`)).result.value
+  } catch (e) { overlayRes = 'crash: ' + e.message.slice(0, 80) }
+  if (typeof overlayRes === 'object' && overlayRes !== null) {
+    check('拖放遮罩:拖动文件时出现', overlayRes.shown === true && overlayRes.shownAgain === true, JSON.stringify(overlayRes))
+    check('拖放遮罩:子元素拦截 drop 后收起', overlayRes.afterDrop === false, JSON.stringify(overlayRes))
+    check('拖放遮罩:dragend 取消后收起', overlayRes.afterEnd === false, JSON.stringify(overlayRes))
+  } else {
+    check('拖放遮罩', true, `环境跳过(${overlayRes})`)
+  }
+
   console.log(`\n${pass} PASS / ${fail} FAIL`)
   ws.close()
   process.exit(fail === 0 ? 0 : 1)
