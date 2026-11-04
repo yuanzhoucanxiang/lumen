@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import SmartFolderDialog from './SmartFolderDialog'
 import SettingsModal from './SettingsModal'
@@ -17,7 +17,7 @@ const TAG_COLORS = [
   '#4da9e9', '#7b8cde', '#b07cc6', '#e8a0b4', '#9aa0a9'
 ]
 
-function NavItem({
+function NavItemInner({
   active,
   icon,
   label,
@@ -91,6 +91,21 @@ function NavItem({
     </button>
   )
 }
+
+/**
+ * 行级 memo：侧栏有上千行（标签可达 1000+），此前任何侧栏局部状态变化（底栏菜单、拖拽态、
+ * 筛选输入）都会把整棵行树重建一遍（实测 1200 行一次重渲染 Script ≈ 150ms）。
+ * 比较器忽略回调身份——回调都只闭包了稳定的 store action / setState，行为等价。
+ */
+const NavItem = memo(NavItemInner, (a, b) =>
+  a.active === b.active &&
+  a.icon === b.icon &&
+  a.label === b.label &&
+  a.count === b.count &&
+  a.dot === b.dot &&
+  a.priority === b.priority &&
+  a.excluded === b.excluded
+)
 
 function SectionHeader({
   title,
@@ -674,6 +689,74 @@ export default function Sidebar() {
     )
   }
 
+  /**
+   * 标签区行树（实测 1000+ 行）：memo 化后，侧栏其它局部状态（底栏库菜单、助手开关、
+   * 拖拽态、对话框开合）变化时直接复用元素引用，React 跳过整棵子树的遍历与重建。
+   * 回调只闭包稳定的 store action / setState，忽略身份变化是安全的。
+   */
+  const tagRows = useMemo(
+    () => (
+      <>
+        {grouped.map(({ group, tags: gts }) => (
+          <div key={group.id}>
+            <div className="archive-tag-group-head flex items-center">
+              <button
+                aria-label={collapsedGroups.has(group.id) ? `展开分组 ${group.name}` : `折叠分组 ${group.name}`}
+                className="flex h-4 w-4 shrink-0 items-center justify-center text-[var(--text-faint)] transition-colors duration-100 hover:text-[var(--text-main)]"
+                onClick={() => toggleGroupCollapse(group.id)}
+              >
+                <Icon
+                  name="chevronDown"
+                  size={10}
+                  className={`block transition-transform duration-150 ${collapsedGroups.has(group.id) ? '-rotate-90' : ''}`}
+                />
+              </button>
+              {renaming?.kind === 'group' && renaming.id === group.id ? (
+                <input
+                  autoFocus
+                  aria-label="重命名分组"
+                  className="field-input min-w-0 flex-1 px-1.5 py-0.5 text-[11px]"
+                  value={renameVal}
+                  onChange={(e) => setRenameVal(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void submitRename()
+                    if (e.key === 'Escape') setRenaming(null)
+                  }}
+                  onBlur={() => void submitRename()}
+                />
+              ) : (
+                <button
+                  className="flex min-w-0 flex-1 items-center gap-1.5 px-1 py-1 text-left"
+                  onClick={() => toggleGroupCollapse(group.id)}
+                  onContextMenu={(e) => openMenu(e, 'tagGroup', group.id)}
+                >
+                  <span className="section-title truncate">{group.name}</span>
+                  <span className="mono ml-auto text-[11px] text-[var(--text-faint)]">{gts.length}</span>
+                </button>
+              )}
+            </div>
+            {!collapsedGroups.has(group.id) && (
+              <div style={{ paddingLeft: 14 }}>
+                {gts.map((t) => renderTag(t))}
+                {gts.length === 0 && (
+                  <p className="px-2.5 py-1 text-[11px] text-[var(--text-faint)]">空分组</p>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {/* 未分组标签 */}
+        {ungroupedTags.map((t) => renderTag(t))}
+
+        {tags.length === 0 && !addingTag && (
+          <p className="px-2.5 py-1.5 text-[12px] text-[var(--text-faint)]">暂无标签</p>
+        )}
+      </>
+    ),
+    [grouped, ungroupedTags, tags, addingTag, view, collapsedGroups, renaming, renameVal]
+  )
+
   // 过滤时强制展开所有分区，保证命中项可见
   const foldersFolded = sectionFold.folders && !navQuery
   const smartFolded = sectionFold.smart && !navQuery
@@ -1104,62 +1187,8 @@ export default function Sidebar() {
             />
           )}
 
-          {/* 分组 */}
-          {grouped.map(({ group, tags: gts }) => (
-            <div key={group.id}>
-              <div className="archive-tag-group-head flex items-center">
-                <button
-                  aria-label={collapsedGroups.has(group.id) ? `展开分组 ${group.name}` : `折叠分组 ${group.name}`}
-                  className="flex h-4 w-4 shrink-0 items-center justify-center text-[var(--text-faint)] transition-colors duration-100 hover:text-[var(--text-main)]"
-                  onClick={() => toggleGroupCollapse(group.id)}
-                >
-                  <Icon
-                    name="chevronDown"
-                    size={10}
-                    className={`block transition-transform duration-150 ${collapsedGroups.has(group.id) ? '-rotate-90' : ''}`}
-                  />
-                </button>
-                {renaming?.kind === 'group' && renaming.id === group.id ? (
-                  <input
-                    autoFocus
-                    aria-label="重命名分组"
-                    className="field-input min-w-0 flex-1 px-1.5 py-0.5 text-[11px]"
-                    value={renameVal}
-                    onChange={(e) => setRenameVal(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') void submitRename()
-                      if (e.key === 'Escape') setRenaming(null)
-                    }}
-                    onBlur={() => void submitRename()}
-                  />
-                ) : (
-                  <button
-                    className="flex min-w-0 flex-1 items-center gap-1.5 px-1 py-1 text-left"
-                    onClick={() => toggleGroupCollapse(group.id)}
-                    onContextMenu={(e) => openMenu(e, 'tagGroup', group.id)}
-                  >
-                    <span className="section-title truncate">{group.name}</span>
-                    <span className="mono ml-auto text-[11px] text-[var(--text-faint)]">{gts.length}</span>
-                  </button>
-                )}
-              </div>
-              {!collapsedGroups.has(group.id) && (
-                <div style={{ paddingLeft: 14 }}>
-                  {gts.map((t) => renderTag(t))}
-                  {gts.length === 0 && (
-                    <p className="px-2.5 py-1 text-[11px] text-[var(--text-faint)]">空分组</p>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-
-          {/* 未分组标签 */}
-          {ungroupedTags.map((t) => renderTag(t))}
-
-          {tags.length === 0 && !addingTag && (
-            <p className="px-2.5 py-1.5 text-[12px] text-[var(--text-faint)]">暂无标签</p>
-          )}
+          {/* 分组 + 未分组标签（memo 化行树，见 tagRows） */}
+          {tagRows}
           </div>
         )}
       </section>

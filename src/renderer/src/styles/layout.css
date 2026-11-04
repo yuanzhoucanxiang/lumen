@@ -162,6 +162,8 @@ body::before {
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
+  /* 注：不要加 content-visibility:auto —— 实测滚动时每帧都要为新进视口的行做渲染，
+     滚动帧耗时从 6.3ms 劣化到 16.5ms；侧栏滚动是全量静态行，保持一次性渲染更快 */
 }
 
 .archive-nav-item:hover {
