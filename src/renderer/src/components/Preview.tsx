@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { assetEditable, useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 import { useDialogFocus } from '../useDialogFocus'
@@ -17,7 +17,7 @@ function fmtSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(2)} MB`
 }
 
-export default function Preview() {
+function Preview() {
   const assets = useLibraryStore((s) => s.assets)
   const previewId = useLibraryStore((s) => s.previewId)
   const openPreview = useLibraryStore((s) => s.openPreview)
@@ -487,3 +487,5 @@ export default function Preview() {
     </div>
   )
 }
+
+export default memo(Preview)

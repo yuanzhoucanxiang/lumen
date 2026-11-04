@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { assetThumbUrl, useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 import IconButton from './ui/IconButton'
@@ -11,7 +11,7 @@ function fmtSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(2)} MB`
 }
 
-export default function Inspector({ width = 252 }: { width?: number }) {
+function Inspector({ width = 252 }: { width?: number }) {
   const theme = useTheme()
   const pixel = theme === 'pixel-glitch'
   const cyber = theme === 'cyber-glitch'
@@ -405,3 +405,5 @@ export default function Inspector({ width = 252 }: { width?: number }) {
     </aside>
   )
 }
+
+export default memo(Inspector)

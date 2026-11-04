@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { memo, useCallback, useRef, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 import BoardCanvas, { APPEARANCE_PRESETS, type BoardCanvasApi, type BoardTool } from './BoardCanvas'
@@ -33,7 +33,7 @@ const TOOLS: { id: BoardTool; label: string; icon: Parameters<typeof Icon>[0]['n
  * 行 1 = 白板切换/新建 + 导入导出/浮动/缩放滑块/全屏/退出
  * 行 2 = 绘图工具组 + 撤销/重做 + 适配/画布外观/导出 SVG
  */
-export default function BoardPanel() {
+function BoardPanel() {
   const boards = useLibraryStore((s) => s.boards)
   const activeBoardId = useLibraryStore((s) => s.activeBoardId)
   const boardViewMode = useLibraryStore((s) => s.boardViewMode)
@@ -403,3 +403,5 @@ export default function BoardPanel() {
     </div>
   )
 }
+
+export default memo(BoardPanel)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 import { useDialogFocus } from '../useDialogFocus'
@@ -67,7 +67,7 @@ function drawShape(
   }
 }
 
-export default function Editor() {
+function Editor() {
   const editorId = useLibraryStore((s) => s.editorId)
   const assets = useLibraryStore((s) => s.assets)
   const openEditor = useLibraryStore((s) => s.openEditor)
@@ -536,3 +536,5 @@ export default function Editor() {
     </div>
   )
 }
+
+export default memo(Editor)

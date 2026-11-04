@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { assetThumbUrl, useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 import type { Asset } from '@shared/types'
@@ -23,7 +23,7 @@ function beginAssetDrag(event: React.DragEvent, asset: Asset): void {
   event.dataTransfer.effectAllowed = 'copy'
 }
 
-export default function BoardReferencePanel() {
+function BoardReferencePanel() {
   const theme = useTheme()
   const pixel = theme === 'pixel-glitch'
   const cyber = theme === 'cyber-glitch'
@@ -186,3 +186,5 @@ export default function BoardReferencePanel() {
     </aside>
   )
 }
+
+export default memo(BoardReferencePanel)

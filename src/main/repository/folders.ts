@@ -4,12 +4,20 @@ import { queryAssets } from './assets'
 import type { Folder, SmartConditions } from '../../shared/types'
 
 export function listFolders(): Folder[] {
+  // 同 listTags（里程碑 217）：相关子查询改为一次聚合 JOIN，避免逐文件夹重算素材数
   const rows = getDb()
     .prepare(
       `SELECT f.id, f.name, f.parent_id AS parentId, f.icon, f.is_smart AS isSmart, f.conditions,
-              (SELECT COUNT(*) FROM asset_folders af WHERE af.folder_id = f.id AND af.asset_id IN
-                (SELECT id FROM assets WHERE deleted_at IS NULL)) AS count
-       FROM folders f ORDER BY f.id`
+              COALESCE(c.n, 0) AS count
+         FROM folders f
+         LEFT JOIN (
+           SELECT af.folder_id AS folderId, COUNT(*) AS n
+             FROM asset_folders af
+             JOIN assets a ON a.id = af.asset_id
+            WHERE a.deleted_at IS NULL
+            GROUP BY af.folder_id
+         ) c ON c.folderId = f.id
+        ORDER BY f.id`
     )
     .all() as Folder[]
   return rows.map((f) => (f.isSmart ? { ...f, count: countByConditions(parseConditions(f.conditions)) } : f))

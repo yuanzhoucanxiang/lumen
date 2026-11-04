@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 import IconButton from './ui/IconButton'
@@ -9,7 +9,7 @@ import { useTheme } from '../theme'
  * 它不是装饰标题，而是把当前视图解释成一张可追踪的接触印样：
  * 哪个档案盒、多少张底片、当前选中了多少张，一眼可读。
  */
-export default function ArchiveHeader() {
+function ArchiveHeader() {
   const theme = useTheme()
   const pixel = theme === 'pixel-glitch'
   const cyber = theme === 'cyber-glitch'
@@ -94,3 +94,5 @@ export default function ArchiveHeader() {
     </header>
   )
 }
+
+export default memo(ArchiveHeader)

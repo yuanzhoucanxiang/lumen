@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import type { SortBy } from '@renderer/stores/libraryStore'
@@ -308,7 +308,7 @@ function FilterButton({
   )
 }
 
-export default function Toolbar() {
+function Toolbar() {
   const keyword = useLibraryStore((s) => s.keyword)
   const setKeyword = useLibraryStore((s) => s.setKeyword)
   const extFilters = useLibraryStore((s) => s.extFilters)
@@ -980,3 +980,5 @@ export default function Toolbar() {
     </div>
   )
 }
+
+export default memo(Toolbar)

@@ -176,7 +176,7 @@ function SectionHeader({
   )
 }
 
-export default function Sidebar() {
+function Sidebar() {
   const theme = useTheme()
   const pixel = theme === 'pixel-glitch'
   const cyber = theme === 'cyber-glitch'
@@ -1543,3 +1543,5 @@ export default function Sidebar() {
     </nav>
   )
 }
+
+export default memo(Sidebar)

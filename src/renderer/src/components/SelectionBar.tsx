@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 import Button from './ui/Button'
@@ -31,7 +31,7 @@ function flattenFolders(folders: Folder[]): { folder: Folder; depth: number }[] 
  * 选区操作条（里程碑 195）：多选时浮在图库底部，提供加标签/移入文件夹/发送白板/
  * 导出/AI/删除。位置按左右面板实际占用居中，避免被详情栏或助手盖住。
  */
-export default function SelectionBar({ leftInset, rightInset }: { leftInset: number; rightInset: number }) {
+function SelectionBar({ leftInset, rightInset }: { leftInset: number; rightInset: number }) {
   const selection = useLibraryStore((s) => s.selection)
   const folders = useLibraryStore((s) => s.folders)
   const tags = useLibraryStore((s) => s.tags)
@@ -235,3 +235,5 @@ export default function SelectionBar({ leftInset, rightInset }: { leftInset: num
     </>
   )
 }
+
+export default memo(SelectionBar)

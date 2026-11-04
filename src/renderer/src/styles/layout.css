@@ -919,6 +919,13 @@ body::before {
   grid-template-columns: 168px minmax(0, 1fr);
 }
 
+/* 设置面板 8 个模块一次性挂载偏重（实测打开 ~500ms，其中布局 ~150ms）；
+   离屏模块跳过渲染，滚动到视口再补齐。分区索引在顶部、始终可见不受影响 */
+.settings-module {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 900px;
+}
+
 .settings-hub__nav {
   position: relative;
   display: flex;

@@ -331,7 +331,7 @@ const AssetCard = memo(function AssetCard({
 /** 视图键 → 滚动偏移(模块级:进白板/预览致 Gallery 卸载重挂后仍可恢复,对标 Eagle 滚动记忆) */
 const scrollMemory = new Map<string, number>()
 
-export default function Gallery() {
+function Gallery() {
   const assets = useLibraryStore((s) => s.assets)
   const loading = useLibraryStore((s) => s.loading)
   const zoom = useLibraryStore((s) => s.zoom)
@@ -1218,3 +1218,5 @@ export default function Gallery() {
     </div>
   )
 }
+
+export default memo(Gallery)
