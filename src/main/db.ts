@@ -263,7 +263,9 @@ function migrate(d: Database.Database): void {
     excluded: 'INTEGER NOT NULL DEFAULT 0',
     // 标签名归一键（里程碑 219）：`AI生成`/`AI 生成`/`AI-生成` 共用同一个判重口径，
     // 建标签/Agent 导入/健康报告都查这一列；存量在下面一次性回填
-    norm_name: "TEXT NOT NULL DEFAULT ''"
+    norm_name: "TEXT NOT NULL DEFAULT ''",
+    // 别名 JSON 数组（里程碑 221）：合并标签时记录被合并掉的旧名字，输入旧名自动复用主标签
+    aliases: "TEXT NOT NULL DEFAULT '[]'"
   })
   // 回填存量归一键（只补空值；createTag/renameTag 之后会同步维护）
   {

@@ -13,6 +13,10 @@ import type { Asset } from '@shared/types'
 const GAP = 18
 const LABEL_H = 30
 const LIST_ROW_H = 40
+/** 拖拽打标签（里程碑 221）：侧栏标签拖到图库/图库素材拖到侧栏标签共用这个 MIME */
+const TAG_MIME = 'application/x-eaglelike-tag'
+const ASSET_MIME = 'application/x-eaglelike-assets'
+
 const HOVER_PREVIEW_DELAY = 420
 const HOVER_PREVIEW_W = 288
 const HOVER_PREVIEW_MAX_H = 306
@@ -50,7 +54,7 @@ function onAssetDragStart(e: React.DragEvent, a: Asset): void {
     window.api.dragOutAssets(ids)
     return
   }
-  e.dataTransfer.setData('application/x-eaglelike-assets', JSON.stringify(ids))
+  e.dataTransfer.setData(ASSET_MIME, JSON.stringify(ids))
   e.dataTransfer.effectAllowed = 'copy'
 }
 
@@ -95,6 +99,7 @@ const ListRow = memo(function ListRow({ item, selected, onClick, onDoubleClick, 
   return (
     <div
       role="button"
+      data-asset-id={a.id}
       tabIndex={0}
       aria-label={a.name}
       aria-pressed={selected}
@@ -205,6 +210,7 @@ const AssetCard = memo(function AssetCard({
   return (
     <div
       role="button"
+      data-asset-id={a.id}
       tabIndex={0}
       aria-label={a.name}
       aria-pressed={selected}
@@ -869,6 +875,22 @@ function Gallery() {
         setSelection([])
         setMenu(null)
         endHover()
+      }}
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes(TAG_MIME)) {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'copy'
+        }
+      }}
+      onDrop={(e) => {
+        const name = e.dataTransfer.getData(TAG_MIME)
+        if (!name) return
+        e.preventDefault()
+        // 落在某张卡片上 = 只打这张；落在空白 = 打在当前选区上
+        const el = (e.target as HTMLElement).closest('[data-asset-id]') as HTMLElement | null
+        const ids = el?.dataset.assetId ? [el.dataset.assetId] : useLibraryStore.getState().selection
+        if (ids.length === 0) return
+        void useLibraryStore.getState().applyTag(ids, name)
       }}
     >
       <div className="relative" style={{ height: totalH }}>

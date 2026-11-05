@@ -320,9 +320,12 @@ function Sidebar() {
     collapsed ? 'mt-3 shrink-0 px-2' : 'mt-3 flex flex-col px-2'
 
   const ASSET_MIME = 'application/x-eaglelike-assets'
+  const TAG_MIME = 'application/x-eaglelike-tag'
   /** 文件夹拖拽改层级用的独立类型：与素材拖入（copy 语义）区分，避免两套 drop 逻辑互相误判 */
   const FOLDER_MIME = 'application/x-eaglelike-folder'
   const [draggingFolder, setDraggingFolder] = useState<number | null>(null)
+  /** 拖拽打标签（里程碑 221）：素材拖到哪个标签行上高亮 */
+  const [dropTargetTag, setDropTargetTag] = useState<number | null>(null)
   const [rootDropActive, setRootDropActive] = useState(false)
 
   /** id 是否位于 ancestorId 的子树内（含自身）——拖拽前先本地判环，环目标直接不给放置反馈 */
@@ -725,8 +728,45 @@ function Sidebar() {
       )
     }
     return (
-      <NavItem
+      <div
         key={t.id}
+        draggable
+        onDragStart={(e) => {
+          // 侧栏标签 → 图库：把标签名带过去，落在卡片上给那张打标签
+          e.dataTransfer.setData(TAG_MIME, t.name)
+          e.dataTransfer.setData('text/plain', t.name)
+          e.dataTransfer.effectAllowed = 'copy'
+        }}
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes(ASSET_MIME)) return
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'copy'
+          if (dropTargetTag !== t.id) setDropTargetTag(t.id)
+        }}
+        onDragLeave={() => {
+          if (dropTargetTag === t.id) setDropTargetTag(null)
+        }}
+        onDrop={(e) => {
+          setDropTargetTag(null)
+          const raw = e.dataTransfer.getData(ASSET_MIME)
+          if (!raw) return
+          e.preventDefault()
+          e.stopPropagation()
+          let ids: string[] = []
+          try {
+            ids = JSON.parse(raw) as string[]
+          } catch {
+            return
+          }
+          if (ids.length === 0) return
+          // 素材 → 标签行：给拖过来的素材批量打标签
+          void useLibraryStore.getState().applyTag(ids, t.name)
+        }}
+        className={`rounded-sm ${
+          dropTargetTag === t.id ? 'bg-[var(--accent-soft)] outline outline-1 outline-[var(--accent)]' : ''
+        }`}
+      >
+      <NavItem
         active={view.type === 'tag' && view.id === t.id}
         icon="tag"
         dot={t.color || undefined}
@@ -745,6 +785,7 @@ function Sidebar() {
         }}
         onContextMenu={(e) => openMenu(e, 'tag', t.id)}
       />
+      </div>
     )
   }
 
@@ -821,7 +862,7 @@ function Sidebar() {
         )}
       </>
     ),
-    [grouped, ungroupedTags, pinnedTags, tags, addingTag, view, collapsedGroups, renaming, renameVal]
+    [grouped, ungroupedTags, pinnedTags, tags, addingTag, view, collapsedGroups, renaming, renameVal, dropTargetTag]
   )
 
   // 过滤时强制展开所有分区，保证命中项可见

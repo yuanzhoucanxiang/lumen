@@ -38,23 +38,32 @@ function editDistance(a: string, b: string, max = 2): number {
 }
 
 /** 给一个"未知标签名"找最接近的已有标签（最多 limit 个），用于 Agent 复用提示与健康报告 */
-export function suggestSimilarTagNames(name: string, existing: readonly { name: string }[], limit = 3): string[] {
+export function suggestSimilarTagNames(
+  name: string,
+  existing: readonly { name: string; aliases?: string[] }[],
+  limit = 3
+): string[] {
   const norm = normalizeTagName(name)
   if (!norm) return []
   const scored: { name: string; score: number }[] = []
   for (const t of existing) {
-    const other = normalizeTagName(t.name)
-    if (!other || other === norm) continue
-    let score = 0
-    if (other.includes(norm) || norm.includes(other)) {
-      // 包含关系：越接近越长越可信（「奇幻」vs「奇幻场景」）
-      score = 60 + Math.round((Math.min(norm.length, other.length) / Math.max(norm.length, other.length)) * 30)
-    } else {
-      // 近形只认 1 个字符的差异：2 字中文词间距离 2 基本是两个无关词（奇幻/人物），不该提示
-      const dist = editDistance(norm, other, 1)
-      if (dist <= 1 && Math.min(norm.length, other.length) >= 2) score = 50 - dist * 10
+    // 别名也参与比较：合并时记下的旧名字，输入后仍会指向同一个标签（里程碑 221）
+    let best = 0
+    for (const candidate of [t.name, ...(t.aliases ?? [])]) {
+      const other = normalizeTagName(candidate)
+      if (!other || other === norm) continue
+      let score = 0
+      if (other.includes(norm) || norm.includes(other)) {
+        // 包含关系：越接近越长越可信（「奇幻」vs「奇幻场景」）
+        score = 60 + Math.round((Math.min(norm.length, other.length) / Math.max(norm.length, other.length)) * 30)
+      } else {
+        // 近形只认 1 个字符的差异：2 字中文词间距离 2 基本是两个无关词（奇幻/人物），不该提示
+        const dist = editDistance(norm, other, 1)
+        if (dist <= 1 && Math.min(norm.length, other.length) >= 2) score = 50 - dist * 10
+      }
+      if (score > best) best = score
     }
-    if (score > 0) scored.push({ name: t.name, score })
+    if (best > 0) scored.push({ name: t.name, score: best })
   }
   return scored
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'zh-CN'))
@@ -79,13 +88,16 @@ export interface AgentTagPlan {
  */
 export function planAgentTags(
   names: readonly string[],
-  existing: readonly { name: string }[],
+  existing: readonly { name: string; aliases?: string[] }[],
   quota: number
 ): AgentTagPlan {
   const byNorm = new Map<string, string>()
   for (const t of existing) {
-    const norm = normalizeTagName(t.name)
-    if (norm && !byNorm.has(norm)) byNorm.set(norm, t.name)
+    // 名字与别名都映射到同一个标签（里程碑 221）：合并/改名后的旧写法仍能复用
+    for (const candidate of [t.name, ...(t.aliases ?? [])]) {
+      const norm = normalizeTagName(candidate)
+      if (norm && !byNorm.has(norm)) byNorm.set(norm, t.name)
+    }
   }
   const apply: string[] = []
   const create: string[] = []

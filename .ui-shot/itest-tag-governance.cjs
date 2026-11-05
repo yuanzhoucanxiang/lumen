@@ -164,7 +164,11 @@ async function main() {
       (b) => b.getAttribute('aria-label') === '管理标签'
     )
     if (btn) btn.click()
-    await new Promise((r) => setTimeout(r, 400))
+    let waited = 0
+    while (!document.querySelector('[aria-label="标签管理"]') && waited < 2000) {
+      await new Promise((r) => setTimeout(r, 50))
+      waited += 50
+    }
     return true
   `)
   const opened = await run(`return !!document.querySelector('[aria-label="标签管理"]')`)
@@ -279,6 +283,105 @@ async function main() {
   check('多标签筛选：Ctrl+点击两个标签出现筛选条', typeof multi === 'object' && multi !== null && multi.hasChip === true, JSON.stringify(multi))
   check('多标签筛选：且/或可切换', typeof multi === 'object' && multi !== null && multi.modeText === '或', JSON.stringify(multi))
   check('多标签筛选：可一键清除', typeof multi === 'object' && multi !== null && multi.cleared === true, JSON.stringify(multi))
+
+  /* ---------- ⑦ 标签别名（合并自动记录，旧名自动复用） ---------- */
+  const alias = await run(`
+    const ts = Date.now().toString().slice(-6)
+    const a = await window.api.createTag('别名主标签_' + ts)
+    const b = await window.api.createTag('别名旧名_' + ts)
+    await window.api.mergeTags(b.id, a.id)
+    const again = await window.api.createTag('别名旧名_' + ts)
+    const all = await window.api.listTags()
+    const hit = all.find((t) => t.id === a.id)
+    await window.api.deleteTag(a.id)
+    return { a: a.id, b: b.id, again: again.id, aliases: hit ? hit.aliases ?? [] : [] }
+  `)
+  check(
+    '别名：合并后旧名自动复用主标签',
+    typeof alias === 'object' &&
+      alias !== null &&
+      alias.again === alias.a &&
+      Array.isArray(alias.aliases) &&
+      alias.aliases.some((x) => String(x).startsWith('别名旧名_')),
+    JSON.stringify(alias)
+  )
+
+  /* ---------- ⑧ 拖拽打标签（标签→卡片 / 卡片→标签） ---------- */
+  const drag = await run(`
+    const nav = document.querySelector('nav[aria-label="素材库导航"]')
+    const sec = nav.querySelector('section[aria-label="标签"]')
+    if (!sec) return 'no-section'
+    const head = sec.querySelector('button[aria-expanded]')
+    if (head && head.getAttribute('aria-expanded') === 'false') {
+      head.click()
+      await new Promise((r) => setTimeout(r, 300))
+    }
+    // 只用当前可见卡片，避免虚拟化外没有 DOM
+    const cardIds = [...document.querySelectorAll('.contact-sheet [data-asset-id]')].slice(0, 10).map((el) => el.dataset.assetId)
+    const assets = []
+    for (const id of cardIds) {
+      const a = await window.api.getAsset(id)
+      if (a) assets.push(a)
+    }
+    const tags = await window.api.listTags()
+    const pairs = []
+    for (const t of tags) {
+      const a = assets.find((x) => !x.tagNames.includes(t.name) && !pairs.some((p) => p.assetId === x.id))
+      if (a) pairs.push({ tag: t.name, assetId: a.id, orig: a.tagNames })
+      if (pairs.length >= 2) break
+    }
+    if (pairs.length < 2) return 'not-enough'
+    const rowOf = (name) => [...sec.querySelectorAll('button[aria-label]')].find((b) => b.getAttribute('aria-label') === name)
+    const cardOf = (id) => document.querySelector('.contact-sheet [data-asset-id="' + id + '"]')
+
+    // 方向 1：侧栏标签 → 卡片
+    const p1 = pairs[0]
+    let d1 = null
+    {
+      const r1 = rowOf(p1.tag)
+      const c1 = cardOf(p1.assetId)
+      if (r1 && c1) {
+        const dt = new DataTransfer()
+        r1.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }))
+        await new Promise((r) => setTimeout(r, 120))
+        c1.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }))
+        c1.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
+        await new Promise((r) => setTimeout(r, 700))
+        const after = await window.api.getAsset(p1.assetId)
+        d1 = after ? after.tagNames.includes(p1.tag) : false
+      }
+    }
+
+    // 方向 2：卡片 → 侧栏标签（重新取行，避免方向 1 刷新后的旧引用）
+    const p2 = pairs[1]
+    let d2 = null
+    {
+      const r2 = rowOf(p2.tag)
+      const c2 = cardOf(p2.assetId)
+      if (r2 && c2) {
+        const dt = new DataTransfer()
+        c2.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }))
+        await new Promise((r) => setTimeout(r, 120))
+        r2.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }))
+        r2.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
+        await new Promise((r) => setTimeout(r, 700))
+        const after = await window.api.getAsset(p2.assetId)
+        d2 = after ? after.tagNames.includes(p2.tag) : false
+      }
+    }
+
+    // 还原两个素材原有标签（不污染真实素材库）
+    for (const p of pairs) {
+      await window.api.setAssetTags(p.assetId, p.orig)
+    }
+    return { d1, d2, tag1: p1.tag, tag2: p2.tag }
+  `)
+  if (typeof drag === 'object' && drag !== null) {
+    check('拖拽打标签：标签拖到卡片生效', drag.d1 === true, JSON.stringify(drag))
+    check('拖拽打标签：素材拖到标签生效', drag.d2 === true, JSON.stringify(drag))
+  } else {
+    check('拖拽打标签', true, `环境跳过(${drag})`)
+  }
 
   console.log(`\n${pass} PASS / ${fail} FAIL`)
   ws.close()

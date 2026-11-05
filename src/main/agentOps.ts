@@ -20,6 +20,9 @@ import { logger } from './logger'
 import type { AgentOpView } from '../shared/types'
 import {
   addTagToAssets,
+  findTagId,
+  removeTagAlias,
+  restoreTag,
   addToFolder,
   deleteAssets,
   deleteBoardItem,
@@ -334,6 +337,11 @@ export function undoAgentOp(
         // 合并时才获得目标标签的素材，把目标标签摘掉（合并前就有目标标签的不动）
         const fromTag = String(p.fromTag ?? '')
         const toTag = String(p.toTag ?? '')
+        // 先撤销别名记录（里程碑 221）：合并时把来源名记成了目标别名，不先删掉的话
+        // addTagToAssets(fromTag) 会被别名解析回目标标签，来源永远重建不出来
+        const toId = findTagId(toTag)
+        if (toId !== null) removeTagAlias(toId, fromTag)
+        restoreTag(fromTag)
         let n = 0
         for (const t of targets) {
           if (!getAssetById(t.id)) continue

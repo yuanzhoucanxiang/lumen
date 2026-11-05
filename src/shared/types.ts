@@ -29,6 +29,8 @@ export interface Asset {
 export interface Tag {
   id: number
   name: string
+  /** 别名（里程碑 221）：合并标签时自动记录被合并掉的旧名字，之后输入旧名会自动复用主标签 */
+  aliases?: string[]
   color: string
   count: number
   /** 所属标签组，null = 未分组 */

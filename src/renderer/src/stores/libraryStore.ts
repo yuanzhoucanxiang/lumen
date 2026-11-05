@@ -198,6 +198,8 @@ interface LibraryState {
   updateAssetLocal: (id: string, patch: Partial<Asset>) => void
   /** 批量加标签的就地更新（里程碑 209）：一次 set 完成，不整页重查（避免滚动被顶回） */
   addTagLocal: (ids: string[], tag: string) => void
+  /** 拖拽打标签：写库 + 就地更新列表 + 刷新标签计数 */
+  applyTag: (ids: string[], tag: string) => Promise<void>
   deleteSelection: (permanent?: boolean) => Promise<void>
   restoreSelection: () => Promise<void>
   emptyTrash: () => Promise<void>
@@ -685,6 +687,14 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         want.has(a.id) && !a.tagNames.includes(tag) ? { ...a, tagNames: [...a.tagNames, tag] } : a
       )
     })
+  },
+
+  applyTag: async (ids, tag) => {
+    const trimmed = tag.trim()
+    if (!trimmed || ids.length === 0) return
+    await window.api.addTagToAssets(ids, trimmed)
+    get().addTagLocal(ids, trimmed)
+    await get().refreshTags()
   },
 
   deleteSelection: async (permanent = false) => {

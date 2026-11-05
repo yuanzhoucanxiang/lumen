@@ -64,6 +64,15 @@ async function main() {
     ok ? pass++ : fail++
   }
 
+  // 等待应用首屏渲染出侧栏（启动时机不同会短暂没有 nav，直接测量会误判 no-nav）
+  await run(`
+    const t0 = performance.now()
+    while (!document.querySelector('nav[aria-label="素材库导航"]') && performance.now() - t0 < 6000) {
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    return true
+  `)
+
   // 确保处于素材库展开态（不是白板窄轨、不是 56px 图标栏）
   await run(`
     if (document.querySelector('[data-workspace-mode="board"]')) {

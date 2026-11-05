@@ -330,6 +330,9 @@ export default function TagManagerDialog({ onClose }: { onClose: () => void }) {
               近重复 <b className="text-[var(--text-main)]">{health.groups.length}</b> 组 · 未使用{' '}
               <b className="text-[var(--text-main)]">{health.unused.length}</b> · 仅用一次{' '}
               <b className="text-[var(--text-main)]">{health.singleton.length}</b>
+              <span className="mt-1 block text-[10px] text-[var(--text-faint)]">
+                合并会把被合并的名字记成别名，之后输入旧名会自动复用主标签
+              </span>
             </div>
             {health.groups.map((group) => {
               const key = group.map((t) => t.id).join('-')
