@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { assetEditable, useLibraryStore } from '@renderer/stores/libraryStore'
+import { normalizeTagName } from '@shared/tagName'
 import Icon from './Icon'
 import { useDialogFocus } from '../useDialogFocus'
 
@@ -37,6 +38,12 @@ function Preview() {
   const [infoOpen, setInfoOpen] = useState(false)
   /** 信息面板里的标签输入（里程碑 208） */
   const [tagInput, setTagInput] = useState('')
+  /** 输入命中已有标签（归一后一致）时提示复用（里程碑 220） */
+  const tagReuseHint = useMemo(() => {
+    const q = normalizeTagName(tagInput)
+    if (!q) return ''
+    return allTags.find((t) => normalizeTagName(t.name) === q)?.name ?? ''
+  }, [tagInput, allTags])
   const stageRef = useRef<HTMLDivElement>(null)
   const imgRef = useRef<HTMLImageElement>(null)
   const panRef = useRef<{ startX: number; startY: number; zx: number; zy: number } | null>(null)
@@ -440,6 +447,11 @@ function Preview() {
                 <option key={t.id} value={t.name} />
               ))}
             </datalist>
+            {tagReuseHint && (
+              <p className="mt-1 text-[10px] leading-[1.4] text-[var(--accent-text)]">
+                将复用已有标签「{tagReuseHint}」
+              </p>
+            )}
           </div>
 
           <div className="mt-4 border-t border-white/10 pt-3">

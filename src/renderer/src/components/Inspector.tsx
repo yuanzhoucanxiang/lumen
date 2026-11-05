@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useState } from 'react'
 import { assetThumbUrl, useLibraryStore } from '@renderer/stores/libraryStore'
+import { normalizeTagName } from '@shared/tagName'
 import Icon from './Icon'
 import IconButton from './ui/IconButton'
 import Markdown from './Markdown'
@@ -25,6 +26,12 @@ function Inspector({ width = 252 }: { width?: number }) {
   )
 
   const [tagInput, setTagInput] = useState('')
+  /** 输入命中已有标签（归一后一致）时提示复用：避免手工造出近重复标签（里程碑 220） */
+  const tagReuseHint = useMemo(() => {
+    const q = normalizeTagName(tagInput)
+    if (!q) return ''
+    return tags.find((t) => normalizeTagName(t.name) === q)?.name ?? ''
+  }, [tagInput, tags])
   const [comment, setComment] = useState('')
   /** 注释编辑/预览切换 */
   const [commentView, setCommentView] = useState<'edit' | 'preview'>('edit')
@@ -249,6 +256,11 @@ function Inspector({ width = 252 }: { width?: number }) {
                   <option key={t.id} value={t.name} />
                 ))}
               </datalist>
+              {tagReuseHint && (
+                <span className="w-full text-[10px] leading-[1.4] text-[var(--accent-text)]">
+                  将复用已有标签「{tagReuseHint}」
+                </span>
+              )}
             </div>
           </div>
 

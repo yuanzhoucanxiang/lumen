@@ -201,6 +201,84 @@ async function main() {
     for (const t of mine) await window.api.deleteTag(t.id)
     return true
   `)
+  await sleep(300)
+
+  /* ---------- ⑤ 侧栏：隐藏未使用 / 排序切换 ---------- */
+  const sidebarPref = await run(`
+    const nav = document.querySelector('nav[aria-label="素材库导航"]')
+    const sec = nav.querySelector('section[aria-label="标签"]')
+    if (!sec) return 'no-section'
+    const head = sec.querySelector('button[aria-expanded]')
+    if (head && head.getAttribute('aria-expanded') === 'false') {
+      head.click()
+      await new Promise((r) => setTimeout(r, 300))
+    }
+    const rows = () => sec.querySelectorAll('.archive-nav-item').length
+    const before = rows()
+    const hide = sec.querySelector('button[aria-label="隐藏未使用标签"]')
+    if (!hide) return 'no-hide-btn'
+    hide.click()
+    await new Promise((r) => setTimeout(r, 300))
+    const afterHide = rows()
+    const hideStored = localStorage.getItem('lumen.sidebar.tagHideUnused')
+    hide.click()
+    await new Promise((r) => setTimeout(r, 300))
+    const afterShow = rows()
+    const sortBtn = sec.querySelector('button[aria-label="切换标签排序"]')
+    if (!sortBtn) return 'no-sort-btn'
+    const sortBefore = localStorage.getItem('lumen.sidebar.tagSort')
+    sortBtn.click()
+    await new Promise((r) => setTimeout(r, 250))
+    const sortAfter = localStorage.getItem('lumen.sidebar.tagSort')
+    sortBtn.click()
+    await new Promise((r) => setTimeout(r, 250))
+    return { before, afterHide, afterShow, hideStored, sortBefore, sortAfter }
+  `)
+  check(
+    '侧栏：隐藏未使用标签可切换且持久化',
+    typeof sidebarPref === 'object' &&
+      sidebarPref !== null &&
+      sidebarPref.hideStored === '1' &&
+      sidebarPref.afterHide <= sidebarPref.before &&
+      sidebarPref.afterShow === sidebarPref.before,
+    JSON.stringify(sidebarPref)
+  )
+  check(
+    '侧栏：标签排序可切换且持久化',
+    typeof sidebarPref === 'object' && sidebarPref !== null && sidebarPref.sortBefore !== sidebarPref.sortAfter,
+    JSON.stringify(sidebarPref)
+  )
+
+  /* ---------- ⑥ 多标签组合筛选（Ctrl/Cmd+点击） ---------- */
+  const multi = await run(`
+    const nav = document.querySelector('nav[aria-label="素材库导航"]')
+    const sec = nav.querySelector('section[aria-label="标签"]')
+    const rows = [...sec.querySelectorAll('.archive-nav-item')]
+    if (rows.length < 2) return 'not-enough'
+    const ctrlClick = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+    ctrlClick(rows[0])
+    await new Promise((r) => setTimeout(r, 500))
+    ctrlClick(rows[1])
+    await new Promise((r) => setTimeout(r, 500))
+    const chipText = () => sec.textContent.includes('标签筛选 2 个')
+    const hasChip = chipText()
+    const modeBtn = sec.querySelector('button[aria-label="切换标签匹配方式"]')
+    if (modeBtn) {
+      modeBtn.click()
+      await new Promise((r) => setTimeout(r, 500))
+    }
+    const modeText = sec.querySelector('button[aria-label="切换标签匹配方式"]')?.textContent?.trim() ?? ''
+    const clear = sec.querySelector('button[aria-label="清除标签筛选"]')
+    if (clear) {
+      clear.click()
+      await new Promise((r) => setTimeout(r, 500))
+    }
+    const cleared = !sec.querySelector('button[aria-label="清除标签筛选"]')
+    return { hasChip, modeText, cleared }
+  `)
+  check('多标签筛选：Ctrl+点击两个标签出现筛选条', typeof multi === 'object' && multi !== null && multi.hasChip === true, JSON.stringify(multi))
+  check('多标签筛选：且/或可切换', typeof multi === 'object' && multi !== null && multi.modeText === '或', JSON.stringify(multi))
+  check('多标签筛选：可一键清除', typeof multi === 'object' && multi !== null && multi.cleared === true, JSON.stringify(multi))
 
   console.log(`\n${pass} PASS / ${fail} FAIL`)
   ws.close()

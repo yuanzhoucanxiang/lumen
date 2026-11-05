@@ -180,12 +180,21 @@ export function queryAssets(q: AssetQuery): Asset[] {
     params.push(q.folderId)
   }
   if (q.tagIds && q.tagIds.length > 0) {
-    where.push(
-      `id IN (SELECT asset_id FROM asset_tags WHERE tag_id IN (${q.tagIds
-        .map(() => '?')
-        .join(',')}) GROUP BY asset_id HAVING COUNT(DISTINCT tag_id) = ?)`
-    )
-    params.push(...q.tagIds, q.tagIds.length)
+    if (q.tagMode === 'or') {
+      // 任一命中（里程碑 220）：多标签组合筛选的 OR 模式
+      where.push(
+        `id IN (SELECT asset_id FROM asset_tags WHERE tag_id IN (${q.tagIds.map(() => '?').join(',')}))`
+      )
+      params.push(...q.tagIds)
+    } else {
+      // 同时包含（默认）：每个标签都要有
+      where.push(
+        `id IN (SELECT asset_id FROM asset_tags WHERE tag_id IN (${q.tagIds
+          .map(() => '?')
+          .join(',')}) GROUP BY asset_id HAVING COUNT(DISTINCT tag_id) = ?)`
+      )
+      params.push(...q.tagIds, q.tagIds.length)
+    }
   }
 
   // 构图下推 SQL（用 width/height 比较，可命中索引，避免内存过滤全表扫描）

@@ -100,6 +100,9 @@ interface LibraryState {
   loadingMore: boolean
   /** 最近一次取页所用的查询条件（不含 limit/offset），续借时复用同一口径 */
   assetsQuery: AssetQuery
+  /** 多标签组合筛选（里程碑 220）：与当前视图叠加；null = 未启用。
+   *  ids 由侧栏 Ctrl/Cmd+点击切换，mode 决定「同时包含(and)/任一命中(or)」 */
+  tagFilter: { ids: number[]; mode: 'and' | 'or' } | null
   tags: Tag[]
   tagGroups: TagGroup[]
   folders: Folder[]
@@ -152,6 +155,10 @@ interface LibraryState {
   history: { type: 'delete'; ids: string[] }[]
 
   setView: (v: ViewType) => void
+  /** 切换某个标签在多标签筛选里的选中状态（Ctrl/Cmd+点击侧栏标签） */
+  toggleTagFilter: (id: number) => void
+  setTagFilterMode: (mode: 'and' | 'or') => void
+  clearTagFilter: () => void
   setKeyword: (k: string) => void
   toggleExtFilter: (ext: string) => void
   setColorFilter: (c: { hex: string; tolerance: number } | null) => void
@@ -277,6 +284,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   assetsHasMore: false,
   loadingMore: false,
   assetsQuery: {},
+  tagFilter: null,
   tags: [],
   tagGroups: [],
   folders: [],
@@ -340,6 +348,24 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   aiSearch: null,
   aiSearchPending: null,
   history: [],
+
+  toggleTagFilter: (id) => {
+    const cur = get().tagFilter ?? { ids: [], mode: 'and' as const }
+    const ids = cur.ids.includes(id) ? cur.ids.filter((x) => x !== id) : [...cur.ids, id]
+    set({ tagFilter: ids.length > 0 ? { ...cur, ids } : null })
+    void get().refreshAssets()
+  },
+  setTagFilterMode: (mode) => {
+    const cur = get().tagFilter
+    if (!cur) return
+    set({ tagFilter: { ...cur, mode } })
+    void get().refreshAssets()
+  },
+  clearTagFilter: () => {
+    if (!get().tagFilter) return
+    set({ tagFilter: null })
+    void get().refreshAssets()
+  },
 
   setView: (view) => {
     // 素材来源与工作区模式彼此独立：白板内切换文件夹/标签只刷新参考素材架，
@@ -540,7 +566,14 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         sortDesc: s.sortDesc,
         deleted: view.type === 'trash',
         folderId: view.type === 'folder' && !smartQuery ? view.id : undefined,
-        tagIds: view.type === 'tag' ? [view.id] : undefined,
+        tagIds:
+          s.tagFilter && s.tagFilter.ids.length > 0
+            ? s.tagFilter.ids
+            : view.type === 'tag'
+              ? [view.id]
+              : undefined,
+        tagMode:
+          s.tagFilter && s.tagFilter.ids.length > 1 ? s.tagFilter.mode : undefined,
         ...(smartQuery ?? {})
       }
       const first = await window.api.queryAssets({ ...assetsQuery, limit: ASSET_PAGE, offset: 0 })

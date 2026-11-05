@@ -38,7 +38,7 @@ function NavItemInner({
   priority?: boolean
   /** 排除标签（AI 不使用，置灰 + ⊘） */
   excluded?: boolean
-  onClick: () => void
+  onClick: (e: React.MouseEvent) => void
   onContextMenu?: (e: React.MouseEvent) => void
 }) {
   return (
@@ -114,6 +114,7 @@ function SectionHeader({
   addLabel,
   onManage,
   manageLabel,
+  extra,
   collapsed,
   onToggle
 }: {
@@ -124,6 +125,8 @@ function SectionHeader({
   addLabel?: string
   onManage?: () => void
   manageLabel?: string
+  /** 分区额外操作按钮（如标签区的排序/隐藏未使用） */
+  extra?: React.ReactNode
   /** 折叠态（整区可点击折叠） */
   collapsed: boolean
   onToggle: () => void
@@ -146,6 +149,7 @@ function SectionHeader({
           {title}
         </h3>
       </button>
+      {extra}
       {onManage && (
         <button
           aria-label={manageLabel ?? `管理${title}`}
@@ -250,6 +254,46 @@ function Sidebar() {
   /* 分区折叠状态（localStorage 持久化）：文件夹/智能文件夹/白板/标签 */
   // 白板默认折叠（列表短小,展开也限高,避免挤压文件夹/标签两大分区）
   type SectionKey = 'folders' | 'smart' | 'boards' | 'tags'
+  /** 标签区展示偏好（里程碑 220）：排序口径与是否隐藏未使用标签，持久化到 localStorage */
+  const tagFilter = useLibraryStore((s) => s.tagFilter)
+  const toggleTagFilter = useLibraryStore((s) => s.toggleTagFilter)
+  const setTagFilterMode = useLibraryStore((s) => s.setTagFilterMode)
+  const clearTagFilter = useLibraryStore((s) => s.clearTagFilter)
+  const [tagSort, setTagSort] = useState<'count' | 'name'>(() => {
+    try {
+      return localStorage.getItem('lumen.sidebar.tagSort') === 'name' ? 'name' : 'count'
+    } catch {
+      return 'count'
+    }
+  })
+  const [tagHideUnused, setTagHideUnused] = useState(() => {
+    try {
+      return localStorage.getItem('lumen.sidebar.tagHideUnused') === '1'
+    } catch {
+      return false
+    }
+  })
+  const toggleTagSort = () =>
+    setTagSort((s) => {
+      const next = s === 'count' ? 'name' : 'count'
+      try {
+        localStorage.setItem('lumen.sidebar.tagSort', next)
+      } catch {
+        /* 隐私模式忽略 */
+      }
+      return next
+    })
+  const toggleTagHideUnused = () =>
+    setTagHideUnused((v) => {
+      const next = !v
+      try {
+        localStorage.setItem('lumen.sidebar.tagHideUnused', next ? '1' : '0')
+      } catch {
+        /* 隐私模式忽略 */
+      }
+      return next
+    })
+
   const [sectionFold, setSectionFold] = useState<Record<SectionKey, boolean>>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('lumen.sidebar.fold') ?? '{}') as Partial<
@@ -402,13 +446,19 @@ function Sidebar() {
     [boards, navQuery]
   )
 
-  /* 标签按分组聚合（含空分组，便于管理），组内按 count 降序 */
-  const { grouped, ungroupedTags } = useMemo(() => {
+  /* 标签按分组聚合（含空分组，便于管理）；优先标签单独置顶，排序口径/隐藏未使用可切换 */
+  const { grouped, ungroupedTags, pinnedTags } = useMemo(() => {
     const byCount = (a: Tag, b: Tag) => b.count - a.count || a.name.localeCompare(b.name, 'zh-CN')
+    const byName = (a: Tag, b: Tag) => a.name.localeCompare(b.name, 'zh-CN')
+    const cmp = tagSort === 'count' ? byCount : byName
+    const matched = navQuery ? tags.filter((t) => t.name.toLowerCase().includes(navQuery)) : tags
+    // 隐藏未使用：搜索时仍展示命中项（否则搜不到闲置标签）
+    const source = tagHideUnused && !navQuery ? matched.filter((t) => t.count > 0 || t.priority === 1) : matched
+    const pinned = source.filter((t) => t.priority === 1).sort(byCount)
     const byGroup = new Map<number, Tag[]>()
     const ungrouped: Tag[] = []
-    const source = navQuery ? tags.filter((t) => t.name.toLowerCase().includes(navQuery)) : tags
     for (const t of source) {
+      if (t.priority === 1) continue // 置顶区已展示，组内不重复
       if (t.groupId != null) {
         const list = byGroup.get(t.groupId) ?? []
         list.push(t)
@@ -419,11 +469,12 @@ function Sidebar() {
     }
     return {
       grouped: tagGroups
-        .map((g) => ({ group: g, tags: (byGroup.get(g.id) ?? []).sort(byCount) }))
-        .filter((g) => !navQuery || g.tags.length > 0),
-      ungroupedTags: ungrouped.sort(byCount)
+        .map((g) => ({ group: g, tags: (byGroup.get(g.id) ?? []).sort(cmp) }))
+        .filter((g) => !(navQuery || tagHideUnused) || g.tags.length > 0),
+      ungroupedTags: ungrouped.sort(cmp),
+      pinnedTags: pinned
     }
-  }, [tags, tagGroups, navQuery])
+  }, [tags, tagGroups, navQuery, tagSort, tagHideUnused])
 
   const toggleGroupCollapse = (id: number) => {
     setCollapsedGroups((prev) => {
@@ -683,7 +734,15 @@ function Sidebar() {
         priority={t.priority === 1}
         excluded={t.excluded === 1}
         count={t.count}
-        onClick={() => setView({ type: 'tag', id: t.id })}
+        onClick={(e) => {
+          // Ctrl/Cmd+点击 = 加入/移出多标签组合筛选；普通点击 = 单标签视图
+          if (e.ctrlKey || e.metaKey) {
+            toggleTagFilter(t.id)
+          } else {
+            clearTagFilter()
+            setView({ type: 'tag', id: t.id })
+          }
+        }}
         onContextMenu={(e) => openMenu(e, 'tag', t.id)}
       />
     )
@@ -697,6 +756,14 @@ function Sidebar() {
   const tagRows = useMemo(
     () => (
       <>
+        {pinnedTags.length > 0 && (
+          <div className="space-y-0.5" aria-label="优先标签">
+            {pinnedTags.map((t) => renderTag(t))}
+          </div>
+        )}
+        {pinnedTags.length > 0 && (grouped.length > 0 || ungroupedTags.length > 0) && (
+          <div className="my-1 border-t border-[var(--border)]" />
+        )}
         {grouped.map(({ group, tags: gts }) => (
           <div key={group.id}>
             <div className="archive-tag-group-head flex items-center">
@@ -754,7 +821,7 @@ function Sidebar() {
         )}
       </>
     ),
-    [grouped, ungroupedTags, tags, addingTag, view, collapsedGroups, renaming, renameVal]
+    [grouped, ungroupedTags, pinnedTags, tags, addingTag, view, collapsedGroups, renaming, renameVal]
   )
 
   // 过滤时强制展开所有分区，保证命中项可见
@@ -1145,6 +1212,34 @@ function Sidebar() {
           onToggle={() => toggleSection('tags')}
           onManage={() => setTagManagerOpen(true)}
           manageLabel="管理标签"
+          extra={
+            <>
+              <button
+                aria-label="切换标签排序"
+                aria-pressed={tagSort === 'count'}
+                title={tagSort === 'count' ? '按使用频率排序（点击改为按名称）' : '按名称排序（点击改为按使用频率）'}
+                className="archive-section-action flex h-5 w-5 items-center justify-center text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  toggleTagSort()
+                }}
+              >
+                <Icon name={tagSort === 'count' ? 'listRows' : 'alignLeft'} size={12} />
+              </button>
+              <button
+                aria-label="隐藏未使用标签"
+                aria-pressed={tagHideUnused}
+                title={tagHideUnused ? '显示未使用的标签' : '隐藏未使用的标签'}
+                className="archive-section-action flex h-5 w-5 items-center justify-center text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  toggleTagHideUnused()
+                }}
+              >
+                <Icon name="eye" size={12} className={tagHideUnused ? 'opacity-40' : ''} />
+              </button>
+            </>
+          }
           onAdd={() => {
             setAddingTag(true)
             setAddingFolder(false)
@@ -1153,6 +1248,29 @@ function Sidebar() {
         />
         {!tagsFolded && (
           <div className="archive-section-body space-y-0.5">
+          {tagFilter && tagFilter.ids.length > 0 && (
+            <div className="mb-1 flex items-center gap-1 rounded-sm border border-[var(--accent)] bg-[var(--accent-soft)] px-1.5 py-1 text-[10.5px]">
+              <span className="text-[var(--accent-text)]">标签筛选 {tagFilter.ids.length} 个</span>
+              <button
+                aria-label="切换标签匹配方式"
+                title="切换「同时包含 / 任一命中」"
+                className="px-1 text-[var(--text-main)] hover:text-[var(--accent-text)]"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setTagFilterMode(tagFilter.mode === 'and' ? 'or' : 'and')
+                }}
+              >
+                {tagFilter.mode === 'and' ? '且' : '或'}
+              </button>
+              <button
+                aria-label="清除标签筛选"
+                className="ml-auto flex h-4 w-4 items-center justify-center text-[var(--text-dim)] hover:text-[var(--text-main)]"
+                onClick={() => clearTagFilter()}
+              >
+                <Icon name="close" size={10} />
+              </button>
+            </div>
+          )}
           {addingTag && (
             <input
               autoFocus
