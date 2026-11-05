@@ -314,6 +314,8 @@ export interface AppSettings {
   agentAllowAutoTag?: boolean
   /** Agent 可写文件夹 id（里程碑 183，空 = 只允许写「Agent 导入」） */
   agentWriteFolders?: number[]
+  /** Agent 建标签额度（里程碑 219）：0 = 只复用，正数 = 每次最多新建几个，-1 = 不限制 */
+  agentTagQuota?: number
   /** true = 不限制 Agent 可写文件夹 */
   agentScopeUnrestricted?: boolean
 }

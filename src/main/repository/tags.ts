@@ -1,5 +1,6 @@
 import { getDb } from '../db'
 import { stmt } from '../stmtCache'
+import { normalizeTagName, planAgentTags, type AgentTagPlan } from '../../shared/tagName'
 import type { Tag, TagGroup } from '../../shared/types'
 
 export function listTags(): Tag[] {
@@ -22,12 +23,20 @@ export function listTags(): Tag[] {
   ).all() as Tag[]
 }
 
-/** 按名查标签 id（不存在返回 null）。Agent 操作记录用：判断这次是不是"新建了标签"（里程碑 197） */
+/** 按名查标签 id（不存在返回 null）。Agent 操作记录用：判断这次是不是"新建了标签"（里程碑 197）
+ *  匹配顺序（里程碑 219）：先精确匹配，再按归一键匹配——`AI 生成` 能命中已存在的 `AI生成` */
 export function findTagId(name: string): number | null {
-  const row = getDb().prepare('SELECT id FROM tags WHERE name = ?').get(String(name ?? '').trim()) as
-    | { id: number }
-    | undefined
-  return row ? row.id : null
+  const db = getDb()
+  const trimmed = String(name ?? '').trim()
+  if (!trimmed) return null
+  const exact = db.prepare('SELECT id FROM tags WHERE name = ?').get(trimmed) as { id: number } | undefined
+  if (exact) return exact.id
+  const norm = normalizeTagName(trimmed)
+  if (!norm) return null
+  const byNorm = db
+    .prepare('SELECT id FROM tags WHERE norm_name = ? ORDER BY id LIMIT 1')
+    .get(norm) as { id: number } | undefined
+  return byNorm ? byNorm.id : null
 }
 
 /** 标签下未删除素材的数量（Agent 回退清理空标签用） */
@@ -43,16 +52,28 @@ export function tagAssetCount(tagId: number): number {
 
 export function createTag(name: string, color = ''): Tag {
   const db = getDb()
-  const existing = db
-    .prepare('SELECT id, name, color, group_id AS groupId, priority, excluded FROM tags WHERE name = ?')
-    .get(name) as Tag | undefined
-  if (existing) return { ...existing, count: 0 }
-  const info = db.prepare('INSERT INTO tags (name, color) VALUES (?, ?)').run(name, color)
-  return { id: Number(info.lastInsertRowid), name, color, count: 0, groupId: null, priority: 0, excluded: 0 }
+  const trimmed = String(name ?? '').trim()
+  if (!trimmed) throw new Error('标签名不能为空')
+  // 复用优先（里程碑 219）：精确或归一命中都返回已有标签，不再新建近重复项
+  const existingId = findTagId(trimmed)
+  if (existingId !== null) {
+    const existing = db
+      .prepare('SELECT id, name, color, group_id AS groupId, priority, excluded FROM tags WHERE id = ?')
+      .get(existingId) as Tag | undefined
+    if (existing) return { ...existing, count: 0 }
+  }
+  const info = db
+    .prepare('INSERT INTO tags (name, color, norm_name) VALUES (?, ?, ?)')
+    .run(trimmed, color, normalizeTagName(trimmed))
+  return { id: Number(info.lastInsertRowid), name: trimmed, color, count: 0, groupId: null, priority: 0, excluded: 0 }
 }
 
 export function renameTag(id: number, name: string): void {
-  getDb().prepare('UPDATE tags SET name = ? WHERE id = ?').run(name, id)
+  const trimmed = String(name ?? '').trim()
+  if (!trimmed) return
+  getDb()
+    .prepare('UPDATE tags SET name = ?, norm_name = ? WHERE id = ?')
+    .run(trimmed, normalizeTagName(trimmed), id)
 }
 
 export function setTagColor(id: number, color: string): void {
@@ -177,6 +198,20 @@ export function removeTagFromAssets(assetIds: string[], name: string): number {
     if (del.run(tag.id, id).changes > 0) removed++
   }
   return removed
+}
+
+/* ---------------- Agent 标签策略（里程碑 219） ---------------- */
+
+/**
+ * 解析 Agent 本次请求的标签：复用优先 + 限额新建。
+ * - 已存在（精确或归一命中）→ 用库里的规范写法；
+ * - 未知标签 → 额度内新建，额度用尽转 unknown（带近似候选），Agent 可据此改复用或询问用户；
+ * - quota：0 = 只复用，-1 = 不限制，正数 = 本次最多新建几个。
+ */
+export function resolveAgentTags(names: readonly string[], quota: number): AgentTagPlan {
+  const plan = planAgentTags(names, listTags(), quota)
+  for (const name of plan.create) createTag(name)
+  return plan
 }
 
 /* ---------------- 文件夹 ---------------- */

@@ -19,6 +19,7 @@ function maskedSettings(): Record<string, unknown> {
     agentAllowAutoTag: cfg.agentAllowAutoTag === true,
     agentWriteFolders: cfg.agentWriteFolders ?? [],
     agentScopeUnrestricted: cfg.agentScopeUnrestricted === true,
+    agentTagQuota: cfg.agentTagQuota ?? 2,
     aiProfiles: (cfg.aiProfiles ?? []).map((p) => ({
       name: p.name,
       baseUrl: p.baseUrl,
@@ -49,6 +50,7 @@ export function registerSettingsIpc(getWindow: () => BrowserWindow | null): void
         agentAllowAutoTag?: boolean
         agentWriteFolders?: number[]
         agentScopeUnrestricted?: boolean
+        agentTagQuota?: number
       }
     ) => {
       const cfg = loadConfig()
@@ -74,6 +76,11 @@ export function registerSettingsIpc(getWindow: () => BrowserWindow | null): void
         cfg.agentWriteFolders = [...new Set(patch.agentWriteFolders.filter((n): n is number => Number.isInteger(n)))].slice(0, 50)
       }
       if (patch.agentScopeUnrestricted !== undefined) cfg.agentScopeUnrestricted = !!patch.agentScopeUnrestricted
+      // Agent 建标签额度（里程碑 219）：只收 -1..10 的整数；0 = 只复用
+      if (patch.agentTagQuota !== undefined) {
+        const q = Number(patch.agentTagQuota)
+        if (Number.isFinite(q)) cfg.agentTagQuota = Math.max(-1, Math.min(10, Math.floor(q)))
+      }
       saveConfig(cfg)
       syncWatchers((count) => getWindow()?.webContents.send('clip:imported', count))
       return maskedSettings()

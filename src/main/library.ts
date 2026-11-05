@@ -36,6 +36,8 @@ export interface AppConfig {
   agentWriteFolders?: number[]
   /** true = 不限制 Agent 可写文件夹（显式逃生门，默认关） */
   agentScopeUnrestricted?: boolean
+  /** Agent 建标签额度（里程碑 219）：0 = 只复用已有标签；正数 = 每次请求最多新建几个；-1 = 不限制。缺省 2 */
+  agentTagQuota?: number
   /** 浮动白板窗状态(位置/尺寸/最小化),重开保持与上次一致 */
   floatingWindow?: { x: number; y: number; width: number; height: number; minimized: boolean }
 }
@@ -143,6 +145,11 @@ export function loadConfig(): AppConfig {
         ? raw.agentWriteFolders.filter((n: unknown): n is number => Number.isInteger(n)).slice(0, 50)
         : [],
       agentScopeUnrestricted: raw.agentScopeUnrestricted === true,
+      // 建标签额度：只收 -1..10 的整数，脏数据回落到默认 2（0 = 只复用）
+      agentTagQuota:
+        typeof raw.agentTagQuota === 'number' && Number.isFinite(raw.agentTagQuota)
+          ? Math.max(-1, Math.min(10, Math.floor(raw.agentTagQuota)))
+          : 2,
       floatingWindow: raw.floatingWindow
     }
     if (!keyMigrated && typeof raw.aiApiKey === 'string' && raw.aiApiKey && !raw.aiApiKey.startsWith(ENC_PREFIX)) {

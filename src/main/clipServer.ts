@@ -8,9 +8,11 @@ import { assetKindOf, collectFiles, importFiles, isKnownAssetByNameSize } from '
 import { getDb } from './db'
 import { getLibraryPath, loadConfig } from './library'
 import type { AppConfig } from './library'
+import { normalizeTagName, type AgentTagPlan } from '../shared/tagName'
 import {
   addBoardItems,
   addTagToAssets,
+  resolveAgentTags,
   addToFolder,
   assetFolderIds,
   assetsHavingTag,
@@ -44,6 +46,12 @@ import type { ImportFileDetail, NewBoardItem } from '../shared/types'
 const PORT = Number(process.env.LUMEN_CLIP_PORT) || 45678
 const MAX_BODY = 80 * 1024 * 1024 // 80MB
 const MAX_IMAGE_BYTES = 80 * 1024 * 1024 // imageUrl 下载上限,与请求体一致
+
+/** Agent 建标签额度（里程碑 219）：0 = 只复用，正数 = 本次最多新建几个，-1 = 不限制；缺省 2 */
+function agentTagQuota(): number {
+  const q = loadConfig().agentTagQuota
+  return typeof q === 'number' && Number.isFinite(q) ? q : 2
+}
 
 /**
  * 鉴权头:只接受可信本机客户端(剪藏扩展 / AI Agent)的请求。
@@ -404,6 +412,8 @@ async function importFromPaths(
   boardId: number | null
   autoTagStarted: boolean
   similar: { id: string; name: string; matches: { id: string; name: string }[] }[]
+  /** 标签处理结果（里程碑 219）：实际应用 / 本次新建 / 未创建（额度用尽，带近似候选） */
+  tags?: { applied: string[]; created: string[]; unknown: { name: string; suggestions: string[] }[] }
 }> {
   const raw = payload.paths == null ? [] : Array.isArray(payload.paths) ? payload.paths : [payload.paths]
   const paths = raw.map((p) => String(p).trim()).filter(Boolean)
@@ -498,15 +508,21 @@ async function importFromPaths(
     : payload.tags == null
       ? []
       : [payload.tags]
-  const tagNames = (tags as unknown[]).slice(0, MAX_TAGS_PER_CALL).map(sanitizeName).filter(Boolean)
+  const requestedTags = (tags as unknown[]).slice(0, MAX_TAGS_PER_CALL).map(sanitizeName).filter(Boolean)
+  // Agent 建标签策略（里程碑 219）：复用优先 + 限额新建；额度外的未知标签不落库，回给 Agent 候选
+  const tagPlan: AgentTagPlan =
+    requestedTags.length > 0 && applyIds.length > 0
+      ? resolveAgentTags(requestedTags, agentTagQuota())
+      : { apply: [], create: [], unknown: [] }
+  const appliedTags = tagPlan.apply
   // 记录每个标签"应用前是否已存在"（里程碑 197）：本次新建的标签在回退后若无素材则一并清掉
   const tagWasNew = new Map<string, boolean>()
   if (applyIds.length > 0) {
-    for (const t of tagNames) {
+    for (const t of appliedTags) {
       tagPre.set(t, assetsHavingTag(applyIds, t))
-      tagWasNew.set(t, findTagId(t) === null)
+      tagWasNew.set(t, tagPlan.create.includes(t))
     }
-    for (const t of tagNames) addTagToAssets(applyIds, t)
+    for (const t of appliedTags) addTagToAssets(applyIds, t)
   }
 
   // 归档:显式 folder 优先(作用于涉及的全部素材,幂等);
@@ -572,7 +588,7 @@ async function importFromPaths(
   }
   // ③标签(每个标签一条;同样只记本次真正新加上的——快照在应用之前取,见上文 tagPre)
   if (applyIds.length > 0) {
-    for (const t of tagNames) {
+    for (const t of appliedTags) {
       const already = tagPre.get(t) ?? new Set<string>()
       const changedTagIds = applyIds.filter((id) => !already.has(id))
       if (changedTagIds.length === 0) continue
@@ -633,6 +649,8 @@ async function importFromPaths(
     folderPath: folderSegments.length > 0 ? folderSegments.join('/') : importedIds.length > 0 ? AGENT_DEFAULT_FOLDER : '',
     /** 本次请求新建的文件夹路径（回退时会一并清理，Agent 可告知用户"同时新建了这些夹"） */
     createdFolders: createdFolders.map((c) => c.path),
+    /** 本次实际应用的标签（含复用）/ 新建的标签 / 因额度未创建且带近似候选的未知标签（里程碑 219） */
+    tags: { applied: appliedTags, created: tagPlan.create, unknown: tagPlan.unknown },
     boardId,
     autoTagStarted,
     similar
@@ -787,7 +805,19 @@ export function startClipServer(
     }
 
     if (req.method === 'GET' && url.pathname === '/tags') {
-      json(res, 200, { ok: true, tags: listTags() })
+      // q 关键词：Agent 建标签前先搜已有标签，避免造近义词（里程碑 219）
+      const q = (url.searchParams.get('q') ?? '').trim()
+      const all = listTags()
+      const filtered = q
+        ? all
+            .filter(
+              (t) =>
+                t.name.toLowerCase().includes(q.toLowerCase()) ||
+                normalizeTagName(t.name).includes(normalizeTagName(q))
+            )
+            .slice(0, 200)
+        : all
+      json(res, 200, { ok: true, total: all.length, tags: filtered })
       return
     }
 
@@ -1001,22 +1031,34 @@ export function startClipServer(
             json(res, 200, { ok: true, tagged: 0 })
             return
           }
+          // Agent 建标签策略（里程碑 219）：复用优先 + 限额新建；额度外的未知标签直接拒绝并给候选
+          const plan = resolveAgentTags([tag], agentTagQuota())
+          if (plan.unknown.length > 0) {
+            json(res, 422, {
+              ok: false,
+              code: 'unknown_tag',
+              unknownTag: plan.unknown[0].name,
+              suggestions: plan.unknown[0].suggestions
+            })
+            return
+          }
+          const canonical = plan.apply[0] ?? tag
           // 只把"本次真正新加上该标签"的素材记进操作记录：原本就带这个标签的不记，
           // 回退时才不会摘掉用户原有的标签（里程碑 182）
-          const already = assetsHavingTag(ids, tag)
+          const already = assetsHavingTag(ids, canonical)
           const changed = ids.filter((id) => !already.has(id))
-          const tagIsNew = findTagId(tag) === null
-          addTagToAssets(ids, tag)
+          const tagIsNew = plan.create.length > 0
+          addTagToAssets(ids, canonical)
           if (changed.length > 0) {
             logAgentOp(
               'tag',
-              `给 ${changed.length} 个素材打标签「${tag}」`,
-              { items: itemsFromAssetIds(changed), tag, createdTagId: tagIsNew ? findTagId(tag) ?? undefined : undefined },
+              `给 ${changed.length} 个素材打标签「${canonical}」`,
+              { items: itemsFromAssetIds(changed), tag: canonical, createdTagId: tagIsNew ? findTagId(canonical) ?? undefined : undefined },
               changed.length
             )
           }
           if (ids.length > 0) onImported?.(0, 'agent')
-          json(res, 200, { ok: true, tagged: ids.length, changed: changed.length })
+          json(res, 200, { ok: true, tagged: ids.length, changed: changed.length, tag: canonical, created: tagIsNew })
         })
         .catch((err: Error) => {
           if (!res.headersSent) json(res, 400, { ok: false, error: err.message })

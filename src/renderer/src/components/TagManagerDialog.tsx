@@ -1,10 +1,21 @@
 import { useMemo, useRef, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
+import { normalizeTagName } from '@shared/tagName'
 import Icon from './Icon'
 import ConfirmDialog from './ConfirmDialog'
 import { useDialogFocus } from '../useDialogFocus'
 
 type PendingAction = { type: 'merge' } | { type: 'move' } | null
+
+/** 短标签的编辑距离（健康报告用；超过 1 视为不同） */
+function editDistance1(a: string, b: string): number {
+  if (Math.abs(a.length - b.length) > 1) return 2
+  const [s, l] = a.length <= b.length ? [a, b] : [b, a]
+  let i = 0
+  while (i < s.length && s[i] === l[i]) i++
+  if (s.length === l.length) return s.slice(i + 1) === l.slice(i + 1) ? 1 : 2
+  return s.slice(i) === l.slice(i + 1) ? 1 : 2
+}
 
 /**
  * 标签管理对话框：多选批量操作（合并/移组/优先/删除）+ 行内重命名。
@@ -22,6 +33,71 @@ export default function TagManagerDialog({ onClose }: { onClose: () => void }) {
   const [renamingId, setRenamingId] = useState<number | null>(null)
   const [renameVal, setRenameVal] = useState('')
   const [confirmDel, setConfirmDel] = useState(false)
+  const [view, setView] = useState<'all' | 'health'>('all')
+  const [mergeTarget, setMergeTarget] = useState<Record<string, number>>({})
+  const [confirmUnused, setConfirmUnused] = useState(false)
+
+  /** 标签健康扫描（里程碑 219）：近重复（归一/包含/近形）、未使用、仅用一次。
+   *  只依赖 tags，打开健康视图时算一次；上千标签约几十毫秒 */
+  const health = useMemo(() => {
+    const parent = new Map<number, number>()
+    const find = (x: number): number => {
+      const p = parent.get(x) ?? x
+      if (p === x) return x
+      const root = find(p)
+      parent.set(x, root)
+      return root
+    }
+    const union = (a: number, b: number) => {
+      const ra = find(a)
+      const rb = find(b)
+      if (ra !== rb) parent.set(ra, rb)
+    }
+    const byNorm = new Map<string, number[]>()
+    for (const t of tags) {
+      const k = normalizeTagName(t.name)
+      if (!k) continue
+      const arr = byNorm.get(k) ?? []
+      arr.push(t.id)
+      byNorm.set(k, arr)
+    }
+    for (const arr of byNorm.values()) for (let i = 1; i < arr.length; i++) union(arr[0], arr[i])
+    // 包含/近形：只比短标签（2-6 字、长度差 ≤2），避免「场景」和所有含它的标签被并成一大组
+    const short = tags.filter((t) => {
+      const n = normalizeTagName(t.name).length
+      return n >= 2 && n <= 6
+    })
+    for (let i = 0; i < short.length; i++) {
+      const a = normalizeTagName(short[i].name)
+      for (let j = i + 1; j < short.length; j++) {
+        const b = normalizeTagName(short[j].name)
+        if (Math.abs(a.length - b.length) > 2) continue
+        if (a === b || a.includes(b) || b.includes(a) || editDistance1(a, b) <= 1) {
+          union(short[i].id, short[j].id)
+        }
+      }
+    }
+    const groupsMap = new Map<number, (typeof tags)[number][]>()
+    for (const t of tags) {
+      const r = find(t.id)
+      const arr = groupsMap.get(r) ?? []
+      arr.push(t)
+      groupsMap.set(r, arr)
+    }
+    const groups = [...groupsMap.values()]
+      .filter((g) => g.length >= 2)
+      .map((g) => g.sort((x, y) => y.count - x.count || x.name.localeCompare(y.name, 'zh-CN')))
+      .sort(
+        (a, b) =>
+          b.length - a.length ||
+          b.reduce((s, t) => s + t.count, 0) - a.reduce((s, t) => s + t.count, 0)
+      )
+    return {
+      groups,
+      unused: tags.filter((t) => t.count === 0),
+      singleton: tags.filter((t) => t.count === 1)
+    }
+  }, [tags])
 
   const groupNameOf = (groupId: number | null): string =>
     groupId == null ? '未分组' : (tagGroups.find((g) => g.id === groupId)?.name ?? '未知分组')
@@ -77,6 +153,25 @@ export default function TagManagerDialog({ onClose }: { onClose: () => void }) {
     await afterMutate()
     setPending(null)
     useLibraryStore.getState().showToast(`已合并 ${ids.length - (selected.has(targetId) ? 1 : 0)} 个标签`)
+  }
+
+  /** 健康报告：把一组近重复标签并入目标标签 */
+  const mergeGroup = async (group: (typeof tags)[number][], targetId: number) => {
+    for (const t of group) {
+      if (t.id !== targetId) await window.api.mergeTags(t.id, targetId)
+    }
+    await afterMutate()
+    const targetName = group.find((t) => t.id === targetId)?.name ?? ''
+    useLibraryStore.getState().showToast(`已合并 ${group.length - 1} 个标签到「${targetName}」`)
+  }
+
+  /** 健康报告：删除全部未使用标签（两次点击确认） */
+  const deleteUnused = async () => {
+    const ids = health.unused.map((t) => t.id)
+    for (const id of ids) await window.api.deleteTag(id)
+    await afterMutate()
+    setConfirmUnused(false)
+    useLibraryStore.getState().showToast(`已删除 ${ids.length} 个未使用标签`)
   }
 
   /** 批量移组 */
@@ -210,15 +305,123 @@ export default function TagManagerDialog({ onClose }: { onClose: () => void }) {
             标签管理
             <span className="mono text-[11px] text-[var(--text-faint)]">{tags.length} 个标签</span>
           </h2>
-          <button
-            aria-label="关闭"
-            className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]"
-            onClick={onClose}
-          >
-            <Icon name="close" size={13} />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              className="btn-ghost"
+              aria-pressed={view === 'health'}
+              onClick={() => setView(view === 'health' ? 'all' : 'health')}
+            >
+              {view === 'health' ? '返回标签' : '健康检查'}
+            </button>
+            <button
+              aria-label="关闭"
+              className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-dim)] transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]"
+              onClick={onClose}
+            >
+              <Icon name="close" size={13} />
+            </button>
+          </div>
         </div>
 
+        {/* 健康检查（里程碑 219）：近重复合并 / 未使用清理 */}
+        {view === 'health' && (
+          <div className="modal-scroll min-h-0 flex-1 space-y-3 overflow-y-auto">
+            <div className="rounded-lg border border-[var(--border)] p-2 text-[11px] text-[var(--text-dim)]">
+              近重复 <b className="text-[var(--text-main)]">{health.groups.length}</b> 组 · 未使用{' '}
+              <b className="text-[var(--text-main)]">{health.unused.length}</b> · 仅用一次{' '}
+              <b className="text-[var(--text-main)]">{health.singleton.length}</b>
+            </div>
+            {health.groups.map((group) => {
+              const key = group.map((t) => t.id).join('-')
+              const target = group.find((t) => t.id === mergeTarget[key]) ?? group[0]
+              return (
+                <div key={key} className="rounded-lg border border-[var(--border)] p-2">
+                  <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1.5">
+                    <span className="section-title">近重复（{group.length}）</span>
+                    <span className="flex items-center gap-1.5">
+                      <select
+                        aria-label="合并目标"
+                        className="field-input py-0.5 text-[11px]"
+                        value={target.id}
+                        onChange={(e) => setMergeTarget((m) => ({ ...m, [key]: Number(e.target.value) }))}
+                      >
+                        {group.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}（{t.count}）
+                          </option>
+                        ))}
+                      </select>
+                      <button className="btn-ghost" onClick={() => void mergeGroup(group, target.id)}>
+                        合并到此
+                      </button>
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {group.map((t) => (
+                      <span
+                        key={t.id}
+                        className={`rounded-sm border px-1.5 py-0.5 text-[11px] ${
+                          t.id === target.id
+                            ? 'border-[var(--accent)] text-[var(--accent-text)]'
+                            : 'border-[var(--border)] text-[var(--text-dim)]'
+                        }`}
+                      >
+                        {t.name}
+                        <span className="mono ml-1 text-[10px] text-[var(--text-faint)]">{t.count}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+            {health.groups.length === 0 && (
+              <p className="py-3 text-center text-[12px] text-[var(--text-faint)]">没有发现近重复标签</p>
+            )}
+            {health.unused.length > 0 && (
+              <div className="rounded-lg border border-[var(--border)] p-2">
+                <div className="mb-1.5 flex items-center justify-between gap-1.5">
+                  <span className="section-title">未使用标签（{health.unused.length}）</span>
+                  {confirmUnused ? (
+                    <span className="flex items-center gap-1.5">
+                      <button className="btn-ghost text-[var(--danger)]" onClick={() => void deleteUnused()}>
+                        确认删除
+                      </button>
+                      <button className="btn-ghost" onClick={() => setConfirmUnused(false)}>
+                        取消
+                      </button>
+                    </span>
+                  ) : (
+                    <button className="btn-ghost" onClick={() => setConfirmUnused(true)}>
+                      删除全部未使用
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {health.unused.slice(0, 80).map((t) => (
+                    <span
+                      key={t.id}
+                      className="rounded-sm border border-[var(--border)] px-1.5 py-0.5 text-[11px] text-[var(--text-dim)]"
+                    >
+                      {t.name}
+                    </span>
+                  ))}
+                  {health.unused.length > 80 && (
+                    <span className="px-1 text-[10px] text-[var(--text-faint)]">
+                      …另有 {health.unused.length - 80} 个
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+            {health.singleton.length > 0 && (
+              <p className="text-[11px] leading-[1.5] text-[var(--text-faint)]">
+                仅被 1 个素材使用的标签：{health.singleton.length} 个（多为一次性词，可在「全部标签」里筛选后合并或删除）
+              </p>
+            )}
+          </div>
+        )}
+        {view === 'all' && (
+        <>
         {/* 搜索 */}
         <input
           type="text"
@@ -341,6 +544,8 @@ export default function TagManagerDialog({ onClose }: { onClose: () => void }) {
             完成
           </button>
         </div>
+        </>
+        )}
       </div>
 
       {confirmDel && (

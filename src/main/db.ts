@@ -4,6 +4,7 @@ import { join } from 'path'
 import { dialog } from 'electron'
 import { clearStmtCache } from './stmtCache'
 import { logger } from './logger'
+import { normalizeTagName } from '../shared/tagName'
 
 let db: Database.Database | null = null
 /** 当前打开库的 library.db 绝对路径(closeDb 写干净标记用) */
@@ -259,8 +260,25 @@ function migrate(d: Database.Database): void {
   ensureColumns(d, 'tags', {
     group_id: 'INTEGER',
     priority: 'INTEGER NOT NULL DEFAULT 0',
-    excluded: 'INTEGER NOT NULL DEFAULT 0'
+    excluded: 'INTEGER NOT NULL DEFAULT 0',
+    // 标签名归一键（里程碑 219）：`AI生成`/`AI 生成`/`AI-生成` 共用同一个判重口径，
+    // 建标签/Agent 导入/健康报告都查这一列；存量在下面一次性回填
+    norm_name: "TEXT NOT NULL DEFAULT ''"
   })
+  // 回填存量归一键（只补空值；createTag/renameTag 之后会同步维护）
+  {
+    const rows = d.prepare("SELECT id, name FROM tags WHERE norm_name = ''").all() as { id: number; name: string }[]
+    if (rows.length > 0) {
+      const upd = d.prepare('UPDATE tags SET norm_name = ? WHERE id = ?')
+      const run = d.transaction(() => {
+        for (const r of rows) upd.run(normalizeTagName(r.name), r.id)
+      })
+      run()
+      logger.info('[db]', `已回填 ${rows.length} 个标签的归一键`)
+    }
+  }
+  // 非唯一索引：存量里可能已经有归一后重复的标签，交给健康报告让用户确认合并
+  d.exec('CREATE INDEX IF NOT EXISTS idx_tags_norm ON tags(norm_name)')
   // sha256 列补好之后再建索引（里程碑 182）。作用：查重的"内容精确命中"一步走索引，
   // 避免每次导入都对 assets 全表扫 sha256。
   d.exec('CREATE INDEX IF NOT EXISTS idx_assets_sha256_size ON assets(sha256, size)')

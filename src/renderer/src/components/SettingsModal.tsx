@@ -841,6 +841,30 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             </label>
 
             <div className="mt-2 border-t border-[var(--border)] pt-2">
+              <label className="flex items-start justify-between gap-3 text-[11.5px]">
+                <span>
+                  Agent 新建标签额度
+                  <span className="block text-[10.5px] leading-[1.5] text-[var(--text-faint)]">
+                    已有标签（含大小写/空格/分隔符差异）优先复用；额度内的新词才会创建，超出的会回给 Agent 近似候选，从源头避免标签越堆越多
+                  </span>
+                </span>
+                <select
+                  aria-label="Agent 新建标签额度"
+                  className="field-input shrink-0 py-1 text-[11.5px]"
+                  value={settings.agentTagQuota ?? 2}
+                  onChange={(e) => void update({ agentTagQuota: Number(e.target.value) })}
+                >
+                  <option value={0}>只复用</option>
+                  <option value={1}>最多 1 个</option>
+                  <option value={2}>最多 2 个</option>
+                  <option value={3}>最多 3 个</option>
+                  <option value={5}>最多 5 个</option>
+                  <option value={-1}>不限制</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="mt-2 border-t border-[var(--border)] pt-2">
               <label className="flex cursor-pointer items-start gap-2 text-[11.5px]">
                 <input
                   type="checkbox"
