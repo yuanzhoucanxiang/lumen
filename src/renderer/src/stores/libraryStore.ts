@@ -83,6 +83,22 @@ export type ViewType =
   | { type: 'untagged' }
   | { type: 'onboard' }
   | { type: 'recent' }
+  | { type: 'boardSource' }
+
+/** 白板参考来源（里程碑 227）：只记录"素材来源"类视图，其余视图不写入 */
+function boardRefFromView(view: ViewType): { type: string; id?: number } | null {
+  if (view.type === 'folder' || view.type === 'tag') return { type: view.type, id: view.id }
+  if (view.type === 'starred' || view.type === 'all') return { type: view.type }
+  return null
+}
+function viewFromBoardRef(ref: { type?: string; id?: number } | null): ViewType {
+  if (!ref) return { type: 'all' }
+  if ((ref.type === 'folder' || ref.type === 'tag') && typeof ref.id === 'number') {
+    return { type: ref.type, id: ref.id } as ViewType
+  }
+  if (ref.type === 'starred') return { type: 'starred' }
+  return { type: 'all' }
+}
 
 /** 白板布局模式：off=纯素材库, split=素材库+白板分屏, board=白板全屏 */
 export type BoardViewMode = 'off' | 'split' | 'board'
@@ -391,6 +407,19 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       aiSearch: null,
       aiSearchPending: null
     })
+    // 白板模式下切换来源 = 记住这块白板的参考来源（里程碑 227）
+    const s = get()
+    if (s.boardViewMode === 'board' && s.activeBoardId != null) {
+      const ref = boardRefFromView(view)
+      if (ref) {
+        const json = JSON.stringify(ref)
+        const board = s.boards.find((b) => b.id === s.activeBoardId)
+        if (!board || board.reference !== json) {
+          set({ boards: s.boards.map((b) => (b.id === s.activeBoardId ? { ...b, reference: json } : b)) })
+          void window.api.setBoardReference(s.activeBoardId, json)
+        }
+      }
+    }
     void get().refreshAssets()
   },
   /** 打开/切换白板（画布常驻,切换当前白板）。立即清空元素:旧板元素不属于新板,
@@ -406,6 +435,15 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       boardItems: [],
       boardItemsBoardId: null
     })
+    // 恢复该白板的参考来源（里程碑 227）：白板重开时参考架回到上次的来源
+    const board = get().boards.find((b) => b.id === boardId)
+    let ref: { type?: string; id?: number } | null = null
+    try {
+      ref = board?.reference ? (JSON.parse(board.reference) as { type?: string; id?: number }) : null
+    } catch {
+      ref = null
+    }
+    get().setView(viewFromBoardRef(ref))
     void get().refreshBoardItems(boardId)
   },
   setActiveBoardId: (boardId) => {
@@ -564,6 +602,22 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           }
         }
       }
+      // 白板素材（里程碑 227）：用当前白板的参考来源作为查询
+      let boardRef: { type?: string; id?: number } | null = null
+      if (view.type === 'boardSource') {
+        const b = s.boards.find((x) => x.id === s.activeBoardId)
+        try {
+          boardRef = b?.reference ? (JSON.parse(b.reference) as { type?: string; id?: number }) : null
+        } catch {
+          boardRef = null
+        }
+      }
+      const refFolderId = boardRef?.type === 'folder' && typeof boardRef.id === 'number' ? boardRef.id : undefined
+      const refTagId = boardRef?.type === 'tag' && typeof boardRef.id === 'number' ? boardRef.id : undefined
+      const refStarred = boardRef?.type === 'starred'
+      // 没有当前白板时「白板素材」应显示空，而不是全库
+      const boardSourceEmpty = view.type === 'boardSource' && s.activeBoardId == null
+
       // 大分类（里程碑 225）：图片/视频按扩展名，未分类/未标签/已上白板/最近收集各自走查询字段
       const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'tiff', 'tif', 'psd', 'heic', 'heif', 'ai', 'svg']
       const kindExts = view.type === 'kind' ? (view.kind === 'image' ? IMAGE_EXTS : VIDEO_EXTS) : null
@@ -582,7 +636,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         colorCountMax: s.colorCountMax || undefined,
         // 「已收藏」视图改走服务端 star 过滤:此前是取回一页再客户端 filter star>0,
         // 分页下会让每页条数不齐、offset 错位；star>=1 与 star>0 等价
-        starMin: view.type === 'starred' ? Math.max(s.starMin, 1) : s.starMin || undefined,
+        starMin:
+          view.type === 'starred' || refStarred ? Math.max(s.starMin, 1) : s.starMin || undefined,
         untagged: view.type === 'untagged' ? true : s.untagged || undefined,
         noFolder: view.type === 'uncategorized' ? true : undefined,
         withinDays: view.type === 'recent' ? 7 : s.withinDays || undefined,
@@ -590,13 +645,15 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         sortBy: s.sortBy,
         sortDesc: s.sortDesc,
         deleted: view.type === 'trash',
-        folderId: view.type === 'folder' && !smartQuery ? view.id : undefined,
+        folderId: boardSourceEmpty ? -1 : view.type === 'folder' && !smartQuery ? view.id : refFolderId,
         tagIds:
           s.tagFilter && s.tagFilter.ids.length > 0
             ? s.tagFilter.ids
             : view.type === 'tag'
               ? [view.id]
-              : undefined,
+              : refTagId != null
+                ? [refTagId]
+                : undefined,
         tagMode:
           s.tagFilter && s.tagFilter.ids.length > 1 ? s.tagFilter.mode : undefined,
         ...(smartQuery ?? {})

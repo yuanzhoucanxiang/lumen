@@ -212,6 +212,9 @@ const api = {
   setBoardAppearance: (boardId: number, appearanceJson: string): Promise<void> =>
     ipcRenderer.invoke('board:setAppearance', boardId, appearanceJson),
   /** 保存白板视口(缩放+位置),重开保持;视图状态不触发列表重排 */
+  /** 参考来源（里程碑 227）：白板重开恢复，供「白板素材」分类使用 */
+  setBoardReference: (boardId: number, referenceJson: string): Promise<void> =>
+    ipcRenderer.invoke('board:setReference', boardId, referenceJson),
   setBoardViewport: (boardId: number, viewportJson: string): Promise<void> =>
     ipcRenderer.invoke('board:setViewport', boardId, viewportJson),
   exportBoardSvg: (boardId: number, svg: string): Promise<{ target: string } | null> =>

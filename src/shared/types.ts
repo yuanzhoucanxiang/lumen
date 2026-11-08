@@ -70,6 +70,8 @@ export interface Board {
   appearance: string
   /** 上次视口 JSON：{s:缩放, x:平移x, y:平移y}，''=未保存(首开用默认视口)。白板重开保持缩放与位置 */
   viewport: string
+  /** 参考来源 JSON（里程碑 227）：{type:'all'|'folder'|'tag'|'starred', id?}；'' = 全部素材 */
+  reference?: string
 }
 
 /** 形状元素规格（points 为元素内归一化坐标 0-1，渲染时乘 width/height） */

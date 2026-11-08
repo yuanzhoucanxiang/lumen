@@ -222,6 +222,9 @@ async function main() {
     check('从素材上空格拖动只平移画布', panResult.ok && panResult.transform.includes('140px') && persistedTransform.includes('140px'), `${panResult.transform} / ${persistedTransform}`)
     check('平移画布不会改写素材坐标', JSON.stringify(positionBeforePan) === JSON.stringify(positionAfterPan), `${JSON.stringify(positionBeforePan)} → ${JSON.stringify(positionAfterPan)}`)
 
+    // 先适配全部内容（F）：画布元素在视口外时不渲染 <img>，会让下面的计数假红
+    await run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', bubbles: true }))`)
+    await sleep(400)
     await run(`
       const search = document.querySelector('input[aria-label="搜索参考素材"]')
       const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set

@@ -6,7 +6,7 @@ import type { Board, BoardItem, BoardItemPatch, NewBoardItem } from '../../share
 export function listBoards(): Board[] {
   return stmt(
     getDb(),
-    `SELECT id, name, created_at AS createdAt, updated_at AS updatedAt, guides, appearance, viewport
+    `SELECT id, name, created_at AS createdAt, updated_at AS updatedAt, guides, appearance, viewport, reference
        FROM boards ORDER BY updated_at DESC`
   ).all() as Board[]
 }
@@ -15,7 +15,23 @@ export function createBoard(name: string): Board {
   const db = getDb()
   const now = Date.now()
   const info = db.prepare('INSERT INTO boards (name, created_at, updated_at) VALUES (?, ?, ?)').run(name, now, now)
-  return { id: Number(info.lastInsertRowid), name, createdAt: now, updatedAt: now, guides: '[]', appearance: '{"bg":"dark","grid":true,"gridSize":24}', viewport: '' }
+  return {
+    id: Number(info.lastInsertRowid),
+    name,
+    createdAt: now,
+    updatedAt: now,
+    guides: '[]',
+    appearance: '{"bg":"dark","grid":true,"gridSize":24}',
+    viewport: '',
+    reference: ''
+  }
+}
+
+/** 保存参考来源（里程碑 227）：白板重开恢复该来源，供「白板素材」分类使用 */
+export function updateBoardReference(id: number, reference: string): void {
+  getDb()
+    .prepare('UPDATE boards SET reference = ?, updated_at = ? WHERE id = ?')
+    .run(reference.slice(0, 500), Date.now(), id)
 }
 
 export function renameBoard(id: number, name: string): void {

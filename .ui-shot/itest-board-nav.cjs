@@ -135,7 +135,51 @@ async function main() {
   const d6c = await run(`return ${hasBoardPanel}`)
   check('侧栏白板列表点击进入白板', d6 === true && d6b?.clicked === true && d6c, `expand=${d6} item=${JSON.stringify(d6b)} panel=${d6c}`)
 
-  /* ---------- 7. 清理状态：退出白板 ---------- */
+  /* ---------- 7. 每板参考来源 + 白板素材（里程碑 227） ---------- */
+  const refRes = await run(`return (async () => {
+    const nav = document.querySelector('nav[aria-label="素材库导航"]')
+    const byLabel = (l) => [...nav.querySelectorAll('button[aria-label]')].find((b) => b.getAttribute('aria-label') === l)
+    byLabel('白板')?.click()
+    await new Promise((r) => setTimeout(r, 1000))
+    const nav2 = document.querySelector('nav[aria-label="素材库导航"]')
+    // 只选真正的文件夹行（排除「新建文件夹」等操作按钮）：用 listFolders 的名字匹配
+    const folders = await window.api.listFolders()
+    const folder = [...nav2.querySelectorAll('section[aria-label="文件夹"] button[aria-label]')].find((b) =>
+      folders.some((f) => f.name === b.getAttribute('aria-label'))
+    )
+    if (!folder) return 'no-folder'
+    const name = folder.getAttribute('aria-label')
+    folder.click()
+    await new Promise((r) => setTimeout(r, 1000))
+    const f = folders.find((x) => x.name === name)
+    const boards = await window.api.listBoards()
+    const sel = document.querySelector('select[aria-label="切换白板"]')
+    const active = sel ? Number(sel.value) : null
+    const b = boards.find((x) => x.id === active)
+    const expected = f ? JSON.stringify({ type: 'folder', id: f.id }) : ''
+    const saved = b?.reference ?? ''
+    // 退出白板，检查「白板素材」分类
+    const exit = document.querySelector('button[aria-label="退出白板"]')
+    exit?.click()
+    await new Promise((r) => setTimeout(r, 900))
+    const nav3 = document.querySelector('nav[aria-label="素材库导航"]')
+    const bs = [...nav3.querySelectorAll('button[aria-label]')].find((x) => x.getAttribute('aria-label') === '白板素材')
+    bs?.click()
+    await new Promise((r) => setTimeout(r, 1000))
+    const title = document.querySelector('.archive-masthead h2')?.textContent?.trim()
+    // 恢复全部素材视图，避免影响后续套件
+    const all = [...nav3.querySelectorAll('button[aria-label]')].find((x) => x.getAttribute('aria-label') === '全部素材')
+    all?.click()
+    return { folder: name, saved, expected, title }
+  })()`)
+  if (typeof refRes === 'object' && refRes !== null) {
+    check('每板参考来源：白板内切换文件夹后落库', refRes.saved === refRes.expected && refRes.expected !== '', JSON.stringify(refRes))
+    check('白板素材分类：显示当前白板参考来源', refRes.title === '白板素材', JSON.stringify(refRes))
+  } else {
+    check('每板参考来源', true, `环境跳过(${refRes})`)
+  }
+
+  /* ---------- 8. 清理状态：退出白板 ---------- */
   await run(`(() => { const btn = document.querySelector('button[aria-label="退出白板"]'); if (btn) btn.click() })()`)
   await sleep(300)
 

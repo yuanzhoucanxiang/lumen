@@ -1136,6 +1136,12 @@ function Sidebar() {
           onClick={() => setView({ type: 'onboard' })}
         />
         <NavItem
+          active={view.type === 'boardSource'}
+          icon="shapes"
+          label="白板素材"
+          onClick={() => setView({ type: 'boardSource' })}
+        />
+        <NavItem
           active={view.type === 'recent'}
           icon="rotate"
           label="最近收集"

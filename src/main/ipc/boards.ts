@@ -1,6 +1,6 @@
 import { BrowserWindow, app, dialog, ipcMain } from 'electron'
 import { writeFileSync } from 'fs'
-import { addBoardItem, addBoardItems, bringBoardItemToFront, createBoard, deleteBoard, deleteBoardItem, deleteBoardItems, listBoardItems, listBoards, renameBoard, updateBoardAppearance, updateBoardGuides, updateBoardItem, updateBoardItems, updateBoardViewport } from '../repository'
+import { addBoardItem, addBoardItems, bringBoardItemToFront, createBoard, deleteBoard, deleteBoardItem, deleteBoardItems, listBoardItems, listBoards, renameBoard, updateBoardAppearance, updateBoardGuides, updateBoardItem, updateBoardItems, updateBoardReference, updateBoardViewport } from '../repository'
 import { exportBoardToFile, importBoardFromFile } from '../boardFile'
 import { closeFloatingBoardIfBoard } from '../floatingBoard'
 import type { BoardItem, NewBoardItem } from '../../shared/types'
@@ -26,6 +26,9 @@ export function registerBoardsIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('board:setGuides', (_e, boardId: number, guidesJson: string) => updateBoardGuides(boardId, guidesJson))
   ipcMain.handle('board:setAppearance', (_e, boardId: number, appearanceJson: string) => updateBoardAppearance(boardId, appearanceJson))
   ipcMain.handle('board:setViewport', (_e, boardId: number, viewportJson: string) => updateBoardViewport(boardId, viewportJson))
+  ipcMain.handle('board:setReference', (_e, boardId: number, referenceJson: string) =>
+    updateBoardReference(boardId, referenceJson)
+  )
   ipcMain.handle('board:exportSvg', async (_e, boardId: number, svg: string) => {
     const win = getWindow()
     if (!win) return null
