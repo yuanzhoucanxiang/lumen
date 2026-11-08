@@ -47,7 +47,7 @@ function NavItemInner({
       aria-current={active ? 'page' : undefined}
       onClick={onClick}
       onContextMenu={onContextMenu}
-      className={`archive-nav-item relative flex w-full cursor-pointer items-center gap-2.5 px-2.5 py-[6px] text-left text-[13px] transition-colors duration-100 ${
+      className={`archive-nav-item relative flex w-full cursor-pointer items-center gap-2.5 px-2.5 py-[7px] text-left text-[13px] transition-colors duration-100 ${
         active
           ? 'bg-[var(--accent-soft)] font-medium text-[var(--text-main)]'
           : 'text-[var(--text-main)] hover:bg-[var(--bg-hover)]'
@@ -132,7 +132,7 @@ function SectionHeader({
   onToggle: () => void
 }) {
   return (
-    <div className="archive-section-head mb-1 flex items-center justify-between px-1 pb-1.5 pt-1">
+    <div className="archive-section-head mb-1 flex items-center justify-between px-1 pb-2 pt-1.5">
       <button
         aria-expanded={!collapsed}
         aria-label={`${collapsed ? '展开' : '折叠'}${title}`}
@@ -317,7 +317,7 @@ function Sidebar() {
   }
   /** 分区：单栏滚动（对齐 Eagle），展开/折叠只影响高度，不产生分区内嵌滚动 */
   const sectionCls = (collapsed: boolean): string =>
-    collapsed ? 'mt-3 shrink-0 px-2' : 'mt-3 flex flex-col px-2'
+    collapsed ? 'mt-4 shrink-0 px-2' : 'mt-4 flex flex-col px-2'
 
   const ASSET_MIME = 'application/x-eaglelike-assets'
   const TAG_MIME = 'application/x-eaglelike-tag'
@@ -983,9 +983,11 @@ function Sidebar() {
             {boardViewMode === 'board' ? (pixel ? 'ARCHIVE CANVAS / 03' : cyber ? 'NODE CANVAS / 02' : 'LIGHT TABLE / 01') : pixel ? 'INDEX / 03' : cyber ? 'SIGNAL / 02' : 'ARCHIVE / 01'}
           </span>
           <h1 className="brand-wordmark">{boardViewMode === 'board' ? 'BOARD' : 'LUMEN'}</h1>
-          <span className="archive-brand__subtitle mono">
-            {boardViewMode === 'board' ? (pixel ? 'REFERENCE INDEX WORKSPACE' : cyber ? 'VISUAL SIGNAL WORKSPACE' : 'REFERENCE ASSEMBLY DESK') : pixel ? 'LOCAL VISUAL INDEX' : cyber ? 'LOCAL SIGNAL MATRIX' : 'RAVEN PHOTOGRAPHIC INDEX'}
-          </span>
+          {(pixel || cyber) && (
+            <span className="archive-brand__subtitle mono">
+              {boardViewMode === 'board' ? (pixel ? 'REFERENCE INDEX WORKSPACE' : 'VISUAL SIGNAL WORKSPACE') : pixel ? 'LOCAL VISUAL INDEX' : 'LOCAL SIGNAL MATRIX'}
+            </span>
+          )}
         </div>
         {boardViewMode === 'board' && (
           <button
@@ -1081,7 +1083,7 @@ function Sidebar() {
           aria-label="助手"
           aria-pressed={agentPanelOpen}
           title="助手：对话式找图（用一句话描述条件，可追问收窄）"
-          className={`relative flex w-full cursor-pointer items-center gap-2.5 px-2.5 py-1.5 text-left text-[13px] transition-colors duration-100 ${
+          className={`relative flex w-full cursor-pointer items-center gap-2.5 px-2.5 py-[7px] text-left text-[13px] transition-colors duration-100 ${
             agentPanelOpen
               ? 'bg-[var(--accent-soft)] font-medium text-[var(--text-main)]'
               : 'text-[var(--text-main)] hover:bg-[var(--bg-hover)]'
@@ -1181,7 +1183,7 @@ function Sidebar() {
       </section>
 
       {/* 白板：与其它分区一致，随单栏滚动（对齐 Eagle） */}
-      <section className="mt-3 shrink-0 px-2" aria-label="白板">
+      <section className="mt-4 shrink-0 px-2" aria-label="白板">
         <SectionHeader
           title="白板"
           icon="shapes"

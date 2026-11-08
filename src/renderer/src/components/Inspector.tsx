@@ -96,7 +96,7 @@ function Inspector({ width = 252 }: { width?: number }) {
     >
       <header className="archive-inspector__header">
         <div>
-          <span className="mono">{pixel ? 'INDEX LOG' : cyber ? 'TRACE PANEL' : 'INSPECTION RECORD'}</span>
+          {(pixel || cyber) && <span className="mono">{pixel ? 'INDEX LOG' : 'TRACE PANEL'}</span>}
           <strong>{asset ? (pixel ? '素材记录' : cyber ? '缓冲记录' : '素材检视记录') : (pixel ? '等待索引' : cyber ? '等待信号' : '等待选片')}</strong>
         </div>
         <div className="flex items-center gap-1.5">

@@ -43,12 +43,14 @@ function ArchiveHeader() {
 
   return (
     <header className="archive-masthead">
-      <div className="archive-masthead__identity">
-        <div className="archive-masthead__eyebrow">
-          <span>{pixel ? 'MASTER INDEX' : cyber ? 'SIGNAL MATRIX' : 'CONTACT SHEET'}</span>
-          <span aria-hidden="true">/</span>
-          <span>{archiveCode}</span>
-        </div>
+      <div className="archive-masthead__identity" data-compact={terminal ? undefined : 'true'}>
+        {terminal && (
+          <div className="archive-masthead__eyebrow">
+            <span>{pixel ? 'MASTER INDEX' : 'SIGNAL MATRIX'}</span>
+            <span aria-hidden="true">/</span>
+            <span>{archiveCode}</span>
+          </div>
+        )}
         <div className="archive-masthead__title-row">
           <h2>{title}</h2>
           <span className="archive-masthead__count tnum">{String(assets.length).padStart(3, '0')}{assetsHasMore ? '+' : ''} {pixel ? 'RECORDS' : cyber ? 'NODES' : 'FRAMES'}</span>
@@ -73,7 +75,11 @@ function ArchiveHeader() {
       )}
 
       <div className="archive-masthead__readout" aria-label="当前档案状态">
-        <span className="archive-selection-readout mono tnum">{pixel ? 'SEL' : cyber ? 'BUF' : '已选'} {String(selection.length).padStart(2, '0')}</span>
+        {selection.length > 0 && (
+          <span className="archive-selection-readout mono tnum">
+            {pixel ? 'SEL' : cyber ? 'BUF' : '已选'} {String(selection.length).padStart(2, '0')}
+          </span>
+        )}
         <IconButton
           label={inspectorOpen ? '收起详情' : '显示详情'}
           active={inspectorOpen}
@@ -88,7 +94,7 @@ function ArchiveHeader() {
           <span>
             {loading ? (pixel ? 'INDEXING' : cyber ? 'SCANNING' : 'PROCESSING') : 'READY'}
           </span>
-          <Icon name={loading ? 'rotate' : 'check'} size={12} className={loading ? 'animate-spin' : ''} />
+          {loading && <Icon name="rotate" size={12} className="animate-spin" />}
         </div>
       </div>
     </header>

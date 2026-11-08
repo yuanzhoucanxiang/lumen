@@ -131,8 +131,8 @@ async function main() {
 
   const navSpread = m.navHeights.length > 1 ? Math.max(...m.navHeights) - Math.min(...m.navHeights) : 0
   check('品牌区压缩到 56px', Math.abs(m.brandH - 56) <= 3, `brandH=${m.brandH.toFixed(1)}`)
-  check('导航行高统一 32px', Math.abs(m.agentH - m.navHeights[0]) <= 2 && navSpread <= 2 && Math.abs(m.navHeights[0] - 32) <= 2, JSON.stringify({ nav: m.navHeights, agent: m.agentH }))
-  check('分区间距统一 12px', m.sectionMargins.every((v) => Math.abs(v - 12) <= 1), JSON.stringify(m.sectionMargins))
+  check('导航行高统一 34px', Math.abs(m.agentH - m.navHeights[0]) <= 2 && navSpread <= 2 && Math.abs(m.navHeights[0] - 35) <= 2, JSON.stringify({ nav: m.navHeights.slice(0, 3), agent: m.agentH }))
+  check('分区间距统一 16px', m.sectionMargins.every((v) => Math.abs(v - 16) <= 1), JSON.stringify(m.sectionMargins))
   check('计数成列(右侧对齐+定宽)', m.count !== null && Math.abs(m.count.right - (m.count.rowRight - 10)) <= 2 && Math.abs(m.count.width - 34) <= 2, JSON.stringify(m.count))
   check('底栏合并为一行', m.footerH > 0 && m.footerH <= 40 && m.footerStatusDot && m.footerLib && m.footerSettings, JSON.stringify({ h: m.footerH, dot: m.footerStatusDot, lib: m.footerLib, gear: m.footerSettings }))
   check('单栏滚动:索引区可滚且分区无嵌套滚动', m.indexOverflowY === 'auto' && m.nestedScroll === false, JSON.stringify({ indexOverflowY: m.indexOverflowY, nestedScroll: m.nestedScroll }))
