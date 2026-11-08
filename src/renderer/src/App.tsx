@@ -512,7 +512,8 @@ export default function App() {
         )}
       </div>
 
-      {boardViewMode !== 'board' && (
+      {/* 里程碑 232：批量操作已集成进右侧详情栏；底部选区条只在详情栏收起时兜底 */}
+      {boardViewMode !== 'board' && !inspectorVisible && (
         <SelectionBar leftInset={220} rightInset={selectionBarRightInset} />
       )}
 

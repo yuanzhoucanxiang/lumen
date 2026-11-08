@@ -4,6 +4,7 @@ import { normalizeTagName } from '@shared/tagName'
 import Icon from './Icon'
 import IconButton from './ui/IconButton'
 import Markdown from './Markdown'
+import SelectionActions from './SelectionActions'
 import { useTheme } from '../theme'
 
 function fmtSize(n: number): string {
@@ -36,21 +37,6 @@ function Inspector({ width = 252 }: { width?: number }) {
   /** 注释编辑/预览切换 */
   const [commentView, setCommentView] = useState<'edit' | 'preview'>('edit')
 
-  /** 批量发送选中素材到当前白板（照抄 MOTZ sendSelectionToBoard） */
-  const sendSelectionToBoard = async () => {
-    const st = useLibraryStore.getState()
-    if (selection.length === 0) return
-    if (st.activeBoardId == null) {
-      st.showToast('请先新建白板（白板面板右侧 + 号）')
-      return
-    }
-    const existingIds = await st.sendAssetsToBoard(selection)
-    st.showToast(
-      existingIds.length > 0
-        ? '选中的素材已在当前白板中'
-        : `已发送 ${selection.length} 张到当前白板`
-    )
-  }
 
   useEffect(() => {
     setComment(asset?.comment ?? '')
@@ -120,23 +106,9 @@ function Inspector({ width = 252 }: { width?: number }) {
             <Icon name="eye" size={22} strokeWidth={1.4} />
           </span>
           {selection.length > 1 ? (
-            <div className="w-full">
-              <p className="mono text-[12px] tracking-[0.08em]">已选择 {selection.length} 个素材</p>
-              <p className="mt-2 text-[11px] leading-relaxed text-[var(--text-faint)]">
-                使用图库底部的选区操作条：标签 / 文件夹 / 发送白板 / 导出 / AI 处理 / 删除。
-              </p>
-              <button
-                className="btn-ghost mt-3 w-full text-[12px]"
-                onClick={() => void sendSelectionToBoard()}
-              >
-                发送到当前白板
-              </button>
-              <button
-                className="btn-ghost mt-2 w-full text-[12px]"
-                onClick={() => useLibraryStore.getState().setSelection([])}
-              >
-                取消选择
-              </button>
+            // 里程碑 232：多选的批量操作直接放在详情栏里（底部选区条只在详情栏收起时出现）
+            <div className="w-full text-left">
+              <SelectionActions layout="column" />
             </div>
           ) : (
             '选择一个素材查看详情'

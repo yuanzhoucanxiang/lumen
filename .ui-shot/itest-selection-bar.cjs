@@ -129,21 +129,46 @@ async function main() {
     cards[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
     cards[1].dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
     await new Promise((r) => setTimeout(r, 500))
+    // 里程碑 232：详情栏可见时批量动作在右侧栏内，底部条不出现
+    const actions = document.querySelector('[data-testid="selection-actions"]')
     const bar = document.querySelector('[data-testid="selection-bar"]')
-    return { count: document.querySelectorAll('.contact-sheet [aria-pressed="true"]').length, bar: !!bar, text: bar?.innerText || '' }
+    return {
+      count: document.querySelectorAll('.contact-sheet [aria-pressed="true"]').length,
+      actions: !!actions,
+      actionsText: actions?.innerText || '',
+      bar: !!bar
+    }
   `)
-  check('多选后出现选区操作条', selected.count === 2 && selected.bar && selected.text.includes('已选 2 项'), JSON.stringify(selected))
+  check(
+    '多选后详情栏内出现批量操作',
+    selected.count === 2 && selected.actions && selected.actionsText.includes('已选 2 项') && !selected.bar,
+    JSON.stringify(selected)
+  )
+
+  // 收起详情栏后：底部选区条作为兜底出现
+  const bottomBar = await run(`
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'i', ctrlKey: true, bubbles: true }))
+    await new Promise((r) => setTimeout(r, 400))
+    const bar = document.querySelector('[data-testid="selection-bar"]')
+    return { bar: !!bar, text: bar?.innerText || '' }
+  `)
+  check('详情栏收起后底部选区条兜底', bottomBar.bar && bottomBar.text.includes('已选 2 项'), JSON.stringify(bottomBar))
+  // 重新打开详情栏，后续弹层断言在详情栏内进行
+  await run(`
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'i', ctrlKey: true, bubbles: true }))
+    await new Promise((r) => setTimeout(r, 400))
+  `)
 
   // 标签 / 文件夹 / 导出 / 删除确认均为可达弹层
   const popovers = await run(`
-    const bar = document.querySelector('[data-testid="selection-bar"]')
+    const bar = document.querySelector('[data-testid="selection-actions"]')
     const tagBtn = [...bar.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '为所选素材添加标签')
     tagBtn.click()
     await new Promise((r) => setTimeout(r, 250))
     const tagInput = !!document.querySelector('input[aria-label="批量标签名"]')
     document.querySelector('button[aria-label="把所选素材移入文件夹"]').click()
     await new Promise((r) => setTimeout(r, 250))
-    const folderMenu = !!document.querySelector('[data-testid="selection-bar"] .menu, body .menu')
+    const folderMenu = !!document.querySelector('[data-testid="selection-actions"] .menu, body .menu')
     const exportBtn = [...bar.querySelectorAll('button')].find((b) => b.textContent.includes('导出'))
     exportBtn.click()
     await new Promise((r) => setTimeout(r, 350))
@@ -156,13 +181,17 @@ async function main() {
   check('选区条标签/文件夹/导出入口可达', popovers.tagInput && popovers.exportDialog, JSON.stringify(popovers))
 
   const cleared = await run(`
-    const bar = document.querySelector('[data-testid="selection-bar"]')
+    const bar = document.querySelector('[data-testid="selection-actions"]')
     const clear = bar && [...bar.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '取消选择')
     if (clear) clear.click()
     await new Promise((r) => setTimeout(r, 350))
-    return { bar: !!document.querySelector('[data-testid="selection-bar"]'), selected: document.querySelectorAll('.contact-sheet [aria-pressed="true"]').length }
+    return {
+      actions: !!document.querySelector('[data-testid="selection-actions"]'),
+      bar: !!document.querySelector('[data-testid="selection-bar"]'),
+      selected: document.querySelectorAll('.contact-sheet [aria-pressed="true"]').length
+    }
   `)
-  check('取消选择后操作条消失', !cleared.bar && cleared.selected === 0, JSON.stringify(cleared))
+  check('取消选择后批量操作消失', !cleared.actions && !cleared.bar && cleared.selected === 0, JSON.stringify(cleared))
 
   await send('Emulation.clearDeviceMetricsOverride')
   await sleep(300)
