@@ -16,6 +16,8 @@ import { assetKindOf, computeDHash } from './importer'
 import { computeNamePinyin } from './pinyin'
 import { logger } from './logger'
 import { pruneAgentOps } from './agentOps'
+import { prunePreviewCache } from './previewCache'
+import { previewCacheDir } from './preview'
 
 const ASSET_DIR_RE = /^[0-9a-f]{2}$/
 const ASSET_ID_RE = /^[0-9a-f]{16}$/
@@ -147,6 +149,18 @@ export async function runStartupMaintenance(): Promise<void> {
     pruneAgentOps()
   } catch (e) {
     logger.warn('[maintenance]', `操作记录裁剪异常: ${(e as Error).message}`)
+  }
+  try {
+    // 预览缓存保留策略（里程碑 223）：30 天未访问或超出 512MB 的档位删除，最旧的先删
+    const pr = prunePreviewCache(previewCacheDir())
+    if (pr.removed > 0) {
+      logger.info(
+        '[maintenance]',
+        `预览缓存清理: 删除 ${pr.removed} 个 / ${Math.round(pr.freedBytes / 1024 / 1024)}MB，保留 ${pr.kept} 个`
+      )
+    }
+  } catch (e) {
+    logger.warn('[maintenance]', `预览缓存清理异常: ${(e as Error).message}`)
   }
   logger.info('[maintenance]', `启动维护完成 (${Date.now() - t0}ms)`)
 }

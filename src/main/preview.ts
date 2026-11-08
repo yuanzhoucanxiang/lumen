@@ -18,6 +18,11 @@ const LOD_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'bmp', 'avif', 'tif', 't
 
 const inflight = new Map<string, Promise<string | null>>()
 
+/** 预览缓存目录（启动维护按 30 天/512MB 清理，见 previewCache.ts） */
+export function previewCacheDir(): string {
+  return join(app.getPath('userData'), 'preview-cache')
+}
+
 export function normalizePreviewLevel(raw: string | null): PreviewLevel | null {
   const n = Number(raw)
   if (!Number.isFinite(n)) return null
@@ -36,7 +41,7 @@ export async function ensurePreview(
 ): Promise<string | null> {
   const ext = originalPath.split('.').pop()?.toLowerCase() ?? ''
   if (!LOD_EXTS.has(ext)) return null
-  const dir = join(app.getPath('userData'), 'preview-cache')
+  const dir = previewCacheDir()
   const file = join(dir, `${id}-${level}-${edited}.jpg`)
   if (existsSync(file)) return file
   const running = inflight.get(file)
