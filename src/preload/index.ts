@@ -230,6 +230,13 @@ const api = {
   openFloatingBoard: (boardId: number): Promise<void> =>
     ipcRenderer.invoke('window:floatingOpen', boardId),
   closeFloatingWindow: (): Promise<void> => ipcRenderer.invoke('window:floatingClose'),
+  /** 主窗口是否全屏（里程碑 234）：全屏时隐藏自绘标题条 */
+  isFullScreen: (): Promise<boolean> => ipcRenderer.invoke('window:isFullScreen'),
+  onFullScreenChange: (cb: (full: boolean) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, full: boolean) => cb(full)
+    ipcRenderer.on('window:fullscreen', h)
+    return () => ipcRenderer.removeListener('window:fullscreen', h)
+  },
   /** 最小化：折叠为仅标题条高度的窄条（对标 PureRef） */
   minimizeFloatingWindow: (): Promise<void> => ipcRenderer.invoke('window:floatingMinimize'),
   /** 展开：从标题条窄条还原到折叠前大小 */

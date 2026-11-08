@@ -154,6 +154,12 @@ export default function App() {
   const inspectorWidth = useLibraryStore((s) => s.inspectorWidth)
   const selection = useLibraryStore((s) => s.selection)
   const [dragOver, setDragOver] = useState(false)
+  /** 全屏时隐藏自绘标题条（里程碑 234）；非 Windows 平台没有该条 */
+  const [appFullScreen, setAppFullScreen] = useState(false)
+  useEffect(() => {
+    void window.api.isFullScreen().then(setAppFullScreen)
+    return window.api.onFullScreenChange(setAppFullScreen)
+  }, [])
   const [upd, setUpd] = useState<UpdateStatus | null>(null)
   const [updDismissed, setUpdDismissed] = useState(false)
   const [downloading, setDownloading] = useState(false)
@@ -433,6 +439,15 @@ export default function App() {
         if (files.length > 0) void importFiles(files)
       }}
     >
+      {/* 自绘标题条（里程碑 234）：替代系统标题栏，30px 内嵌品牌与拖拽区；
+          右上角让出 Windows 原生窗口按钮（WCO 约 138px），全屏时整条隐藏 */}
+      {!appFullScreen && (
+        <div className="app-titlebar" aria-hidden="true">
+          <span className="app-titlebar__mark">LUMEN</span>
+          <span className="app-titlebar__divider" />
+          <span className="app-titlebar__hint">本地素材档案</span>
+        </div>
+      )}
       <div className="flex min-h-0 flex-1">
         <ErrorBoundary
           fallback={

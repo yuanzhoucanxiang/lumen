@@ -23,6 +23,39 @@ body::before {
   font-family: var(--font-data);
 }
 
+/* 自绘标题条（里程碑 234）：替代系统标题栏。整条可拖拽，右侧给 Windows 原生
+   窗口按钮（WCO）留出约 140px，不做任何可点击元素 */
+.app-titlebar {
+  display: flex;
+  height: 30px;
+  flex: 0 0 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  padding-right: 148px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(90deg, rgba(215, 210, 197, 0.04), transparent 30%), #151410;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.app-titlebar__mark {
+  color: var(--paper);
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+}
+.app-titlebar__divider {
+  width: 1px;
+  height: 10px;
+  background: var(--border-strong);
+}
+.app-titlebar__hint {
+  color: var(--text-faint);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+}
+
 .archive-shell {
   isolation: isolate;
   background: var(--bg-base);

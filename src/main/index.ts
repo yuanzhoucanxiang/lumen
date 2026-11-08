@@ -102,6 +102,14 @@ function createWindow(): void {
     title: 'LUMEN',
     backgroundColor: '#1c1d21',
     autoHideMenuBar: true,
+    // 里程碑 234：隐藏系统标题栏，改由应用内自绘 30px 标题条（配色融入暗房风格），
+    // 右上角保留 Windows 原生最小化/最大化/关闭控件（WCO）；非 Windows 保持默认边框
+    ...(process.platform === 'win32'
+      ? {
+          titleBarStyle: 'hidden' as const,
+          titleBarOverlay: { color: '#151410', symbolColor: '#d9d6cf', height: 30 }
+        }
+      : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true, // 渲染进程沙箱:preload 仅用 contextBridge/ipcRenderer,沙箱兼容
@@ -110,6 +118,11 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
+
+  // 全屏切换 → 通知渲染层隐藏/恢复自绘标题条（里程碑 234）
+  const pushFullScreen = () => mainWindow?.webContents.send('window:fullscreen', mainWindow.isFullScreen())
+  mainWindow.on('enter-full-screen', pushFullScreen)
+  mainWindow.on('leave-full-screen', pushFullScreen)
 
   // 主窗口关闭时联动关闭浮动白板窗（防止无主窗口的孤儿浮动窗）
   mainWindow.on('closed', () => {
@@ -220,6 +233,7 @@ app.whenReady().then(() => {
   // 自动更新（electron-updater，打包版生效）
   initUpdater(() => mainWindow)
   ipcMain.handle('app:version', () => app.getVersion())
+  ipcMain.handle('window:isFullScreen', () => mainWindow?.isFullScreen() ?? false)
 
   // 自动备份:延迟执行不拖慢启动(打包版默认;开发模式用 LUMEN_AUTO_BACKUP=1 强制,供测试)
   const autoBackupDelay = Number(process.env.LUMEN_AUTO_BACKUP_DELAY ?? 20000)
