@@ -211,6 +211,24 @@ body::before {
   border-color: var(--accent);
   box-shadow: 0 0 10px rgba(185, 76, 66, 0.3);
 }
+/* 图标栏里的助手眼睛（里程碑 238）：呼吸光晕，打开时固定满亮 */
+.rail-assistant-eye {
+  animation: rail-eye-glow 3.8s ease-in-out infinite;
+}
+@keyframes rail-eye-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    filter: drop-shadow(0 0 6px rgba(185, 76, 66, 0.5));
+  }
+}
+button[aria-pressed='true'] .rail-assistant-eye {
+  animation: none;
+  filter: drop-shadow(0 0 5px rgba(185, 76, 66, 0.55));
+}
+
 /* 乌鸦眼睛徽章（里程碑 237）：眼廓呼吸微光 + 瞳孔轻微缩放；悬停/打开时固定为满亮 */
 .archive-brand__assistant-badge {
   position: relative;

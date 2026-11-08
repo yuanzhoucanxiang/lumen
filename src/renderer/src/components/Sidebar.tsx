@@ -898,21 +898,41 @@ function Sidebar() {
   const boardsFolded = sectionFold.boards && !navQuery
   const tagsFolded = sectionFold.tags && !navQuery
 
-  /** 库模式收起为 56px 图标栏（里程碑 196） */
+  /** 库模式收起为 56px 图标栏（里程碑 196）：图标与展开态导航一一对应（里程碑 238） */
   if (boardViewMode !== 'board' && sidebarCollapsed) {
-    const railItems: { key: string; label: string; icon: IconName; active: boolean; onClick: () => void }[] = [
-      { key: 'all', label: '全部素材', icon: 'grid', active: view.type === 'all', onClick: () => setView({ type: 'all' }) },
-      { key: 'star', label: '已收藏', icon: 'star', active: view.type === 'starred', onClick: () => setView({ type: 'starred' }) },
-      { key: 'board', label: '白板', icon: 'shapes', active: boardViewMode !== 'off', onClick: () => void enterBoard() },
-      { key: 'trash', label: '回收站', icon: 'trash', active: view.type === 'trash', onClick: () => setView({ type: 'trash' }) },
-      {
-        key: 'agent',
-        label: '助手',
-        icon: 'assistant',
-        active: agentPanelOpen,
-        onClick: () => useLibraryStore.getState().toggleAgentPanel()
-      }
+    type RailItem = { key: string; label: string; icon: IconName; active: boolean; onClick: () => void }
+    const railGroups: RailItem[][] = [
+      [
+        { key: 'all', label: '全部素材', icon: 'grid', active: view.type === 'all', onClick: () => setView({ type: 'all' }) },
+        { key: 'star', label: '已收藏', icon: 'star', active: view.type === 'starred', onClick: () => setView({ type: 'starred' }) },
+        { key: 'board', label: '白板', icon: 'shapes', active: boardViewMode !== 'off', onClick: () => void enterBoard() },
+        { key: 'trash', label: '回收站', icon: 'trash', active: view.type === 'trash', onClick: () => setView({ type: 'trash' }) }
+      ],
+      [
+        { key: 'image', label: '图片', icon: 'image', active: view.type === 'kind' && view.kind === 'image', onClick: () => setView({ type: 'kind', kind: 'image' }) },
+        { key: 'video', label: '视频', icon: 'film', active: view.type === 'kind' && view.kind === 'video', onClick: () => setView({ type: 'kind', kind: 'video' }) },
+        { key: 'uncategorized', label: '未分类', icon: 'folder', active: view.type === 'uncategorized', onClick: () => setView({ type: 'uncategorized' }) },
+        { key: 'untagged', label: '未标签', icon: 'tag', active: view.type === 'untagged', onClick: () => setView({ type: 'untagged' }) },
+        { key: 'agent', label: 'Agent 导入', icon: 'import', active: view.type === 'agent', onClick: () => setView({ type: 'agent' }) }
+      ]
     ]
+    const railButton = (item: RailItem) => (
+      <button
+        key={item.key}
+        aria-label={item.label}
+        title={item.label}
+        aria-pressed={item.active}
+        className={`relative flex h-9 w-9 items-center justify-center transition-colors duration-100 ${
+          item.active
+            ? 'bg-[var(--accent-soft)] text-[var(--accent-text)]'
+            : 'text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]'
+        }`}
+        onClick={item.onClick}
+      >
+        {item.active && <span aria-hidden="true" className="absolute left-0 top-0 h-full w-[2px] bg-[var(--accent)]" />}
+        <Icon name={item.icon} size={16} />
+      </button>
+    )
     return (
       <>
         <nav
@@ -931,25 +951,33 @@ function Sidebar() {
         </button>
         <img src={ravenMarkUrl} alt="LUMEN" className="h-8 w-8 border border-[var(--border-strong)] object-contain p-0.5" draggable={false} />
         <div className="flex w-full flex-col items-center gap-1">
-          {railItems.map((item) => (
-            <button
-              key={item.key}
-              aria-label={item.label}
-              title={item.label}
-              aria-pressed={item.active}
-              className={`relative flex h-9 w-9 items-center justify-center transition-colors duration-100 ${
-                item.active
-                  ? 'bg-[var(--accent-soft)] text-[var(--accent-text)]'
-                  : 'text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]'
-              }`}
-              onClick={item.onClick}
-            >
-              {item.active && <span aria-hidden="true" className="absolute left-0 top-0 h-full w-[2px] bg-[var(--accent)]" />}
-              <Icon name={item.icon} size={16} />
-            </button>
+          {railGroups.map((group, gi) => (
+            <div key={gi} className="flex w-full flex-col items-center gap-1">
+              {gi > 0 && <span aria-hidden="true" className="my-1 h-px w-6 bg-[var(--border)]" />}
+              {group.map(railButton)}
+            </div>
           ))}
         </div>
         <div className="mt-auto flex flex-col items-center gap-1">
+          {/* 助手（里程碑 238）：图标栏里也换成乌鸦眼，保留呼吸微光 */}
+          <button
+            aria-label="助手"
+            title="助手：对话式找图（Ctrl+J）"
+            aria-pressed={agentPanelOpen}
+            className={`relative flex h-9 w-9 items-center justify-center transition-colors duration-100 ${
+              agentPanelOpen
+                ? 'bg-[var(--accent-soft)] text-[var(--accent-text)]'
+                : 'text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--accent-text)]'
+            }`}
+            onClick={() => useLibraryStore.getState().toggleAgentPanel()}
+          >
+            {agentPanelOpen && <span aria-hidden="true" className="absolute left-0 top-0 h-full w-[2px] bg-[var(--accent)]" />}
+            <svg className="rail-assistant-eye" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M2.3 12c3.1-4.5 6.5-6.8 9.7-6.8S18.6 7.5 21.7 12c-3.1 4.5-6.5 6.8-9.7 6.8S5.4 16.5 2.3 12Z" />
+              <circle cx="12" cy="12" r="3.4" />
+              <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+            </svg>
+          </button>
           <button
             aria-label="打开设置"
             title="设置"
