@@ -47,7 +47,7 @@ function NavItemInner({
       aria-current={active ? 'page' : undefined}
       onClick={onClick}
       onContextMenu={onContextMenu}
-      className={`archive-nav-item relative flex w-full cursor-pointer items-center gap-2.5 px-2.5 py-[7px] text-left text-[13px] transition-colors duration-100 ${
+      className={`archive-nav-item relative flex w-full cursor-pointer items-center gap-2.5 px-2.5 py-[6px] text-left text-[13px] transition-colors duration-100 ${
         active
           ? 'bg-[var(--accent-soft)] font-medium text-[var(--text-main)]'
           : 'text-[var(--text-main)] hover:bg-[var(--bg-hover)]'
@@ -132,7 +132,7 @@ function SectionHeader({
   onToggle: () => void
 }) {
   return (
-    <div className="archive-section-head mb-1 flex items-center justify-between px-1 pb-2 pt-1.5">
+    <div className="archive-section-head mb-1 flex items-center justify-between px-1 pb-1.5 pt-1">
       <button
         aria-expanded={!collapsed}
         aria-label={`${collapsed ? '展开' : '折叠'}${title}`}
@@ -323,7 +323,7 @@ function Sidebar() {
   }
   /** 分区：单栏滚动（对齐 Eagle），展开/折叠只影响高度，不产生分区内嵌滚动 */
   const sectionCls = (collapsed: boolean): string =>
-    collapsed ? 'mt-4 shrink-0 px-2' : 'mt-4 flex flex-col px-2'
+    collapsed ? 'mt-3 shrink-0 px-2' : 'mt-3 flex flex-col px-2'
 
   const ASSET_MIME = 'application/x-eaglelike-assets'
   const TAG_MIME = 'application/x-eaglelike-tag'
@@ -981,20 +981,35 @@ function Sidebar() {
       {/* 品牌区 */}
       <header className="archive-brand">
         <div className="archive-brand__negative">
-          <span className="archive-brand__frame-no mono">{pixel ? '03' : cyber ? '02' : '36'}</span>
-          <img className="brand-mark" src={ravenMarkUrl} alt="" draggable={false} />
-        </div>
-        <div className="archive-brand__copy">
-          <span className="archive-brand__edition mono">
-            {boardViewMode === 'board' ? (pixel ? 'ARCHIVE CANVAS / 03' : cyber ? 'NODE CANVAS / 02' : 'LIGHT TABLE / 01') : pixel ? 'INDEX / 03' : cyber ? 'SIGNAL / 02' : 'ARCHIVE / 01'}
-          </span>
-          <h1 className="brand-wordmark">{boardViewMode === 'board' ? 'BOARD' : 'LUMEN'}</h1>
-          {(pixel || cyber) && (
-            <span className="archive-brand__subtitle mono">
-              {boardViewMode === 'board' ? (pixel ? 'REFERENCE INDEX WORKSPACE' : 'VISUAL SIGNAL WORKSPACE') : pixel ? 'LOCAL VISUAL INDEX' : 'LOCAL SIGNAL MATRIX'}
+            <span className="archive-brand__frame-no mono">{pixel ? '03' : cyber ? '02' : '36'}</span>
+            <img className="brand-mark" src={ravenMarkUrl} alt="" draggable={false} />
+          </div>
+          <div className="archive-brand__copy">
+            <span className="archive-brand__edition mono">
+              {boardViewMode === 'board' ? (pixel ? 'ARCHIVE CANVAS / 03' : cyber ? 'NODE CANVAS / 02' : 'LIGHT TABLE / 01') : pixel ? 'INDEX / 03' : cyber ? 'SIGNAL / 02' : 'ARCHIVE / 01'}
             </span>
-          )}
-        </div>
+            <h1 className="brand-wordmark">{boardViewMode === 'board' ? 'BOARD' : 'LUMEN'}</h1>
+            {(pixel || cyber) && (
+              <span className="archive-brand__subtitle mono">
+                {boardViewMode === 'board' ? (pixel ? 'REFERENCE INDEX WORKSPACE' : 'VISUAL SIGNAL WORKSPACE') : pixel ? 'LOCAL VISUAL INDEX' : 'LOCAL SIGNAL MATRIX'}
+              </span>
+            )}
+          </div>
+        {/* 助手入口（里程碑 226）：放在品牌行里，用带文字的按钮——只靠图标可点，普通用户发现不了 */}
+        <button
+          aria-label="助手"
+          aria-pressed={agentPanelOpen}
+          title="助手：对话式找图（Ctrl+J 打开/收起）"
+          className={`ml-auto flex shrink-0 items-center gap-1 rounded-sm border px-1.5 py-1 text-[10.5px] transition-colors duration-100 ${
+            agentPanelOpen
+              ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-text)]'
+              : 'border-[var(--border-strong)] text-[var(--text-dim)] hover:border-[var(--accent)] hover:text-[var(--accent-text)]'
+          }`}
+          onClick={() => useLibraryStore.getState().toggleAgentPanel()}
+        >
+          <Icon name="assistant" size={11} strokeWidth={2} />
+          助手
+        </button>
         {boardViewMode === 'board' && (
           <button
             aria-label="收起素材库列表"
@@ -1084,7 +1099,7 @@ function Sidebar() {
       </div>
 
       {/* 大分类（里程碑 225，对标 MOTZ）：把常用筛选直接做成导航项，少开一次筛选面板 */}
-      <div className="mt-2 space-y-px border-t border-[var(--border)] px-2 pt-2">
+      <div className="mt-1.5 space-y-px border-t border-[var(--border)] px-2 pt-1.5">
         <NavItem
           active={view.type === 'kind' && view.kind === 'image'}
           icon="image"
@@ -1127,27 +1142,6 @@ function Sidebar() {
           count={stats.quick?.recent}
           onClick={() => setView({ type: 'recent' })}
         />
-      </div>
-
-      {/* 助手：对话式找图（AI 专属入口，与视图导航分隔强调；打开右侧面板而非切换视图） */}
-      <div className="mt-2 border-t border-[var(--border)] px-2 pt-2">
-        <button
-          aria-label="助手"
-          aria-pressed={agentPanelOpen}
-          title="助手：对话式找图（用一句话描述条件，可追问收窄）"
-          className={`relative flex w-full cursor-pointer items-center gap-2.5 px-2.5 py-[7px] text-left text-[13px] transition-colors duration-100 ${
-            agentPanelOpen
-              ? 'bg-[var(--accent-soft)] font-medium text-[var(--text-main)]'
-              : 'text-[var(--text-main)] hover:bg-[var(--bg-hover)]'
-          }`}
-          onClick={() => useLibraryStore.getState().toggleAgentPanel()}
-        >
-          {agentPanelOpen && (
-            <span aria-hidden="true" className="absolute left-0 top-0 h-full w-[2px] bg-[var(--accent)]" />
-          )}
-          <Icon name="assistant" size={15} strokeWidth={1.9} className="text-[var(--accent-text)]" />
-          <span className="min-w-0 flex-1 truncate">助手</span>
-        </button>
       </div>
 
       {/* 文件夹 */}
@@ -1235,7 +1229,7 @@ function Sidebar() {
       </section>
 
       {/* 白板：与其它分区一致，随单栏滚动（对齐 Eagle） */}
-      <section className="mt-4 shrink-0 px-2" aria-label="白板">
+      <section className="mt-3 shrink-0 px-2" aria-label="白板">
         <SectionHeader
           title="白板"
           icon="shapes"
