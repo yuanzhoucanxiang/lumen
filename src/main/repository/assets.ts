@@ -179,6 +179,11 @@ export function queryAssets(q: AssetQuery): Asset[] {
     }
     params.push(q.folderId)
   }
+  if (q.onBoardBoardId != null) {
+    // 已上白板（里程碑 225）：该白板画布上引用到的素材
+    where.push('id IN (SELECT asset_id FROM board_items WHERE board_id = ? AND asset_id IS NOT NULL)')
+    params.push(q.onBoardBoardId)
+  }
   if (q.tagIds && q.tagIds.length > 0) {
     if (q.tagMode === 'or') {
       // 任一命中（里程碑 220）：多标签组合筛选的 OR 模式

@@ -2,7 +2,21 @@ import { getDb } from '../db'
 import { stmt } from '../stmtCache'
 import { deleteAssets } from './assets'
 
-export function libraryStats(): { total: number; deleted: number; tombstones: number; agent: number } {
+export interface QuickCounts {
+  images: number
+  videos: number
+  uncategorized: number
+  untagged: number
+  recent: number
+}
+
+export function libraryStats(): {
+  total: number
+  deleted: number
+  tombstones: number
+  agent: number
+  quick: QuickCounts
+} {
   const db = getDb()
   const total = (stmt(db, 'SELECT COUNT(*) AS n FROM assets WHERE deleted_at IS NULL').get() as { n: number }).n
   const deleted = (stmt(db, 'SELECT COUNT(*) AS n FROM assets WHERE deleted_at IS NOT NULL').get() as { n: number }).n
@@ -19,7 +33,20 @@ export function libraryStats(): { total: number; deleted: number; tombstones: nu
   } catch {
     // source 列尚未迁移时返回 0
   }
-  return { total, deleted, tombstones, agent }
+  // 侧栏大分类计数（里程碑 225）：一次取齐，全部走既有索引
+  const IMAGE_EXTS = ['jpg','jpeg','png','gif','webp','bmp','avif','tiff','tif','psd','heic','heif','ai','svg']
+  const VIDEO_EXTS = ['mp4','webm','mov','mkv','avi','wmv','m4v']
+  const placeholders = (list: string[]) => list.map(() => '?').join(',')
+  const quick = stmt(
+    db,
+    `SELECT
+       (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND ext IN (${placeholders(IMAGE_EXTS)})) AS images,
+       (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND ext IN (${placeholders(VIDEO_EXTS)})) AS videos,
+       (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND id NOT IN (SELECT asset_id FROM asset_folders)) AS uncategorized,
+       (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND id NOT IN (SELECT asset_id FROM asset_tags)) AS untagged,
+       (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND imported_at >= ?) AS recent`
+  ).get(...IMAGE_EXTS, ...VIDEO_EXTS, Date.now() - 7 * 86400000) as QuickCounts
+  return { total, deleted, tombstones, agent, quick }
 }
 
 /* ---------------- 重复检测与相似检索 ---------------- */

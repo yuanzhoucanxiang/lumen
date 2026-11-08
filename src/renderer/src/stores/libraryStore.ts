@@ -77,6 +77,12 @@ export type ViewType =
   | { type: 'trash' }
   | { type: 'folder'; id: number }
   | { type: 'tag'; id: number }
+  // 侧栏大分类（里程碑 225，对标 MOTZ）
+  | { type: 'kind'; kind: 'image' | 'video' }
+  | { type: 'uncategorized' }
+  | { type: 'untagged' }
+  | { type: 'onboard' }
+  | { type: 'recent' }
 
 /** 白板布局模式：off=纯素材库, split=素材库+白板分屏, board=白板全屏 */
 export type BoardViewMode = 'off' | 'split' | 'board'
@@ -123,7 +129,12 @@ interface LibraryState {
   inspectorOpen: boolean
   /** 右侧详情栏宽度（195，220–360） */
   inspectorWidth: number
-  stats: { total: number; deleted: number; tombstones: number }
+  stats: {
+    total: number
+    deleted: number
+    tombstones: number
+    quick?: { images: number; videos: number; uncategorized: number; untagged: number; recent: number }
+  }
 
   view: ViewType
   keyword: string
@@ -321,7 +332,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       return 252
     }
   })(),
-  stats: { total: 0, deleted: 0, tombstones: 0 },
+  stats: { total: 0, deleted: 0, tombstones: 0, quick: undefined },
 
   view: { type: 'all' },
   keyword: '',
@@ -553,17 +564,29 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           }
         }
       }
+      // 大分类（里程碑 225）：图片/视频按扩展名，未分类/未标签/已上白板/最近收集各自走查询字段
+      const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'tiff', 'tif', 'psd', 'heic', 'heif', 'ai', 'svg']
+      const kindExts = view.type === 'kind' ? (view.kind === 'image' ? IMAGE_EXTS : VIDEO_EXTS) : null
+      const exts = kindExts
+        ? s.extFilters.length > 0
+          ? kindExts.filter((e) => s.extFilters.includes(e))
+          : kindExts
+        : s.extFilters.length > 0
+          ? s.extFilters
+          : undefined
       const assetsQuery: AssetQuery = {
         keyword: s.keyword || undefined,
-        exts: s.extFilters.length > 0 ? s.extFilters : undefined,
+        exts,
         color: s.colorFilter?.hex,
         colorTolerance: s.colorFilter?.tolerance,
         colorCountMax: s.colorCountMax || undefined,
         // 「已收藏」视图改走服务端 star 过滤:此前是取回一页再客户端 filter star>0,
         // 分页下会让每页条数不齐、offset 错位；star>=1 与 star>0 等价
         starMin: view.type === 'starred' ? Math.max(s.starMin, 1) : s.starMin || undefined,
-        untagged: s.untagged || undefined,
-        withinDays: s.withinDays || undefined,
+        untagged: view.type === 'untagged' ? true : s.untagged || undefined,
+        noFolder: view.type === 'uncategorized' ? true : undefined,
+        withinDays: view.type === 'recent' ? 7 : s.withinDays || undefined,
+        onBoardBoardId: view.type === 'onboard' ? (s.activeBoardId ?? -1) : undefined,
         sortBy: s.sortBy,
         sortDesc: s.sortDesc,
         deleted: view.type === 'trash',

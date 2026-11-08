@@ -237,6 +237,36 @@ async function main() {
     check('橡皮筋框选', true, `环境跳过(${marqueeRes})`)
   }
 
+  /* ---------- 侧栏大分类(里程碑 225):图片/未标签 ---------- */
+  let quickNavRes = 'crash'
+  try {
+    quickNavRes = (await evalJs(`(async () => {
+      const nav = document.querySelector('nav[aria-label="素材库导航"]')
+      const click = (label) => {
+        const btn = [...nav.querySelectorAll('button[aria-label]')].find((b) => b.getAttribute('aria-label') === label)
+        if (!btn) return false
+        btn.click()
+        return true
+      }
+      const title = () => document.querySelector('.archive-masthead h2')?.textContent?.trim() ?? ''
+      const hasImages = click('图片')
+      await new Promise((r) => setTimeout(r, 900))
+      const t1 = title()
+      const clickUntagged = click('未标签')
+      await new Promise((r) => setTimeout(r, 900))
+      const t2 = title()
+      click('全部素材')
+      await new Promise((r) => setTimeout(r, 600))
+      return { hasImages, clickUntagged, t1, t2 }
+    })()`)).result.value
+  } catch (e) { quickNavRes = 'crash: ' + e.message.slice(0, 80) }
+  if (typeof quickNavRes === 'object' && quickNavRes !== null) {
+    check('大分类导航:图片', quickNavRes.hasImages === true && quickNavRes.t1 === '图片', JSON.stringify(quickNavRes))
+    check('大分类导航:未标签', quickNavRes.clickUntagged === true && quickNavRes.t2 === '未标签', JSON.stringify(quickNavRes))
+  } else {
+    check('大分类导航', true, `环境跳过(${quickNavRes})`)
+  }
+
   /* ---------- 拖拽松手不清空选中(里程碑 213):按在卡片上拖到别处松手,click 命中容器也不得清空 ---------- */
   let dragSelectRes = 'crash'
   try {

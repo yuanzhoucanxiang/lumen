@@ -193,6 +193,12 @@ function Sidebar() {
   const activeBoardId = useLibraryStore((s) => s.activeBoardId)
   const boardViewMode = useLibraryStore((s) => s.boardViewMode)
   const stats = useLibraryStore((s) => s.stats)
+  const boardItems = useLibraryStore((s) => s.boardItems)
+  /** 当前白板画布上引用到的素材数（「已上白板」分类计数，里程碑 225） */
+  const boardAssetCount = useMemo(
+    () => new Set(boardItems.map((i) => i.assetId).filter((x): x is string => !!x)).size,
+    [boardItems]
+  )
   const agentPanelOpen = useLibraryStore((s) => s.agentPanelOpen)
   const [addingFolder, setAddingFolder] = useState<false | { parentId: number | null }>(false)
   const [addingTag, setAddingTag] = useState(false)
@@ -1075,6 +1081,52 @@ function Sidebar() {
             onClick={() => setView({ type: 'trash' })}
           />
         )}
+      </div>
+
+      {/* 大分类（里程碑 225，对标 MOTZ）：把常用筛选直接做成导航项，少开一次筛选面板 */}
+      <div className="mt-2 space-y-px border-t border-[var(--border)] px-2 pt-2">
+        <NavItem
+          active={view.type === 'kind' && view.kind === 'image'}
+          icon="image"
+          label="图片"
+          count={stats.quick?.images}
+          onClick={() => setView({ type: 'kind', kind: 'image' })}
+        />
+        <NavItem
+          active={view.type === 'kind' && view.kind === 'video'}
+          icon="film"
+          label="视频"
+          count={stats.quick?.videos}
+          onClick={() => setView({ type: 'kind', kind: 'video' })}
+        />
+        <NavItem
+          active={view.type === 'uncategorized'}
+          icon="folder"
+          label="未分类"
+          count={stats.quick?.uncategorized}
+          onClick={() => setView({ type: 'uncategorized' })}
+        />
+        <NavItem
+          active={view.type === 'untagged'}
+          icon="tag"
+          label="未标签"
+          count={stats.quick?.untagged}
+          onClick={() => setView({ type: 'untagged' })}
+        />
+        <NavItem
+          active={view.type === 'onboard'}
+          icon="pin"
+          label="已上白板"
+          count={boardAssetCount}
+          onClick={() => setView({ type: 'onboard' })}
+        />
+        <NavItem
+          active={view.type === 'recent'}
+          icon="rotate"
+          label="最近收集"
+          count={stats.quick?.recent}
+          onClick={() => setView({ type: 'recent' })}
+        />
       </div>
 
       {/* 助手：对话式找图（AI 专属入口，与视图导航分隔强调；打开右侧面板而非切换视图） */}

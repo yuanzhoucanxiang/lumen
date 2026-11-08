@@ -29,11 +29,38 @@ function ArchiveHeader() {
     if (view.type === 'starred') return '已收藏'
     if (view.type === 'trash') return '回收站'
     if (view.type === 'folder') return folders.find((f) => f.id === view.id)?.name ?? '文件夹'
+    // 侧栏大分类（里程碑 225）
+    if (view.type === 'kind') return view.kind === 'image' ? '图片' : '视频'
+    if (view.type === 'uncategorized') return '未分类'
+    if (view.type === 'untagged') return '未标签'
+    if (view.type === 'onboard') return '已上白板'
+    if (view.type === 'recent') return '最近收集'
     return tags.find((t) => t.id === view.id)?.name ?? '标签'
   }, [folders, tags, view])
 
   const archiveCode = useMemo(() => {
-    const prefix = view.type === 'folder' ? 'BX' : view.type === 'tag' ? 'TG' : view.type === 'starred' ? 'FV' : view.type === 'trash' ? 'TR' : 'RA'
+    const prefix =
+      view.type === 'folder'
+        ? 'BX'
+        : view.type === 'tag'
+          ? 'TG'
+          : view.type === 'starred'
+            ? 'FV'
+            : view.type === 'trash'
+              ? 'TR'
+              : view.type === 'kind'
+                ? view.kind === 'image'
+                  ? 'IM'
+                  : 'VD'
+                : view.type === 'uncategorized'
+                  ? 'UC'
+                  : view.type === 'untagged'
+                    ? 'UT'
+                    : view.type === 'onboard'
+                      ? 'BD'
+                      : view.type === 'recent'
+                        ? 'RC'
+                        : 'RA'
     const id = 'id' in view ? view.id : 1
     return `${prefix}-${String(id).padStart(3, '0')}`
   }, [view])

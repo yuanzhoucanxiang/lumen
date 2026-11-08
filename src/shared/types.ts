@@ -130,6 +130,8 @@ export interface SmartConditions {
   tagIds?: number[]
   /** 多标签匹配语义（里程碑 220）：and = 同时包含（默认），or = 任一命中 */
   tagMode?: 'and' | 'or'
+  /** 只看某个白板上的素材（里程碑 225）：白板元素引用的 assetId 集合 */
+  onBoardBoardId?: number
   exts?: string[]
   color?: string
   colorTolerance?: number
@@ -271,6 +273,8 @@ export interface AssetQuery {
   tagIds?: number[]
   /** 多标签匹配语义（里程碑 220）：and = 同时包含（默认），or = 任一命中 */
   tagMode?: 'and' | 'or'
+  /** 只看某个白板上的素材（里程碑 225）：白板元素引用的 assetId 集合 */
+  onBoardBoardId?: number
   folderId?: number | null
   /** true = folderId 查询包含所有子孙文件夹（默认只查直接成员，与侧栏计数一致） */
   folderDeep?: boolean
