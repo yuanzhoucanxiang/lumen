@@ -158,23 +158,28 @@ async function main() {
     const b = boards.find((x) => x.id === active)
     const expected = f ? JSON.stringify({ type: 'folder', id: f.id }) : ''
     const saved = b?.reference ?? ''
-    // 退出白板，检查「白板素材」分类
-    const exit = document.querySelector('button[aria-label="退出白板"]')
-    exit?.click()
-    await new Promise((r) => setTimeout(r, 900))
+    // 「白板素材」只在白板模式下出现（里程碑 229）：先在板内点它，再退出白板看标题
     const nav3 = document.querySelector('nav[aria-label="素材库导航"]')
     const bs = [...nav3.querySelectorAll('button[aria-label]')].find((x) => x.getAttribute('aria-label') === '白板素材')
+    const entryVisibleInBoard = !!bs
     bs?.click()
+    await new Promise((r) => setTimeout(r, 900))
+    const exit = document.querySelector('button[aria-label="退出白板"]')
+    exit?.click()
     await new Promise((r) => setTimeout(r, 1000))
     const title = document.querySelector('.archive-masthead h2')?.textContent?.trim()
     // 恢复全部素材视图，避免影响后续套件
     const all = [...nav3.querySelectorAll('button[aria-label]')].find((x) => x.getAttribute('aria-label') === '全部素材')
     all?.click()
-    return { folder: name, saved, expected, title }
+    return { folder: name, saved, expected, title, entryVisibleInBoard }
   })()`)
   if (typeof refRes === 'object' && refRes !== null) {
     check('每板参考来源：白板内切换文件夹后落库', refRes.saved === refRes.expected && refRes.expected !== '', JSON.stringify(refRes))
-    check('白板素材分类：显示当前白板参考来源', refRes.title === '白板素材', JSON.stringify(refRes))
+    check(
+      '白板素材分类：白板模式下可见且显示当前参考来源',
+      refRes.entryVisibleInBoard === true && refRes.title === '白板素材',
+      JSON.stringify(refRes)
+    )
   } else {
     check('每板参考来源', true, `环境跳过(${refRes})`)
   }
