@@ -98,22 +98,22 @@ function Inspector({ width = 252 }: { width?: number }) {
         </div>
       </header>
       {!asset ? (
-        <div className="archive-inspector__empty flex flex-1 flex-col items-center justify-center gap-2.5 p-4 text-center text-[12px] text-[var(--text-dim)]">
-          <span
-            aria-hidden="true"
-            className="flex h-12 w-12 items-center justify-center border border-dashed border-[var(--border-strong)] text-[var(--text-faint)]"
-          >
-            <Icon name="eye" size={22} strokeWidth={1.4} />
-          </span>
-          {selection.length > 1 ? (
-            // 里程碑 232：多选的批量操作直接放在详情栏里（底部选区条只在详情栏收起时出现）
-            <div className="w-full text-left">
-              <SelectionActions layout="column" />
-            </div>
-          ) : (
-            '选择一个素材查看详情'
-          )}
-        </div>
+        selection.length > 1 ? (
+          // 里程碑 233：多选直接进入批量面板（不再显示空态眼睛图标，避免把操作挤到下半屏）
+          <div className="archive-inspector__batch flex flex-1 flex-col gap-3 overflow-y-auto p-3 text-left">
+            <SelectionActions layout="column" />
+          </div>
+        ) : (
+          <div className="archive-inspector__empty flex flex-1 flex-col items-center justify-center gap-2.5 p-4 text-center text-[12px] text-[var(--text-dim)]">
+            <span
+              aria-hidden="true"
+              className="flex h-12 w-12 items-center justify-center border border-dashed border-[var(--border-strong)] text-[var(--text-faint)]"
+            >
+              <Icon name="eye" size={22} strokeWidth={1.4} />
+            </span>
+            选择一个素材查看详情
+          </div>
+        )
       ) : (
         <div key={asset.id} className="archive-inspector__body modal-scroll flex-1 overflow-y-auto p-4">
           {/* 预览 */}

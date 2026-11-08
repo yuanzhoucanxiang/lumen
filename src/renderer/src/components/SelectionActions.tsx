@@ -158,70 +158,85 @@ export default function SelectionActions({ layout = 'row' }: { layout?: 'row' | 
   )
 
   if (layout === 'column') {
-    const rowCls = 'w-full justify-start'
+    // 里程碑 233：重排成「计数 + 2×2 主操作网格 + AI + 分隔线 + 次级操作」，
+    // 避免七个等宽描边按钮把面板塞满、删除/取消与主操作抢视觉权重
+    const gridBtn = 'w-full justify-start'
     return (
-      <div className="flex w-full flex-col gap-1.5" data-testid="selection-actions">
-        <p className="mono mb-1 text-[12px] tracking-[0.08em] text-[var(--accent-text)]">
-          已选 {selection.length} 项
-        </p>
-        <Button
-          icon={<Icon name="tag" size={12} />}
-          aria-label="为所选素材添加标签"
-          aria-expanded={tagOpen}
-          className={rowCls}
-          onClick={() => {
-            setFolderOpen(false)
-            setTagOpen((v) => !v)
-          }}
-        >
-          标签
-        </Button>
+      <div className="flex w-full flex-col gap-2.5" data-testid="selection-actions">
+        <div className="flex items-baseline justify-between">
+          <p className="mono text-[12px] tracking-[0.08em] text-[var(--accent-text)]">
+            已选 {selection.length} 项
+          </p>
+          <span className="text-[10px] text-[var(--text-faint)]">批量操作</span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-1.5">
+          <Button
+            icon={<Icon name="tag" size={12} />}
+            aria-label="为所选素材添加标签"
+            aria-expanded={tagOpen}
+            className={gridBtn}
+            onClick={() => {
+              setFolderOpen(false)
+              setTagOpen((v) => !v)
+            }}
+          >
+            标签
+          </Button>
+          <Button
+            icon={<Icon name="folder" size={12} />}
+            aria-label="把所选素材移入文件夹"
+            aria-expanded={folderOpen}
+            disabled={flatFolders.length === 0}
+            className={gridBtn}
+            onClick={() => {
+              setTagOpen(false)
+              setFolderOpen((v) => !v)
+            }}
+          >
+            文件夹
+          </Button>
+          <Button className={gridBtn} icon={<Icon name="shapes" size={12} />} onClick={() => void sendToBoard()}>
+            发送白板
+          </Button>
+          <Button className={gridBtn} icon={<Icon name="import" size={12} />} onClick={() => setExportOpen(true)}>
+            导出
+          </Button>
+        </div>
+
         {tagOpen && <div className="menu w-full p-3">{tagPanel}</div>}
-        <Button
-          icon={<Icon name="folder" size={12} />}
-          aria-label="把所选素材移入文件夹"
-          aria-expanded={folderOpen}
-          disabled={flatFolders.length === 0}
-          className={rowCls}
-          onClick={() => {
-            setTagOpen(false)
-            setFolderOpen((v) => !v)
-          }}
-        >
-          文件夹
-        </Button>
         {folderOpen && (
           <div className="menu modal-scroll max-h-56 w-full overflow-y-auto p-1.5">{folderList}</div>
         )}
-        <Button className={rowCls} icon={<Icon name="shapes" size={12} />} onClick={() => void sendToBoard()}>
-          发送白板
-        </Button>
-        <Button className={rowCls} icon={<Icon name="import" size={12} />} onClick={() => setExportOpen(true)}>
-          导出
-        </Button>
+
         <Button
-          className={rowCls}
+          className="w-full justify-start"
           icon={<Icon name="sparkles" size={12} />}
           onClick={() => useLibraryStore.getState().openAiDialog()}
         >
           AI 处理
         </Button>
-        <Button
-          variant="quiet"
-          icon={<Icon name="trash" size={12} />}
-          className={`${rowCls} text-[var(--danger)] hover:text-[var(--danger)]`}
-          onClick={() => setConfirmDelete(true)}
-        >
-          删除
-        </Button>
-        <Button
-          className={`${rowCls} mt-1`}
-          icon={<Icon name="close" size={12} />}
-          aria-label="取消选择"
-          onClick={() => useLibraryStore.getState().setSelection([])}
-        >
-          取消选择
-        </Button>
+
+        <div className="my-0.5 border-t border-[var(--border)]" />
+
+        <div className="flex items-center justify-between">
+          <button
+            className="flex items-center gap-1.5 px-1 py-1 text-[11.5px] text-[var(--danger)] opacity-80 transition-colors duration-100 hover:opacity-100"
+            title={`把 ${selection.length} 个素材移入回收站`}
+            onClick={() => setConfirmDelete(true)}
+          >
+            <Icon name="trash" size={12} />
+            删除
+          </button>
+          <button
+            aria-label="取消选择"
+            className="flex items-center gap-1.5 px-1 py-1 text-[11.5px] text-[var(--text-dim)] transition-colors duration-100 hover:text-[var(--text-main)]"
+            onClick={() => useLibraryStore.getState().setSelection([])}
+          >
+            <Icon name="close" size={12} />
+            取消选择
+          </button>
+        </div>
         {dialogs}
       </div>
     )
