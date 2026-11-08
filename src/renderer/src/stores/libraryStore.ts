@@ -82,7 +82,6 @@ export type ViewType =
   | { type: 'uncategorized' }
   | { type: 'untagged' }
   | { type: 'onboard' }
-  | { type: 'recent' }
   | { type: 'boardSource' }
 
 /** 白板参考来源（里程碑 227）：只记录"素材来源"类视图，其余视图不写入 */
@@ -149,7 +148,7 @@ interface LibraryState {
     total: number
     deleted: number
     tombstones: number
-    quick?: { images: number; videos: number; uncategorized: number; untagged: number; recent: number }
+    quick?: { images: number; videos: number; uncategorized: number; untagged: number }
   }
 
   view: ViewType
@@ -640,7 +639,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           view.type === 'starred' || refStarred ? Math.max(s.starMin, 1) : s.starMin || undefined,
         untagged: view.type === 'untagged' ? true : s.untagged || undefined,
         noFolder: view.type === 'uncategorized' ? true : undefined,
-        withinDays: view.type === 'recent' ? 7 : s.withinDays || undefined,
+        withinDays: s.withinDays || undefined,
         onBoardBoardId: view.type === 'onboard' ? (s.activeBoardId ?? -1) : undefined,
         sortBy: s.sortBy,
         sortDesc: s.sortDesc,

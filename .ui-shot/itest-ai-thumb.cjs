@@ -188,6 +188,21 @@ async function main() {
   const nameB = `itest-mv-b-${stamp}`
   await createFolderViaUi(nameA)
   await createFolderViaUi(nameB)
+  // 侧栏分区/子文件夹默认折叠（里程碑 229）：测试前先把 文件夹 分区展开，便于按名字点行
+  await run(`
+    const nav = document.querySelector('nav[aria-label="素材库导航"]')
+    const sec = nav.querySelector('section[aria-label="文件夹"]')
+    const head = sec?.querySelector('button[aria-expanded="false"]')
+    if (head) { head.click(); await new Promise((r) => setTimeout(r, 250)) }
+    for (let i = 0; i < 3; i++) {
+      const collapsed = [...(sec?.querySelectorAll('button[aria-label^="展开 "]') ?? [])]
+      if (collapsed.length === 0) break
+      for (const b of collapsed) b.click()
+      await new Promise((r) => setTimeout(r, 200))
+    }
+    return true
+  `)
+
   const created = await run(`
     const list = await window.api.listFolders()
     return {

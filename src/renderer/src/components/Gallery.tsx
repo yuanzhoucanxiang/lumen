@@ -487,14 +487,11 @@ function Gallery() {
   }
   const [viewportH, setViewportH] = useState(0)
   const [scrollTop, setScrollTop] = useState(0)
-  /** 滚动 setState 合帧用的 rAF 句柄 */
-  const scrollRafRef = useRef(0)
-  useEffect(
-    () => () => {
-      if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current)
-    },
-    []
-  )
+  /** 滚动 setState 的节流时间戳（里程碑 229）：
+   *  原先用 rAF 合帧，但窗口被其它应用遮挡时浏览器的 rAF 会被暂停/降频，
+   *  滚动状态就永远不更新——「回到顶部」按钮不出现、虚拟化不刷新。
+   *  改成首帧立即更新 + 80ms 节流，不依赖 rAF。 */
+  const lastScrollSetRef = useRef(0)
 
   // 监听容器尺寸（依赖 assets.length：空态分支不挂载容器，加载完成后需重新绑定）
   useLayoutEffect(() => {
@@ -783,16 +780,15 @@ function Gallery() {
         ref={containerRef}
         className="contact-sheet modal-scroll flex-1 overflow-y-auto px-5 pb-8 pt-7"
       onScroll={(e) => {
-        // 按帧合并:scroll 事件一秒能到上百次,每事件一次 setState 会让整棵虚拟列表
-        // 在同一帧里重渲染好几遍(万级素材时表现为滚动掉帧)
+        // 节流：scroll 一秒上百次，每次 setState 会让虚拟列表整棵重渲染（万级素材时掉帧）。
+        // 首帧立即更新保证「回到顶部」按钮/虚拟化及时响应，之后 80ms 内最多一次。
         const el = e.currentTarget
         scrollMemory.set(viewKey, el.scrollTop)
         endHover()
-        if (scrollRafRef.current) return
-        scrollRafRef.current = requestAnimationFrame(() => {
-          scrollRafRef.current = 0
-          setScrollTop(containerRef.current?.scrollTop ?? 0)
-        })
+        const now = performance.now()
+        if (now - lastScrollSetRef.current < 80) return
+        lastScrollSetRef.current = now
+        setScrollTop(el.scrollTop)
       }}
       onPointerDown={(e) => {
         // 橡皮筋框选:仅左键、且起点不在素材卡片/按钮上(卡片自带点击语义)

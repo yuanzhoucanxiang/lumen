@@ -7,7 +7,6 @@ export interface QuickCounts {
   videos: number
   uncategorized: number
   untagged: number
-  recent: number
 }
 
 export function libraryStats(): {
@@ -43,9 +42,8 @@ export function libraryStats(): {
        (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND ext IN (${placeholders(IMAGE_EXTS)})) AS images,
        (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND ext IN (${placeholders(VIDEO_EXTS)})) AS videos,
        (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND id NOT IN (SELECT asset_id FROM asset_folders)) AS uncategorized,
-       (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND id NOT IN (SELECT asset_id FROM asset_tags)) AS untagged,
-       (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND imported_at >= ?) AS recent`
-  ).get(...IMAGE_EXTS, ...VIDEO_EXTS, Date.now() - 7 * 86400000) as QuickCounts
+       (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND id NOT IN (SELECT asset_id FROM asset_tags)) AS untagged`
+  ).get(...IMAGE_EXTS, ...VIDEO_EXTS) as QuickCounts
   return { total, deleted, tombstones, agent, quick }
 }
 

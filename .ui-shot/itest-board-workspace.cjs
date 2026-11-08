@@ -103,6 +103,21 @@ async function main() {
     })()`)
     check('进入白板专属界面', workspace.mode === 'board' && workspace.tray && workspace.canvas && !workspace.inspector, JSON.stringify(workspace))
 
+  // 侧栏分区/子文件夹默认折叠（里程碑 229）：测试前先把 文件夹 分区展开，便于按名字点行
+  await run(`
+    const nav = document.querySelector('nav[aria-label="素材库导航"]')
+    const sec = nav.querySelector('section[aria-label="文件夹"]')
+    const head = sec?.querySelector('button[aria-expanded="false"]')
+    if (head) { head.click(); await new Promise((r) => setTimeout(r, 250)) }
+    for (let i = 0; i < 3; i++) {
+      const collapsed = [...(sec?.querySelectorAll('button[aria-label^="展开 "]') ?? [])]
+      if (collapsed.length === 0) break
+      for (const b of collapsed) b.click()
+      await new Promise((r) => setTimeout(r, 200))
+    }
+    return true
+  `)
+
     if (sourceFolder) {
       const clicked = await run(`return (() => {
         const target = [...document.querySelectorAll('section[aria-label="文件夹"] button[aria-label]')]
@@ -238,7 +253,9 @@ async function main() {
       await sleep(300)
       independentCanvas = await run(`return {
         trayAssets: document.querySelectorAll('[data-board-reference-asset]').length,
-        boardImages: document.querySelectorAll('[data-board-item] img, [data-board-item] video').length
+        // 只数画布元素本身：图片可能因视口缩放被降级成色块（无 <img>）或在视口外不渲染，
+        // 用 img 数量会假红。断言意图是"参考架被筛空时画布内容仍在"
+        boardImages: document.querySelectorAll('[data-board-item]').length
       }`)
       if (independentCanvas.trayAssets === 0) break
     }

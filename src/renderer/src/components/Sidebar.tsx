@@ -203,7 +203,16 @@ function Sidebar() {
   const [addingFolder, setAddingFolder] = useState<false | { parentId: number | null }>(false)
   const [addingTag, setAddingTag] = useState(false)
   const [inputVal, setInputVal] = useState('')
-  const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
+  /** 文件夹树：默认全部折叠（只显示顶层），只记住"用户手动展开"的 id（里程碑 229，
+   *  此前默认全展开，上百个子文件夹把侧栏拉成超长瀑布） */
+  const [expandedFolders, setExpandedFolders] = useState<Set<number>>(() => {
+    try {
+      const arr = JSON.parse(localStorage.getItem('lumen.sidebar.folderExpanded') ?? '[]') as unknown
+      return new Set(Array.isArray(arr) ? arr.filter((x): x is number => Number.isInteger(x)) : [])
+    } catch {
+      return new Set()
+    }
+  })
   const [collapsedGroups, setCollapsedGroups] = useState<Set<number>>(new Set())
   const [renaming, setRenaming] = useState<{ kind: 'tag' | 'group' | 'board'; id: number } | null>(null)
   const [renameVal, setRenameVal] = useState('')
@@ -577,10 +586,15 @@ function Sidebar() {
   }
 
   const toggleCollapse = (id: number) => {
-    setCollapsed((prev) => {
+    setExpandedFolders((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
+      try {
+        localStorage.setItem('lumen.sidebar.folderExpanded', JSON.stringify([...next].slice(-500)))
+      } catch {
+        /* 隐私模式忽略 */
+      }
       return next
     })
   }
@@ -624,7 +638,8 @@ function Sidebar() {
   /** 递归渲染文件夹节点（缩进 + 折叠箭头 + 可拖放） */
   const renderFolderNode = (node: FolderNode, depth: number): React.ReactNode => {
     const hasKids = node.children.length > 0
-    const isCollapsed = collapsed.has(node.id) && !navQuery
+    // 搜索时强制展开，便于定位命中项
+    const isCollapsed = !expandedFolders.has(node.id) && !navQuery
     return (
       <div key={node.id}>
         <div
@@ -1127,26 +1142,24 @@ function Sidebar() {
           count={stats.quick?.untagged}
           onClick={() => setView({ type: 'untagged' })}
         />
-        <NavItem
-          active={view.type === 'onboard'}
-          icon="pin"
-          label="已上白板"
-          count={boardAssetCount}
-          onClick={() => setView({ type: 'onboard' })}
-        />
-        <NavItem
-          active={view.type === 'boardSource'}
-          icon="shapes"
-          label="白板素材"
-          onClick={() => setView({ type: 'boardSource' })}
-        />
-        <NavItem
-          active={view.type === 'recent'}
-          icon="rotate"
-          label="最近收集"
-          count={stats.quick?.recent}
-          onClick={() => setView({ type: 'recent' })}
-        />
+        {/* 白板相关分类只在白板模式有意义（里程碑 229）：素材库里没有"当前白板"，显示只会占地方 */}
+        {boardViewMode !== 'off' && (
+          <>
+            <NavItem
+              active={view.type === 'onboard'}
+              icon="pin"
+              label="已上白板"
+              count={boardAssetCount}
+              onClick={() => setView({ type: 'onboard' })}
+            />
+            <NavItem
+              active={view.type === 'boardSource'}
+              icon="shapes"
+              label="白板素材"
+              onClick={() => setView({ type: 'boardSource' })}
+            />
+          </>
+        )}
       </div>
 
       {/* 文件夹 */}
@@ -1434,9 +1447,15 @@ function Sidebar() {
               className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
               onClick={() => {
                 const pid = menu.id
-                setCollapsed((prev) => {
+                // 新建子文件夹前先展开该节点（用户要看到刚建的那一行）
+                setExpandedFolders((prev) => {
                   const next = new Set(prev)
-                  next.delete(pid)
+                  next.add(pid)
+                  try {
+                    localStorage.setItem('lumen.sidebar.folderExpanded', JSON.stringify([...next].slice(-500)))
+                  } catch {
+                    /* 隐私模式忽略 */
+                  }
                   return next
                 })
                 setAddingFolder({ parentId: pid })
