@@ -34,7 +34,7 @@ body::before {
   padding: 0 12px;
   padding-right: 148px;
   border-bottom: 1px solid var(--border);
-  background: linear-gradient(90deg, rgba(215, 210, 197, 0.04), transparent 30%), #151410;
+  background: linear-gradient(90deg, rgba(215, 210, 197, 0.04), transparent 30%), var(--titlebar-bg);
   -webkit-app-region: drag;
   user-select: none;
 }
@@ -192,11 +192,12 @@ body::before {
   flex: 0 0 22px;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(185, 76, 66, 0.42);
-  border-radius: 5px;
+  /* 里程碑 240：徽章跟随主题强调色（银盐红 / 像素白 / 信号青），不再写死 */
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  border-radius: calc(var(--radius) + 2px);
   background:
-    radial-gradient(circle at 30% 25%, rgba(185, 76, 66, 0.22), transparent 62%),
-    rgba(185, 76, 66, 0.08);
+    radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 62%),
+    color-mix(in srgb, var(--accent) 8%, transparent);
   color: var(--accent-text);
   transition:
     border-color 120ms ease,
@@ -205,11 +206,13 @@ body::before {
 }
 .archive-brand__assistant:hover .archive-brand__assistant-badge {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(185, 76, 66, 0.18), 0 2px 8px rgba(0, 0, 0, 0.35);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 2px 8px rgba(0, 0, 0, 0.35);
 }
 .archive-brand__assistant.is-open .archive-brand__assistant-badge {
   border-color: var(--accent);
-  box-shadow: 0 0 10px rgba(185, 76, 66, 0.3);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 /* 图标栏里的助手眼睛（里程碑 238）：呼吸光晕，打开时固定满亮 */
 .rail-assistant-eye {
@@ -221,12 +224,12 @@ body::before {
     filter: drop-shadow(0 0 0 transparent);
   }
   50% {
-    filter: drop-shadow(0 0 6px rgba(185, 76, 66, 0.5));
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 50%, transparent));
   }
 }
 button[aria-pressed='true'] .rail-assistant-eye {
   animation: none;
-  filter: drop-shadow(0 0 5px rgba(185, 76, 66, 0.55));
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 55%, transparent));
 }
 
 /* 乌鸦眼睛徽章（里程碑 237）：眼廓呼吸微光 + 瞳孔轻微缩放；悬停/打开时固定为满亮 */
@@ -238,7 +241,7 @@ button[aria-pressed='true'] .rail-assistant-eye {
   position: absolute;
   inset: -1px;
   border-radius: 6px;
-  box-shadow: 0 0 12px rgba(185, 76, 66, 0.5);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 50%, transparent);
   opacity: 0.2;
   pointer-events: none;
   animation: raven-eye-glow 3.8s ease-in-out infinite;

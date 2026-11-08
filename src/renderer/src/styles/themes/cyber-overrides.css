@@ -53,7 +53,14 @@
   letter-spacing: 0.16em;
 }
 
-[data-theme='cyber-glitch'] .archive-sidebar {
+/* 里程碑 240：宽度只作用于展开态 */
+[data-theme='cyber-glitch'] .archive-sidebar[data-sidebar-collapsed='true'] {
+  width: 56px !important;
+}
+[data-theme='cyber-glitch'] .archive-sidebar.board-library-rail {
+  width: 46px !important;
+}
+[data-theme='cyber-glitch'] .archive-sidebar:not([data-sidebar-collapsed='true']):not(.board-library-rail) {
   width: 216px !important;
   background:
     linear-gradient(90deg, rgba(103,232,249,.025), transparent 28%),
@@ -64,6 +71,25 @@
 [data-theme='cyber-glitch'] .archive-sidebar::after {
   background: linear-gradient(180deg, var(--accent), transparent 16%, transparent 84%, #e85aa8);
   opacity: .42;
+}
+
+/* 自绘标题条与助手徽章（里程碑 240） */
+[data-theme='cyber-glitch'] .app-titlebar {
+  background:
+    repeating-linear-gradient(90deg, rgba(103, 232, 249, 0.04) 0 1px, transparent 1px 8px),
+    #080d13;
+  border-bottom: 1px solid rgba(112, 229, 244, 0.18);
+}
+[data-theme='cyber-glitch'] .app-titlebar__mark {
+  letter-spacing: 0.3em;
+  color: var(--paper);
+  text-shadow: -1px 0 rgba(103, 232, 249, 0.36), 1px 0 rgba(232, 90, 168, 0.3);
+}
+[data-theme='cyber-glitch'] .archive-brand__assistant-badge {
+  border-radius: 0;
+  background:
+    repeating-linear-gradient(90deg, rgba(103, 232, 249, 0.06) 0 1px, transparent 1px 4px),
+    #0a1118;
 }
 
 [data-theme='cyber-glitch'] .archive-brand {
@@ -772,7 +798,9 @@
 }
 
 @media (max-width: 1380px) {
-  [data-theme='cyber-glitch'] .archive-sidebar { width: 204px !important; }
+  [data-theme='cyber-glitch'] .archive-sidebar:not([data-sidebar-collapsed='true']):not(.board-library-rail) {
+    width: 204px !important;
+  }
   [data-theme='cyber-glitch'] .archive-inspector { width: 224px !important; }
 }
 

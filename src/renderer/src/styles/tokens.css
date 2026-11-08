@@ -12,6 +12,8 @@
   /* 表面：石墨工作区 → 抬升面板 */
   --bg-base: #090907;
   --bg-panel: #11110f;
+  /* 自绘标题条底色（里程碑 240）：与品牌区同色系，随主题切换 */
+  --titlebar-bg: #151410;
   --bg-raised: #191815;
   --bg-hover: #23211d;
   --bg-active: #2d2924;
@@ -92,6 +94,7 @@
 :root[data-theme='pixel-glitch'] {
   --bg-base: #060807;
   --bg-panel: #0a0c0b;
+  --titlebar-bg: #070908;
   --bg-raised: #111412;
   --bg-hover: #191d1a;
   --bg-active: #222723;
@@ -136,6 +139,7 @@
 :root[data-theme='cyber-glitch'] {
   --bg-base: #060a0f;
   --bg-panel: #09121a;
+  --titlebar-bg: #080d13;
   --bg-raised: #0d1923;
   --bg-hover: #122633;
   --bg-active: #173746;
