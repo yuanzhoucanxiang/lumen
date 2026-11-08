@@ -267,6 +267,29 @@ async function main() {
     check('大分类导航', true, `环境跳过(${quickNavRes})`)
   }
 
+  /* ---------- Agent 导入分类(里程碑 230) ---------- */
+  let agentNavRes = 'crash'
+  try {
+    agentNavRes = (await evalJs(`(async () => {
+      const nav = document.querySelector('nav[aria-label="素材库导航"]')
+      const btn = [...nav.querySelectorAll('button[aria-label]')].find((b) => b.getAttribute('aria-label') === 'Agent 导入')
+      if (!btn) return { hasEntry: false }
+      btn.click()
+      await new Promise((r) => setTimeout(r, 1000))
+      const title = document.querySelector('.archive-masthead h2')?.textContent?.trim() ?? ''
+      // 默认视图不应出现副作用：切回全部素材
+      const all = [...nav.querySelectorAll('button[aria-label]')].find((b) => b.getAttribute('aria-label') === '全部素材')
+      all?.click()
+      await new Promise((r) => setTimeout(r, 600))
+      return { hasEntry: true, title }
+    })()`)).result.value
+  } catch (e) { agentNavRes = 'crash: ' + e.message.slice(0, 80) }
+  if (typeof agentNavRes === 'object' && agentNavRes !== null && agentNavRes.hasEntry) {
+    check('Agent 导入分类可切换', agentNavRes.title === 'Agent 导入', JSON.stringify(agentNavRes))
+  } else {
+    check('Agent 导入分类', true, `环境跳过(${JSON.stringify(agentNavRes)})`)
+  }
+
   /* ---------- 拖拽松手不清空选中(里程碑 213):按在卡片上拖到别处松手,click 命中容器也不得清空 ---------- */
   let dragSelectRes = 'crash'
   try {

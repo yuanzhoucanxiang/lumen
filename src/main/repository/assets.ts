@@ -179,6 +179,11 @@ export function queryAssets(q: AssetQuery): Asset[] {
     }
     params.push(q.folderId)
   }
+  if (q.excludeSource) {
+    // 排除来源（里程碑 230）：COALESCE 兼容旧库 source 列为空
+    where.push("COALESCE(source, '') != ?")
+    params.push(q.excludeSource)
+  }
   if (q.onBoardBoardId != null) {
     // 已上白板（里程碑 225）：该白板画布上引用到的素材
     where.push('id IN (SELECT asset_id FROM board_items WHERE board_id = ? AND asset_id IS NOT NULL)')

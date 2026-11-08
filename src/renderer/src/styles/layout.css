@@ -131,10 +131,9 @@ body::before {
 
 /* 助手入口（里程碑 228）：品牌块内的文字链接行，常显说明 + 箭头 */
 .archive-brand__assistant {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  margin-top: 3px;
+  gap: 3px;
   color: var(--accent-text);
   font-size: 10px;
   letter-spacing: 0.02em;
@@ -143,14 +142,6 @@ body::before {
 }
 .archive-brand__assistant:hover {
   color: var(--text-main);
-}
-.archive-brand__assistant-hint {
-  color: var(--text-faint);
-  font-size: 9.5px;
-  transition: color 120ms ease;
-}
-.archive-brand__assistant:hover .archive-brand__assistant-hint {
-  color: var(--text-dim);
 }
 .archive-brand__assistant-arrow {
   color: var(--text-faint);

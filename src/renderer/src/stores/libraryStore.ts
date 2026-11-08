@@ -83,6 +83,7 @@ export type ViewType =
   | { type: 'untagged' }
   | { type: 'onboard' }
   | { type: 'boardSource' }
+  | { type: 'agent' }
 
 /** 白板参考来源（里程碑 227）：只记录"素材来源"类视图，其余视图不写入 */
 function boardRefFromView(view: ViewType): { type: string; id?: number } | null {
@@ -148,7 +149,7 @@ interface LibraryState {
     total: number
     deleted: number
     tombstones: number
-    quick?: { images: number; videos: number; uncategorized: number; untagged: number }
+    quick?: { images: number; videos: number; uncategorized: number; untagged: number; agent: number }
   }
 
   view: ViewType
@@ -644,6 +645,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         sortBy: s.sortBy,
         sortDesc: s.sortDesc,
         deleted: view.type === 'trash',
+        // Agent 导入单独分类（里程碑 230）：默认视图里排除它，避免批量导入淹没有用户自己收的图
+        source: view.type === 'agent' ? 'agent' : undefined,
+        excludeSource:
+          view.type === 'all' || view.type === 'kind' || view.type === 'uncategorized' || view.type === 'untagged'
+            ? 'agent'
+            : undefined,
         folderId: boardSourceEmpty ? -1 : view.type === 'folder' && !smartQuery ? view.id : refFolderId,
         tagIds:
           s.tagFilter && s.tagFilter.ids.length > 0

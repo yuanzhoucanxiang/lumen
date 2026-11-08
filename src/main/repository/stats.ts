@@ -7,6 +7,8 @@ export interface QuickCounts {
   videos: number
   uncategorized: number
   untagged: number
+  /** Agent 导入的素材数（里程碑 230）：默认视图把它排除，单独一个分类查看 */
+  agent: number
 }
 
 export function libraryStats(): {
@@ -39,10 +41,11 @@ export function libraryStats(): {
   const quick = stmt(
     db,
     `SELECT
-       (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND ext IN (${placeholders(IMAGE_EXTS)})) AS images,
-       (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND ext IN (${placeholders(VIDEO_EXTS)})) AS videos,
-       (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND id NOT IN (SELECT asset_id FROM asset_folders)) AS uncategorized,
-       (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND id NOT IN (SELECT asset_id FROM asset_tags)) AS untagged`
+       (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND COALESCE(source, '') != 'agent' AND ext IN (${placeholders(IMAGE_EXTS)})) AS images,
+       (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND COALESCE(source, '') != 'agent' AND ext IN (${placeholders(VIDEO_EXTS)})) AS videos,
+       (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND COALESCE(source, '') != 'agent' AND id NOT IN (SELECT asset_id FROM asset_folders)) AS uncategorized,
+       (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND COALESCE(source, '') != 'agent' AND id NOT IN (SELECT asset_id FROM asset_tags)) AS untagged,
+       (SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND source = 'agent') AS agent`
   ).get(...IMAGE_EXTS, ...VIDEO_EXTS) as QuickCounts
   return { total, deleted, tombstones, agent, quick }
 }

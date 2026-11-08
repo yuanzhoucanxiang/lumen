@@ -184,10 +184,6 @@ async function main() {
     `)
     await sleep(250)
   }
-  const nameA = `itest-mv-a-${stamp}`
-  const nameB = `itest-mv-b-${stamp}`
-  await createFolderViaUi(nameA)
-  await createFolderViaUi(nameB)
   // 侧栏分区/子文件夹默认折叠（里程碑 229）：测试前先把 文件夹 分区展开，便于按名字点行
   await run(`
     const nav = document.querySelector('nav[aria-label="素材库导航"]')
@@ -202,6 +198,11 @@ async function main() {
     }
     return true
   `)
+
+  const nameA = `itest-mv-a-${stamp}`
+  const nameB = `itest-mv-b-${stamp}`
+  await createFolderViaUi(nameA)
+  await createFolderViaUi(nameB)
 
   const created = await run(`
     const list = await window.api.listFolders()

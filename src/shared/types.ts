@@ -133,7 +133,6 @@ export interface SmartConditions {
   /** 多标签匹配语义（里程碑 220）：and = 同时包含（默认），or = 任一命中 */
   tagMode?: 'and' | 'or'
   /** 只看某个白板上的素材（里程碑 225）：白板元素引用的 assetId 集合 */
-  onBoardBoardId?: number
   exts?: string[]
   color?: string
   colorTolerance?: number
@@ -273,10 +272,12 @@ export interface AssetQuery {
   keyword?: string
   source?: string
   tagIds?: number[]
-  /** 多标签匹配语义（里程碑 220）：and = 同时包含（默认），or = 任一命中 */
-  tagMode?: 'and' | 'or'
   /** 只看某个白板上的素材（里程碑 225）：白板元素引用的 assetId 集合 */
   onBoardBoardId?: number
+  /** 排除某个来源（里程碑 230）：默认「全部素材」等视图排除 agent，避免批量导入淹没有素材 */
+  excludeSource?: string
+  /** 多标签匹配语义（里程碑 220）：and = 同时包含（默认），or = 任一命中 */
+  tagMode?: 'and' | 'or'
   folderId?: number | null
   /** true = folderId 查询包含所有子孙文件夹（默认只查直接成员，与侧栏计数一致） */
   folderDeep?: boolean

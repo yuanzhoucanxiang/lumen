@@ -311,19 +311,25 @@ function Sidebar() {
 
   const [sectionFold, setSectionFold] = useState<Record<SectionKey, boolean>>(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem('lumen.sidebar.fold') ?? '{}') as Partial<
+      // v2（里程碑 230）：主栏默认全部折叠，让首屏更短；旧键不再读取
+      const saved = JSON.parse(localStorage.getItem('lumen.sidebar.fold.v2') ?? '{}') as Partial<
         Record<SectionKey, boolean>
       >
-      return { folders: !!saved.folders, smart: !!saved.smart, boards: saved.boards !== false, tags: !!saved.tags }
+      return {
+        folders: saved.folders !== false,
+        smart: saved.smart !== false,
+        boards: saved.boards !== false,
+        tags: saved.tags !== false
+      }
     } catch {
-      return { folders: false, smart: false, boards: true, tags: false }
+      return { folders: true, smart: true, boards: true, tags: true }
     }
   })
   const toggleSection = (key: SectionKey): void => {
     setSectionFold((prev) => {
       const next = { ...prev, [key]: !prev[key] }
       try {
-        localStorage.setItem('lumen.sidebar.fold', JSON.stringify(next))
+        localStorage.setItem('lumen.sidebar.fold.v2', JSON.stringify(next))
       } catch {
         /* 隐私模式等场景忽略 */
       }
@@ -1003,21 +1009,22 @@ function Sidebar() {
           <span className="archive-brand__edition mono">
             {boardViewMode === 'board' ? (pixel ? 'ARCHIVE CANVAS / 03' : cyber ? 'NODE CANVAS / 02' : 'LIGHT TABLE / 01') : pixel ? 'INDEX / 03' : cyber ? 'SIGNAL / 02' : 'ARCHIVE / 01'}
           </span>
-          <h1 className="brand-wordmark">{boardViewMode === 'board' ? 'BOARD' : 'LUMEN'}</h1>
-          {/* 助手入口（里程碑 228）：做成品牌块内的文字链接行——常显、带说明与箭头，
-              不再用挤在字标旁的独立按钮（那样会把 ARCHIVE / 01 挤到换行、像硬贴上去的） */}
-          <button
-            aria-label="助手"
-            aria-pressed={agentPanelOpen}
-            title="助手：对话式找图（Ctrl+J 打开/收起）"
-            className={`archive-brand__assistant ${agentPanelOpen ? 'is-open' : ''}`}
-            onClick={() => useLibraryStore.getState().toggleAgentPanel()}
-          >
-            <Icon name="assistant" size={10} strokeWidth={2} />
-            <span>助手</span>
-            <span className="archive-brand__assistant-hint">对话式找图</span>
-            <Icon name="chevronRight" size={9} strokeWidth={2} className="archive-brand__assistant-arrow" />
-          </button>
+          {/* 字标 + 助手入口同一行（里程碑 230）：链接放在 LUMEN 右侧，保持品牌块三行高度、
+              又让入口常显可发现；此前单独占一行会把品牌区撑高到 66px */}
+          <div className="flex items-baseline gap-2">
+            <h1 className="brand-wordmark">{boardViewMode === 'board' ? 'BOARD' : 'LUMEN'}</h1>
+            <button
+              aria-label="助手"
+              aria-pressed={agentPanelOpen}
+              title="助手：对话式找图（Ctrl+J 打开/收起）"
+              className={`archive-brand__assistant ${agentPanelOpen ? 'is-open' : ''}`}
+              onClick={() => useLibraryStore.getState().toggleAgentPanel()}
+            >
+              <Icon name="assistant" size={10} strokeWidth={2} />
+              <span>助手</span>
+              <Icon name="chevronRight" size={9} strokeWidth={2} className="archive-brand__assistant-arrow" />
+            </button>
+          </div>
           {(pixel || cyber) && (
             <span className="archive-brand__subtitle mono">
               {boardViewMode === 'board' ? (pixel ? 'REFERENCE INDEX WORKSPACE' : 'VISUAL SIGNAL WORKSPACE') : pixel ? 'LOCAL VISUAL INDEX' : 'LOCAL SIGNAL MATRIX'}
@@ -1086,7 +1093,7 @@ function Sidebar() {
           active={view.type === 'all'}
           icon="grid"
           label={boardViewMode === 'board' ? '全部参考' : '全部素材'}
-          count={stats.total}
+          count={Math.max(0, stats.total - (stats.quick?.agent ?? 0))}
           onClick={() => setView({ type: 'all' })}
         />
         <NavItem
@@ -1142,6 +1149,16 @@ function Sidebar() {
           count={stats.quick?.untagged}
           onClick={() => setView({ type: 'untagged' })}
         />
+        {/* Agent 导入单独入口（里程碑 230）：默认视图排除它，需要时在这里看 */}
+        {boardViewMode === 'off' && (
+          <NavItem
+            active={view.type === 'agent'}
+            icon="import"
+            label="Agent 导入"
+            count={stats.quick?.agent}
+            onClick={() => setView({ type: 'agent' })}
+          />
+        )}
         {/* 白板相关分类只在白板模式有意义（里程碑 229）：素材库里没有"当前白板"，显示只会占地方 */}
         {boardViewMode !== 'off' && (
           <>

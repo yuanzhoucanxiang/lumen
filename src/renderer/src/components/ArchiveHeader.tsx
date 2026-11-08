@@ -36,6 +36,7 @@ function ArchiveHeader() {
     if (view.type === 'onboard') return '已上白板'
 
     if (view.type === 'boardSource') return '白板素材'
+    if (view.type === 'agent') return 'Agent 导入'
     return tags.find((t) => t.id === view.id)?.name ?? '标签'
   }, [folders, tags, view])
 
@@ -61,7 +62,9 @@ function ArchiveHeader() {
                       ? 'BD'
                       : view.type === 'boardSource'
                         ? 'BS'
-                        : 'RA'
+                        : view.type === 'agent'
+                          ? 'AG'
+                          : 'RA'
     const id = 'id' in view ? view.id : 1
     return `${prefix}-${String(id).padStart(3, '0')}`
   }, [view])
