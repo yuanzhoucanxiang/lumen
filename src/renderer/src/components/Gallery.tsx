@@ -274,8 +274,9 @@ const AssetCard = memo(function AssetCard({
             aria-label={boardSent ? `${a.name} 已在当前白板` : `发送 ${a.name} 到白板`}
             title={boardSent ? '已在当前白板' : '发送到当前白板'}
             className={`absolute bottom-1.5 right-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-sm border transition-colors duration-100 ${
+              // 里程碑 236：已在白板的红勾默认隐藏（首页浏览时满屏红勾太吵），悬停卡片才出现
               boardSent
-                ? 'border-[var(--accent)] bg-[var(--accent)] text-[var(--on-accent)]'
+                ? 'border-[var(--accent)] bg-[var(--accent)] text-[var(--on-accent)] opacity-0 group-hover:opacity-100'
                 : 'border-white/25 bg-black/50 text-white/70 opacity-0 hover:border-[var(--accent)] hover:text-[var(--accent)] group-hover:opacity-100'
             }`}
             onClick={(e) => {

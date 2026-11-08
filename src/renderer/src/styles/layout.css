@@ -139,12 +139,11 @@ body::before {
 
 .archive-brand__copy {
   min-width: 0;
-  padding-bottom: 4px;
 }
 
 .archive-brand__edition {
   display: block;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
   white-space: nowrap;
   color: var(--accent-text);
   font-size: 8px;
@@ -166,15 +165,54 @@ body::before {
 .archive-brand__assistant {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  color: var(--accent-text);
-  font-size: 10px;
-  letter-spacing: 0.02em;
+  gap: 6px;
+  margin-top: 1px;
+  margin-left: -2px;
+  padding: 2px 4px 2px 2px;
+  color: var(--text-main);
+  font-size: 12px;
+  letter-spacing: 0.04em;
   white-space: nowrap;
-  transition: color 120ms ease;
+  border-radius: 4px;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
 }
 .archive-brand__assistant:hover {
-  color: var(--text-main);
+  background: var(--bg-hover);
+  color: var(--accent-text);
+}
+.archive-brand__assistant.is-open {
+  color: var(--accent-text);
+}
+.archive-brand__assistant-badge {
+  display: flex;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(185, 76, 66, 0.42);
+  border-radius: 5px;
+  background:
+    radial-gradient(circle at 30% 25%, rgba(185, 76, 66, 0.22), transparent 62%),
+    rgba(185, 76, 66, 0.08);
+  color: var(--accent-text);
+  transition:
+    border-color 120ms ease,
+    box-shadow 160ms ease,
+    color 120ms ease;
+}
+.archive-brand__assistant:hover .archive-brand__assistant-badge {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(185, 76, 66, 0.18), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.archive-brand__assistant.is-open .archive-brand__assistant-badge {
+  border-color: var(--accent);
+  box-shadow: 0 0 10px rgba(185, 76, 66, 0.3);
+}
+.archive-brand__assistant-label {
+  font-weight: 500;
 }
 .archive-brand__assistant-arrow {
   color: var(--text-faint);

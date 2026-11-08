@@ -1009,22 +1009,25 @@ function Sidebar() {
           <span className="archive-brand__edition mono">
             {boardViewMode === 'board' ? (pixel ? 'ARCHIVE CANVAS / 03' : cyber ? 'NODE CANVAS / 02' : 'LIGHT TABLE / 01') : pixel ? 'INDEX / 03' : cyber ? 'SIGNAL / 02' : 'ARCHIVE / 01'}
           </span>
-          {/* 字标 + 助手入口同一行（里程碑 230）：链接放在 LUMEN 右侧，保持品牌块三行高度、
-              又让入口常显可发现；此前单独占一行会把品牌区撑高到 66px */}
-          <div className="flex items-baseline gap-2">
-            <h1 className="brand-wordmark">{boardViewMode === 'board' ? 'BOARD' : 'LUMEN'}</h1>
-            <button
-              aria-label="助手"
-              aria-pressed={agentPanelOpen}
-              title="助手：对话式找图（Ctrl+J 打开/收起）"
-              className={`archive-brand__assistant ${agentPanelOpen ? 'is-open' : ''}`}
-              onClick={() => useLibraryStore.getState().toggleAgentPanel()}
-            >
-              <Icon name="assistant" size={10} strokeWidth={2} />
-              <span>助手</span>
-              <Icon name="chevronRight" size={9} strokeWidth={2} className="archive-brand__assistant-arrow" />
-            </button>
-          </div>
+          {/* 助手入口（里程碑 236）：顶栏已有 LUMEN 字标，侧栏不再重复；
+              把原字标的位置让给助手，做成带徽章的常显入口 */}
+          <button
+            aria-label="助手"
+            aria-pressed={agentPanelOpen}
+            title="助手：对话式找图（Ctrl+J 打开/收起）"
+            className={`archive-brand__assistant ${agentPanelOpen ? 'is-open' : ''}`}
+            onClick={() => useLibraryStore.getState().toggleAgentPanel()}
+          >
+            <span className="archive-brand__assistant-badge" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="10.4" cy="10.8" r="6.1" />
+                <path d="m19.6 20-4.4-4.4" />
+                <path d="M17.6 2.2l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" />
+              </svg>
+            </span>
+            <span className="archive-brand__assistant-label">助手</span>
+            <Icon name="chevronRight" size={9} strokeWidth={2} className="archive-brand__assistant-arrow" />
+          </button>
           {(pixel || cyber) && (
             <span className="archive-brand__subtitle mono">
               {boardViewMode === 'board' ? (pixel ? 'REFERENCE INDEX WORKSPACE' : 'VISUAL SIGNAL WORKSPACE') : pixel ? 'LOCAL VISUAL INDEX' : 'LOCAL SIGNAL MATRIX'}
