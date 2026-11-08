@@ -250,6 +250,8 @@ const api = {
   /* 系统操作 */
   showInFolder: (id: string): Promise<void> => ipcRenderer.invoke('shell:showItem', id),
   copyImage: (id: string): Promise<boolean> => ipcRenderer.invoke('asset:copyImage', id),
+  /** 白板选区复制为图片写入系统剪贴板（里程碑 222） */
+  copyBoardImage: (dataUrl: string): Promise<boolean> => ipcRenderer.invoke('board:copyImage', dataUrl),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('shell:openExternal', url),
   exportAssets: (ids: string[], mode: 'folder' | 'zip', opts?: ExportOptions): Promise<{ exported: number; target: string } | null> =>
     ipcRenderer.invoke('assets:export', ids, mode, opts),
@@ -288,6 +290,9 @@ const api = {
   /* URL 辅助 */
   thumbnailUrl: (id: string): string => `asset://${id}/file?t=t`,
   originalUrl: (id: string): string => `asset://${id}/file?t=o`,
+  /** 多档预览（里程碑 222）：level ∈ {640,1280,2048,3072}，edited 参与缓存键 */
+  previewUrl: (id: string, level: number, edited: number): string =>
+    `asset://${id}/file?t=p&w=${level}&e=${edited}`,
   storyboardUrl: (id: string): string => `asset://${id}/file?t=s`,
 
   /* 导入通知（来源分流提示文案：剪藏/Agent/监控文件夹/启动同步） */

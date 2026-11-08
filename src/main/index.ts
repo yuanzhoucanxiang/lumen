@@ -5,6 +5,7 @@ import { extname, join } from 'path'
 import { Readable } from 'stream'
 import { ensureLibrary, loadConfig } from './library'
 import { registerIpc, resolveAssetFile } from './ipc'
+import { ensurePreview, normalizePreviewLevel } from './preview'
 import { closeDb } from './db'
 import { startClipServer } from './clipServer'
 import { syncWatchers, syncOnStartup } from './watcher'
@@ -153,11 +154,22 @@ app.whenReady().then(() => {
     const url = new URL(request.url)
     const id = url.hostname
     const t = url.searchParams.get('t')
-    const kind = (t === 'o' ? 'original' : t === 's' ? 'storyboard' : 'thumbnail') as
-      | 'original'
-      | 'thumbnail'
-      | 'storyboard'
-    const file = resolveAssetFile(id, kind)
+    let file: string | null
+    if (t === 'p') {
+      // 多档预览（里程碑 222，借鉴 MOTZ LOD）：按需从原图生成 640/1280/2048/3072 中的一档并缓存
+      const level = normalizePreviewLevel(url.searchParams.get('w'))
+      const original = level ? resolveAssetFile(id, 'original') : null
+      file =
+        level && original
+          ? await ensurePreview(id, level, original, Number(url.searchParams.get('e')) || 0)
+          : null
+    } else {
+      const kind = (t === 'o' ? 'original' : t === 's' ? 'storyboard' : 'thumbnail') as
+        | 'original'
+        | 'thumbnail'
+        | 'storyboard'
+      file = resolveAssetFile(id, kind)
+    }
     if (!file) {
       logger.debug('[asset]', `404 ${url.pathname}`)
       return new Response(null, { status: 404 })

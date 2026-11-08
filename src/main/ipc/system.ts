@@ -41,6 +41,15 @@ export function registerSystemIpc(getWindow: () => BrowserWindow | null): void {
     return true
   })
 
+  /** 白板选区复制到系统剪贴板（里程碑 222，借鉴 MOTZ 富剪贴板）：dataURL → nativeImage */
+  ipcMain.handle('board:copyImage', (_e, dataUrl: string): boolean => {
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return false
+    const img = nativeImage.createFromDataURL(dataUrl)
+    if (img.isEmpty()) return false
+    clipboard.writeImage(img)
+    return true
+  })
+
   ipcMain.handle('shell:openExternal', (_e, url: string) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url)
   })

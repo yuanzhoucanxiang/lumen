@@ -882,6 +882,14 @@ export function assetThumbUrl(a: { id: string; ext: string; edited?: number }): 
   return `${window.api.thumbnailUrl(a.id)}&e=${a.edited ?? 0}`
 }
 
+/** 多档预览 URL（里程碑 222）：白板按渲染像素选 640/1280/2048/3072 档，避免整张原图解码 */
+export function assetPreviewUrl(
+  a: { id: string; ext: string; edited?: number },
+  level: 640 | 1280 | 2048 | 3072
+): string {
+  return window.api.previewUrl(a.id, level, a.edited ?? 0)
+}
+
 /** 可进入编辑器/浏览器可直接解码的格式（PSD 有缩略图但无法进编辑器） */
 export function assetEditable(a: { ext: string }): boolean {
   return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'tiff', 'tif'].includes(a.ext)

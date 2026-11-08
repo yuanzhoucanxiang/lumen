@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react'
-import { assetThumbUrl, useLibraryStore } from '@renderer/stores/libraryStore'
+import { assetPreviewUrl, assetThumbUrl, useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
 import { useTheme } from '../theme'
 import type { Asset, BoardItem, BoardItemPatch, NewBoardItem, ShapeSpec } from '@shared/types'
@@ -38,6 +38,9 @@ const BOARD_DROP_LONG_EDGE = 1280
  *  素材渲染尺寸超过它(= 缩略图被放大)就切原图,否则缩略图足够清晰。
  *  旧版用整体缩放阈值(≥1.25 才开),100% 缩放下的大图仍是放大的缩略图,必须放大才清晰;
  *  逐项滞回防抖动:渲染长边 >512 开原图、< ~358 切回缩略图(控制大图显存)。 */
+/** 多档预览档位（里程碑 222，借鉴 MOTZ LOD）：按渲染像素选最小够用的一档 */
+const LOD_LEVELS = [640, 1280, 2048, 3072] as const
+
 const ORIG_PX_UP = 512
 const ORIG_PX_DOWN = 512 * 0.7
 /**
@@ -96,6 +99,33 @@ function xmlEscape(s: string): string {
 }
 
 /** 收敛为有限数值（白板元素字段可能源于导入的 .lumenboard，防 SVG 属性逃逸；null/undefined 回退默认） */
+/** SVG 字符串 → PNG dataURL（导出与白板选区复制共用；含 foreignObject 的 SVG 不能走这里） */
+async function svgToPngDataUrl(svg: string, scale = 2): Promise<string> {
+  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  try {
+    const img = new Image()
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
+      img.onerror = () => reject(new Error('SVG 渲染失败'))
+      img.src = url
+    })
+    const m = /^<svg[^>]*width="(d+)" height="(d+)"/.exec(svg)
+    const w = m ? Number(m[1]) : img.naturalWidth || 1200
+    const h = m ? Number(m[2]) : img.naturalHeight || 800
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(w * scale))
+    canvas.height = Math.max(1, Math.round(h * scale))
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('canvas 不可用')
+    ctx.scale(scale, scale)
+    ctx.drawImage(img, 0, 0, w, h)
+    return canvas.toDataURL('image/png')
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
 function toFiniteNum(v: unknown, fallback: number): number {
   if (v === null || v === undefined || v === '') return fallback
   const n = Number(v)
@@ -546,6 +576,37 @@ export default function BoardCanvas({
     clipboardRef.current = boardItemsRef.current
       .filter((i) => ids.includes(i.id))
       .map((i) => ({ ...i, shape: i.shape }))
+    // 富剪贴板（里程碑 222，借鉴 MOTZ）：内部复制照旧，同时把选区渲染成透明 PNG 写进系统剪贴板，
+    // 可以直接粘到微信/其他软件；失败不影响内部复制与粘贴。
+    void copySelectionImage(clipboardRef.current)
+  }
+
+  /** 把白板选区渲染成透明底 PNG 写入系统剪贴板（只取选区包围盒） */
+  const copySelectionImage = async (items: BoardItem[]) => {
+    if (items.length === 0) return
+    try {
+      let minX = Infinity
+      let minY = Infinity
+      let maxX = -Infinity
+      let maxY = -Infinity
+      for (const it of items) {
+        const h = it.height > 0 ? it.height : it.width * (aspectCacheRef.current[it.assetId ?? ''] ?? 0.75)
+        minX = Math.min(minX, it.x)
+        minY = Math.min(minY, it.y)
+        maxX = Math.max(maxX, it.x + it.width)
+        maxY = Math.max(maxY, it.y + h)
+      }
+      if (!Number.isFinite(minX) || maxX <= minX || maxY <= minY) return
+      const svg = await buildBoardSvg(true, {
+        items,
+        bbox: { x: minX, y: minY, w: maxX - minX, h: maxY - minY },
+        transparent: true
+      })
+      const dataUrl = await svgToPngDataUrl(svg, 2)
+      await window.api.copyBoardImage(dataUrl)
+    } catch {
+      /* 剪贴板写入失败静默：内部复制/粘贴不受影响 */
+    }
   }
   const addItemCopies = async (src: BoardItem[], dx: number, dy: number) => {
     if (boardIdRef.current == null || src.length === 0) return
@@ -1026,32 +1087,7 @@ export default function BoardCanvas({
       fitContent: () => fitContent(),
       exportSvg: () => buildBoardSvg(),
       /** SVG → PNG(默认 2 倍超采样)。pngMode 下笔记走 <text>——含 foreignObject 的 SVG 绘入 canvas 会污染画布(实测探针确认) */
-      exportPng: async (scale = 2): Promise<string> => {
-        const svg = await buildBoardSvg(true)
-        const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' })
-        const url = URL.createObjectURL(blob)
-        try {
-          const img = new Image()
-          await new Promise<void>((resolve, reject) => {
-            img.onload = () => resolve()
-            img.onerror = () => reject(new Error('SVG 渲染失败'))
-            img.src = url
-          })
-          const m = /^<svg[^>]*width="(\d+)" height="(\d+)"/.exec(svg)
-          const w = m ? Number(m[1]) : img.naturalWidth || 1200
-          const h = m ? Number(m[2]) : img.naturalHeight || 800
-          const canvas = document.createElement('canvas')
-          canvas.width = Math.max(1, Math.round(w * scale))
-          canvas.height = Math.max(1, Math.round(h * scale))
-          const ctx = canvas.getContext('2d')
-          if (!ctx) throw new Error('canvas 不可用')
-          ctx.scale(scale, scale)
-          ctx.drawImage(img, 0, 0, w, h)
-          return canvas.toDataURL('image/png')
-        } finally {
-          URL.revokeObjectURL(url)
-        }
-      },
+      exportPng: async (scale = 2): Promise<string> => svgToPngDataUrl(await buildBoardSvg(true), scale),
       setTool: () => {
         /* tool 由 prop 驱动 */
       },
@@ -1084,30 +1120,35 @@ export default function BoardCanvas({
    * pngMode=true 时笔记用 SVG <text> 渲染而非 foreignObject——Chromium 下
    * 含 foreignObject 的 SVG 绘入 canvas 会污染画布,无法 toDataURL(实测探针确认)。
    */
-  const buildBoardSvg = async (pngMode = false): Promise<string> => {
-    const bbox = itemsBBox() ?? { x: 0, y: 0, w: 1200, h: 800 }
-    const pad = 60
-    const w = Math.max(800, Math.ceil(bbox.w + pad * 2))
-    const h = Math.max(600, Math.ceil(bbox.h + pad * 2))
+  const buildBoardSvg = async (
+    pngMode = false,
+    opts?: { items?: BoardItem[]; bbox?: Rect; transparent?: boolean }
+  ): Promise<string> => {
+    const bbox = opts?.bbox ?? itemsBBox() ?? { x: 0, y: 0, w: 1200, h: 800 }
+    const pad = opts?.items ? 0 : 60
+    const w = opts?.items ? Math.max(1, Math.ceil(bbox.w + pad * 2)) : Math.max(800, Math.ceil(bbox.w + pad * 2))
+    const h = opts?.items ? Math.max(1, Math.ceil(bbox.h + pad * 2)) : Math.max(600, Math.ceil(bbox.h + pad * 2))
     const ox = bbox.x - pad
     const oy = bbox.y - pad
     const appr = appearanceRef.current
     const bg = resolveBgColor(appr.bg)
     const dotColor = hexLuminance(bg) > 0.6 ? 'rgba(60,60,60,0.22)' : 'rgba(255,255,255,0.14)'
     const parts: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`]
-    parts.push(`<rect x="0" y="0" width="${w}" height="${h}" fill="${bg}"/>`)
-    if (appr.grid) {
+    if (!opts?.transparent) {
+      parts.push(`<rect x="0" y="0" width="${w}" height="${h}" fill="${bg}"/>`)
+    }
+    if (!opts?.transparent && appr.grid) {
       const gs = appr.gridSize
       parts.push(
         `<defs><pattern id="dots" width="${gs}" height="${gs}" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="${dotColor}"/></pattern></defs>`
       )
       parts.push(`<rect x="0" y="0" width="${w}" height="${h}" fill="url(#dots)"/>`)
     }
-    for (const g of guidesRef.current) {
+    for (const g of opts?.transparent ? [] : guidesRef.current) {
       if (g.horizontal) parts.push(`<line x1="0" y1="${(g.y ?? 0) - oy}" x2="${w}" y2="${(g.y ?? 0) - oy}" stroke="rgba(90,160,255,0.55)" stroke-dasharray="6 4"/>`)
       else parts.push(`<line x1="${(g.x ?? 0) - ox}" y1="0" x2="${(g.x ?? 0) - ox}" y2="${h}" stroke="rgba(90,160,255,0.55)" stroke-dasharray="6 4"/>`)
     }
-    for (const rawIt of boardItemsRef.current) {
+    for (const rawIt of opts?.items ?? boardItemsRef.current) {
       // 元素几何/样式字段源于可导入的 .lumenboard，统一收敛为有限数值/白名单，防 SVG 属性逃逸
       const it = {
         ...rawIt,
@@ -2702,7 +2743,19 @@ export default function BoardCanvas({
             item.x < viewportRect.x + viewportRect.w &&
             item.y + autoH > viewportRect.y &&
             item.y < viewportRect.y + viewportRect.h
-          const origSrc = elig ? `${window.api.originalUrl(item.assetId!)}&e=${asset!.edited ?? 0}` : ''
+          // 多档 LOD（里程碑 222）：渲染长边 × 缩放 × DPR × 1.12 决定取哪一档预览；
+          // 超过最高档（3072）才回原图，避免"刚过 512 就整张原图解码"的显存峰值
+          const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1))
+          const needPx = Math.max(item.width, autoH) * viewport.s * dpr * 1.12
+          const lodLevel: 0 | 640 | 1280 | 2048 | 3072 | 'orig' =
+            needPx <= 512 ? 0 : (LOD_LEVELS.find((l) => needPx <= l) ?? 'orig')
+          const lodLabel = lodLevel === 0 ? '' : lodLevel === 'orig' ? 'orig' : String(lodLevel)
+          const origSrc =
+            elig && lodLevel !== 0
+              ? lodLevel === 'orig'
+                ? `${window.api.originalUrl(item.assetId!)}&e=${asset!.edited ?? 0}`
+                : assetPreviewUrl(asset!, lodLevel)
+              : ''
           let placeholderColor = 'rgba(148,163,184,0.4)'
           if (degraded && asset) {
             try {
@@ -2729,6 +2782,7 @@ export default function BoardCanvas({
               placeholderColor={placeholderColor}
               thumbSrc={thumbSrc}
               origSrc={origSrc}
+              lodLabel={lodLabel}
               origLoaded={item.assetId != null && origLoaded.has(item.assetId)}
               alt={asset?.name ?? ''}
             />
@@ -3269,8 +3323,10 @@ interface BoardItemViewProps {
   placeholderColor: string
   /** 缩略图/故事板 URL(asset 类型) */
   thumbSrc: string
-  /** 原图叠加层 URL('' = 不叠加;方案 B 放大高清) */
+  /** 高清叠加层 URL('' = 不叠加;多档 LOD 或原图) */
   origSrc: string
+  /** 当前叠加层档位（'640'/'1280'/'2048'/'3072'/'orig'，'' = 未叠加） */
+  lodLabel: string
   /** 原图是否已加载完成(驱动淡入) */
   origLoaded: boolean
   alt: string
@@ -3287,6 +3343,7 @@ const BoardItemView = memo(function BoardItemView({
   placeholderColor,
   thumbSrc,
   origSrc,
+  lodLabel,
   origLoaded,
   alt
 }: BoardItemViewProps) {
@@ -3359,6 +3416,7 @@ const BoardItemView = memo(function BoardItemView({
             {origSrc !== '' && (
               <img
                 data-board-orig
+                data-board-lod={lodLabel || undefined}
                 src={origSrc}
                 className="pointer-events-none absolute inset-0 h-full w-full object-cover"
                 style={{

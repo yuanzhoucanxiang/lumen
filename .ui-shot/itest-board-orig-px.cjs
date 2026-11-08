@@ -112,23 +112,43 @@ async function main() {
   // 显式归位 scale=1
   await mainRun(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '0', bubbles: true }))`)
   await sleep(400)
-  const at100 = await mainRun(`return (() => {
+  const at100 = await mainRun(`return (async () => {
     const items = [...document.querySelectorAll('[data-board-item]')]
     const byW = (el) => el.getBoundingClientRect().width
     const big = items.find((el) => byW(el) > 500)
     const small = items.find((el) => byW(el) < 300)
+    const overlay = big?.querySelector('[data-board-orig]')
+    const src = overlay?.getAttribute('src') ?? ''
+    const lod = overlay?.getAttribute('data-board-lod') ?? ''
+    let previewOk = false
+    if (src) {
+      try {
+        const res = await fetch(src)
+        previewOk = res.status === 200 && (await res.arrayBuffer()).byteLength > 0
+      } catch {
+        previewOk = false
+      }
+    }
     return {
       total: items.length,
-      bigOrig: !!big?.querySelector('[data-board-orig]'),
+      bigOrig: !!overlay,
       smallOrig: !!small?.querySelector('[data-board-orig]'),
       bigLoaded: !!big?.querySelector('[data-board-orig][style*="opacity: 1"]'),
       bigW: big ? Math.round(byW(big)) : 0,
-      smallW: small ? Math.round(byW(small)) : 0
+      smallW: small ? Math.round(byW(small)) : 0,
+      lod,
+      previewOk,
+      src
     }
   })()`)
   check('100% 缩放有 2 个素材', at100.total === 2 && at100.bigW > 500 && at100.smallW < 300, `bigW=${at100.bigW} smallW=${at100.smallW} total=${at100.total}`)
   check('大图(渲染>512)100% 缩放即切原图并淡入', at100.bigOrig && at100.bigLoaded, `bigOrig=${at100.bigOrig} loaded=${at100.bigLoaded}`)
   check('小图(渲染<512)100% 缩放保持缩略图', !at100.smallOrig, `smallOrig=${at100.smallOrig}`)
+  check(
+    '大图叠加层走多档预览(LOD)且请求 200',
+    ['640', '1280', '2048', '3072', 'orig'].includes(at100.lod) && at100.previewOk === true,
+    `lod=${at100.lod} previewOk=${at100.previewOk} src=${String(at100.src).slice(0, 60)}`
+  )
 
   /* ---------- 4. 缩小到渲染 < 阈值下沿(滞回)后切回缩略图；再放大回原图 ---------- */
   // 每次 '-' ×0.8:需 900 * 0.8^n < 358(n>4),循环按压直到大图渲染降到滞回下沿以下
@@ -155,6 +175,12 @@ async function main() {
     if (growOrig > 0) break
   }
   check('再放大回原图(>512 恢复)', growOrig > 0, `orig=${growOrig}`)
+
+  /* ---------- 5. 富剪贴板：选区图片可写入系统剪贴板（里程碑 222） ---------- */
+  const copyOk = await mainRun(`return window.api.copyBoardImage(
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+  )`)
+  check('白板选区图片可写系统剪贴板', copyOk === true, `ok=${copyOk}`)
 
   /* ---------- 清理 ---------- */
   await mainRun(`await window.api.deleteBoard(${boardId})`)
