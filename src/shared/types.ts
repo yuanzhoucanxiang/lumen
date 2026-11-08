@@ -329,6 +329,8 @@ export interface AppSettings {
   agentWriteFolders?: number[]
   /** Agent 建标签额度（里程碑 219）：0 = 只复用，正数 = 每次最多新建几个，-1 = 不限制 */
   agentTagQuota?: number
+  /** 区域截图全局快捷键（里程碑 235）：Electron accelerator，空 = 关闭 */
+  screenshotShortcut?: string
   /** true = 不限制 Agent 可写文件夹 */
   agentScopeUnrestricted?: boolean
 }

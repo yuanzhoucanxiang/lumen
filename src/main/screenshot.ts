@@ -6,7 +6,7 @@
  * 多显示器时每个覆层各持自己那一屏的捕获图,任意覆层确认/取消即结束整个会话。
  * commit 的 source 参数允许直传整屏 dataUrl(测试用,覆层路径不用);对无会话状态幂等。
  */
-import { BrowserWindow, desktopCapturer, ipcMain, screen } from 'electron'
+import { BrowserWindow, Notification, desktopCapturer, ipcMain, screen } from 'electron'
 import { mkdtempSync, writeFileSync } from 'fs'
 import { rm } from 'fs/promises'
 import { tmpdir } from 'os'
@@ -29,6 +29,9 @@ let sessions: CaptureSession[] = []
 const wcSessions = new WeakMap<Electron.WebContents, CaptureSession>()
 /** 启动互斥:captureDisplay 有 260ms 等待,期间 handle 可重入,须同步标志挡住二次触发 */
 let starting = false
+/** 截图开始前主窗是否可见（里程碑 235）：从托盘/全局快捷键（窗口隐藏）触发时，
+ *  结束不要再把主窗弹出来，避免打断用户当前工作 */
+let restoreMainOnFinish = false
 
 const EMPTY_RESULT: ImportResult = { imported: 0, skipped: 0, failed: 0 }
 
@@ -69,19 +72,24 @@ function finishAll(getMainWindow: () => BrowserWindow | null): void {
   overlays = []
   for (const w of alive) w.destroy()
   const main = getMainWindow()
-  if (main && !main.isDestroyed()) {
+  if (main && !main.isDestroyed() && restoreMainOnFinish) {
     main.show()
     main.focus()
   }
+  restoreMainOnFinish = false
 }
 
-export function registerScreenshotIpc(getMainWindow: () => BrowserWindow | null): void {
-  /* 工具栏/快捷键触发:隐藏主窗 → 逐屏捕获 → 每屏一个覆层 */
-  ipcMain.handle('screenshot:start', async (): Promise<boolean> => {
+/**
+ * 启动一次区域截图（里程碑 235）：由渲染层 IPC、托盘菜单、全局快捷键共用。
+ * 隐藏主窗（若已隐藏无副作用）→ 逐屏捕获 → 每屏一个覆层。
+ */
+export async function startScreenshot(getMainWindow: () => BrowserWindow | null): Promise<boolean> {
+  {
     if (starting || sessions.length > 0) return false
     const main = getMainWindow()
     if (!main || main.isDestroyed()) return false
     starting = true
+    restoreMainOnFinish = main.isVisible()
     main.hide()
     try {
       // 等待窗口隐藏后的合成器重绘,否则主窗会出现在截屏里
@@ -132,7 +140,11 @@ export function registerScreenshotIpc(getMainWindow: () => BrowserWindow | null)
       logger.warn('[screenshot]', `启动失败: ${(e as Error).message}`)
       throw e
     }
-  })
+  }
+}
+
+export function registerScreenshotIpc(getMainWindow: () => BrowserWindow | null): void {
+  ipcMain.handle('screenshot:start', () => startScreenshot(getMainWindow))
 
   /* 覆层渲染层就绪 → 下发该屏整屏图(几 MB 的 dataUrl 走 ipc 消息) */
   ipcMain.on('screenshot:overlayReady', (e) => {
@@ -176,7 +188,17 @@ export function registerScreenshotIpc(getMainWindow: () => BrowserWindow | null)
         try {
           writeFileSync(file, buf)
           const result = await importFiles([file], { sourceUrl: '屏幕截图', source: 'screenshot' })
-          if (result.imported > 0) getMainWindow()?.webContents.send('screenshot:imported', result.imported)
+          if (result.imported > 0) {
+            getMainWindow()?.webContents.send('screenshot:imported', result.imported)
+            // 从托盘/全局快捷键触发（主窗隐藏）时给一条系统通知，否则用户看不到任何反馈
+            if (!restoreMainOnFinish) {
+              try {
+                new Notification({ title: 'LUMEN', body: `已保存截图到素材库（${result.imported} 张）` }).show()
+              } catch {
+                /* 通知不可用时静默 */
+              }
+            }
+          }
           return result
         } finally {
           rm(tmpDir, { recursive: true, force: true }).catch(() => undefined)

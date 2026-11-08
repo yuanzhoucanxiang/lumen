@@ -3,6 +3,7 @@ import { isAbsolute } from 'path'
 import { loadConfig, saveConfig } from '../library'
 import { normalizeAiBaseUrl } from '../aiClient'
 import { syncWatchers } from '../watcher'
+import { refreshGlobalShortcut } from '../desktop'
 
 /** 返回给渲染层的设置（AI Key 只给 hasKey + 末 4 位，完整 Key 永不进渲染进程） */
 function maskedSettings(): Record<string, unknown> {
@@ -20,6 +21,7 @@ function maskedSettings(): Record<string, unknown> {
     agentWriteFolders: cfg.agentWriteFolders ?? [],
     agentScopeUnrestricted: cfg.agentScopeUnrestricted === true,
     agentTagQuota: cfg.agentTagQuota ?? 2,
+    screenshotShortcut: cfg.screenshotShortcut ?? 'CommandOrControl+Alt+S',
     aiProfiles: (cfg.aiProfiles ?? []).map((p) => ({
       name: p.name,
       baseUrl: p.baseUrl,
@@ -51,6 +53,7 @@ export function registerSettingsIpc(getWindow: () => BrowserWindow | null): void
         agentWriteFolders?: number[]
         agentScopeUnrestricted?: boolean
         agentTagQuota?: number
+        screenshotShortcut?: string
       }
     ) => {
       const cfg = loadConfig()
@@ -77,11 +80,16 @@ export function registerSettingsIpc(getWindow: () => BrowserWindow | null): void
       }
       if (patch.agentScopeUnrestricted !== undefined) cfg.agentScopeUnrestricted = !!patch.agentScopeUnrestricted
       // Agent 建标签额度（里程碑 219）：只收 -1..10 的整数；0 = 只复用
+      if (patch.screenshotShortcut !== undefined) {
+        cfg.screenshotShortcut = String(patch.screenshotShortcut).trim().slice(0, 40)
+      }
       if (patch.agentTagQuota !== undefined) {
         const q = Number(patch.agentTagQuota)
         if (Number.isFinite(q)) cfg.agentTagQuota = Math.max(-1, Math.min(10, Math.floor(q)))
       }
       saveConfig(cfg)
+      // 快捷键改动立即生效（里程碑 235）
+      if (patch.screenshotShortcut !== undefined) refreshGlobalShortcut()
       syncWatchers((count) => getWindow()?.webContents.send('clip:imported', count))
       return maskedSettings()
     }

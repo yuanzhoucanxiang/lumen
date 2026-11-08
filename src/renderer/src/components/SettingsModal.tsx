@@ -948,6 +948,36 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
+        {/* 托盘与全局截图快捷键（里程碑 235） */}
+        <div className="settings-module border-t border-[var(--border)] pt-4" data-code="06.5 / TRAY">
+          <div className="section-title mb-2">托盘与截图</div>
+          <div className="mb-2 text-[10.5px] leading-[1.5] text-[var(--text-faint)]">
+            点窗口关闭按钮不会退出，而是隐藏到系统托盘（托盘图标可重新打开、截图或退出）。
+            区域截图的全局快捷键在窗口隐藏时也可以使用，截完自动存入当前素材库。
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <input
+              aria-label="区域截图全局快捷键"
+              className="field-input w-56 text-[12px]"
+              placeholder="留空 = 关闭"
+              defaultValue={settings.screenshotShortcut ?? 'CommandOrControl+Alt+S'}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
+              }}
+              onBlur={(e) => void update({ screenshotShortcut: e.currentTarget.value.trim() })}
+            />
+            <button
+              className="btn-ghost"
+              onClick={() => void update({ screenshotShortcut: 'CommandOrControl+Alt+S' })}
+            >
+              恢复默认
+            </button>
+          </div>
+          <div className="mt-1.5 text-[10.5px] leading-[1.5] text-[var(--text-faint)]">
+            格式示例：<span className="mono">CommandOrControl+Alt+S</span>；留空保存即关闭全局快捷键（应用内截图按钮仍可用）。
+          </div>
+        </div>
+
         {/* 关于 / 更新 */}
         <div className="settings-module flex items-center justify-between border-t border-[var(--border)] pt-4" data-code="07 / SYSTEM">
           <div>

@@ -38,6 +38,9 @@ export interface AppConfig {
   agentScopeUnrestricted?: boolean
   /** Agent 建标签额度（里程碑 219）：0 = 只复用已有标签；正数 = 每次请求最多新建几个；-1 = 不限制。缺省 2 */
   agentTagQuota?: number
+  /** 区域截图的全局快捷键（里程碑 235）：Electron accelerator 格式；空字符串 = 关闭。
+   *  窗口隐藏到托盘时也能触发 */
+  screenshotShortcut?: string
   /** 浮动白板窗状态(位置/尺寸/最小化),重开保持与上次一致 */
   floatingWindow?: { x: number; y: number; width: number; height: number; minimized: boolean }
 }
@@ -145,6 +148,11 @@ export function loadConfig(): AppConfig {
         ? raw.agentWriteFolders.filter((n: unknown): n is number => Number.isInteger(n)).slice(0, 50)
         : [],
       agentScopeUnrestricted: raw.agentScopeUnrestricted === true,
+      // 全局截图快捷键：只收字符串（合法性由 globalShortcut.register 兜底），最长 40 字符
+      screenshotShortcut:
+        typeof raw.screenshotShortcut === 'string'
+          ? raw.screenshotShortcut.trim().slice(0, 40)
+          : 'CommandOrControl+Alt+S',
       // 建标签额度：只收 -1..10 的整数，脏数据回落到默认 2（0 = 只复用）
       agentTagQuota:
         typeof raw.agentTagQuota === 'number' && Number.isFinite(raw.agentTagQuota)

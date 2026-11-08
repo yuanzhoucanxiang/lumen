@@ -24,6 +24,7 @@ import {
   toggleFloatingBoardMinimize
 } from './floatingBoard'
 import { ipcMain } from 'electron'
+import { initDesktop, isQuitting, markQuitting } from './desktop'
 
 // 无头 CI(xvfb):禁用 GPU 硬件加速,让重载/导入等场景在 headless Chromium 下更稳
 if (process.env.LUMEN_HEADLESS === '1') {
@@ -118,6 +119,15 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
+
+  // 里程碑 235：点关闭不退出，隐藏到托盘（托盘菜单可打开/截图/退出）；
+  // 只有托盘「退出」或系统关机（before-quit）才真正关闭窗口
+  mainWindow.on('close', (e) => {
+    if (!isQuitting()) {
+      e.preventDefault()
+      mainWindow?.hide()
+    }
+  })
 
   // 全屏切换 → 通知渲染层隐藏/恢复自绘标题条（里程碑 234）
   const pushFullScreen = () => mainWindow?.webContents.send('window:fullscreen', mainWindow.isFullScreen())
@@ -229,6 +239,8 @@ app.whenReady().then(() => {
   registerIpc(() => mainWindow)
 
   createWindow()
+  // 托盘常驻 + 区域截图全局快捷键（里程碑 235）
+  initDesktop(() => mainWindow)
 
   // 自动更新（electron-updater，打包版生效）
   initUpdater(() => mainWindow)
@@ -294,4 +306,5 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
+app.on('before-quit', () => markQuitting())
 app.on('will-quit', () => closeDb())
