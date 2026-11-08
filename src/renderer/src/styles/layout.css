@@ -211,6 +211,53 @@ body::before {
   border-color: var(--accent);
   box-shadow: 0 0 10px rgba(185, 76, 66, 0.3);
 }
+/* 乌鸦眼睛徽章（里程碑 237）：眼廓呼吸微光 + 瞳孔轻微缩放；悬停/打开时固定为满亮 */
+.archive-brand__assistant-badge {
+  position: relative;
+}
+.archive-brand__assistant-badge::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 6px;
+  box-shadow: 0 0 12px rgba(185, 76, 66, 0.5);
+  opacity: 0.2;
+  pointer-events: none;
+  animation: raven-eye-glow 3.8s ease-in-out infinite;
+}
+@keyframes raven-eye-glow {
+  0%,
+  100% {
+    opacity: 0.16;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+.archive-brand__assistant-badge svg .raven-pupil {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: raven-eye-pupil 3.8s ease-in-out infinite;
+}
+@keyframes raven-eye-pupil {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.16);
+  }
+}
+.archive-brand__assistant:hover .archive-brand__assistant-badge::after,
+.archive-brand__assistant.is-open .archive-brand__assistant-badge::after {
+  animation: none;
+  opacity: 1;
+}
+.archive-brand__assistant:hover .archive-brand__assistant-badge svg .raven-pupil,
+.archive-brand__assistant.is-open .archive-brand__assistant-badge svg .raven-pupil {
+  animation: none;
+}
+
 .archive-brand__assistant-label {
   font-weight: 500;
 }

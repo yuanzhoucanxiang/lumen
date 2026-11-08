@@ -1018,11 +1018,13 @@ function Sidebar() {
             className={`archive-brand__assistant ${agentPanelOpen ? 'is-open' : ''}`}
             onClick={() => useLibraryStore.getState().toggleAgentPanel()}
           >
+            {/* 乌鸦眼睛（里程碑 237）：鸦形眼廓 + 瞳孔 + 高光点，配合呼吸微光 */}
             <span className="archive-brand__assistant-badge" aria-hidden="true">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="10.4" cy="10.8" r="6.1" />
-                <path d="m19.6 20-4.4-4.4" />
-                <path d="M17.6 2.2l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" />
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2.3 12c3.1-4.5 6.5-6.8 9.7-6.8S18.6 7.5 21.7 12c-3.1 4.5-6.5 6.8-9.7 6.8S5.4 16.5 2.3 12Z" />
+                <circle className="raven-pupil" cx="12" cy="12" r="3.5" />
+                <circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none" />
+                <circle cx="10.1" cy="10.4" r="0.95" fill="currentColor" stroke="none" opacity="0.9" />
               </svg>
             </span>
             <span className="archive-brand__assistant-label">助手</span>
