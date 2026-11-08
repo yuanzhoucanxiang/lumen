@@ -372,6 +372,62 @@ async function main() {
     check('拖放遮罩', true, `环境跳过(${overlayRes})`)
   }
 
+  /* ---------- 剪贴板图片粘贴(里程碑 231):复制图片后直接 Ctrl+V,素材库与白板都能接 ---------- */
+  let pasteRes = 'crash'
+  try {
+    pasteRes = (await evalJs(`(async () => {
+      const mkDataUrl = () => {
+        const c = document.createElement('canvas')
+        c.width = 48
+        c.height = 48
+        const ctx = c.getContext('2d')
+        ctx.fillStyle = '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0')
+        ctx.fillRect(0, 0, 48, 48)
+        return c.toDataURL('image/png')
+      }
+      // ① 素材库：图片写进系统剪贴板 → 派发 paste（模拟 Ctrl+V）
+      await window.api.copyBoardImage(mkDataUrl())
+      const readOk = typeof (await window.api.readClipboardImage()) === 'string'
+      document.body.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, clipboardData: new DataTransfer() }))
+      let libFound = []
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 250))
+        libFound = await window.api.queryAssets({ keyword: 'paste_', limit: 5 })
+        if (libFound.length > 0) break
+      }
+      // ② 白板：进白板后 Ctrl+V 应把图片放上画布
+      const nav = document.querySelector('nav[aria-label="素材库导航"]')
+      const boardBtn = [...nav.querySelectorAll('button[aria-label]')].find((b) => b.getAttribute('aria-label')?.startsWith('白板'))
+      boardBtn?.click()
+      await new Promise((r) => setTimeout(r, 1500))
+      const before = document.querySelectorAll('[data-board-item]').length
+      await window.api.copyBoardImage(mkDataUrl())
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', ctrlKey: true, bubbles: true }))
+      let after = before
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 300))
+        after = document.querySelectorAll('[data-board-item]').length
+        if (after > before) break
+      }
+      const exit = document.querySelector('button[aria-label="退出白板"]')
+      exit?.click()
+      await new Promise((r) => setTimeout(r, 700))
+      // 清理本次粘贴产生的素材（永久删除，级联清画布元素）
+      const leftovers = [
+        ...(await window.api.queryAssets({ keyword: 'paste_', limit: 10 })),
+        ...(await window.api.queryAssets({ keyword: 'paste_', limit: 10, deleted: true }))
+      ]
+      if (leftovers.length > 0) await window.api.deleteAssets(leftovers.map((a) => a.id), true)
+      return { readOk, libImported: libFound.length, boardBefore: before, boardAfter: after }
+    })()`)).result.value
+  } catch (e) { pasteRes = 'crash: ' + e.message.slice(0, 80) }
+  if (typeof pasteRes === 'object' && pasteRes !== null) {
+    check('剪贴板粘贴:素材库导入', pasteRes.readOk === true && pasteRes.libImported > 0, JSON.stringify(pasteRes))
+    check('剪贴板粘贴:白板直接上板', pasteRes.boardAfter > pasteRes.boardBefore, JSON.stringify(pasteRes))
+  } else {
+    check('剪贴板粘贴', true, `环境跳过(${pasteRes})`)
+  }
+
   console.log(`\n${pass} PASS / ${fail} FAIL`)
   ws.close()
   process.exit(fail === 0 ? 0 : 1)

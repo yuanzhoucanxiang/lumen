@@ -642,6 +642,18 @@ export default function BoardCanvas({
   }
   const duplicateSelection = () => addItemCopies(boardItemsRef.current.filter((i) => selectedIdsRef.current.includes(i.id)), 24, 24)
   const pasteClipboard = () => addItemCopies(clipboardRef.current, 24, 24)
+  /** 系统剪贴板图片 → 导入素材库并放到画布中心（里程碑 231，对标 MOTZ 的直接粘贴） */
+  const pasteSystemImage = async (): Promise<boolean> => {
+    const ids = await useLibraryStore.getState().importClipboardImage()
+    if (ids.length === 0 || boardIdRef.current == null) return false
+    const frame = frameRef.current?.getBoundingClientRect()
+    const pt = frame
+      ? canvasPointFromClient(frame.left + frame.width / 2, frame.top + frame.height / 2)
+      : { x: 0, y: 0 }
+    await addAssetsToBoard(ids, Math.round(pt.x), Math.round(pt.y))
+    useLibraryStore.getState().showToast(`已从剪贴板加入 ${ids.length} 张到白板`)
+    return true
+  }
 
   /* ---------- 方向键微调（DOM 实时,keyup 落库） ---------- */
   const nudgeRef = useRef<{ origs: Map<string, { x: number; y: number }>; dx: number; dy: number } | null>(null)
@@ -1799,7 +1811,9 @@ export default function BoardCanvas({
         }
         if (key === 'v') {
           e.preventDefault()
-          void pasteClipboard()
+          // 内部剪贴板有内容优先走内部复制粘贴；否则尝试系统剪贴板图片（里程碑 231）
+          if (clipboardRef.current.length > 0) void pasteClipboard()
+          else void pasteSystemImage()
           return
         }
         if (key === 'd') {
@@ -2575,7 +2589,8 @@ export default function BoardCanvas({
   }
   const pasteCtx = () => {
     setCtxMenu(null)
-    void pasteClipboard()
+    if (clipboardRef.current.length > 0) void pasteClipboard()
+    else void pasteSystemImage()
   }
 
   /* ---------- 素材宽高比（用于 height=0 自动计算） ---------- */

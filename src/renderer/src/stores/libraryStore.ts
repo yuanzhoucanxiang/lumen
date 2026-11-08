@@ -227,6 +227,8 @@ interface LibraryState {
   addTagLocal: (ids: string[], tag: string) => void
   /** 拖拽打标签：写库 + 就地更新列表 + 刷新标签计数 */
   applyTag: (ids: string[], tag: string) => Promise<void>
+  /** 从系统剪贴板导入图片（里程碑 231）：返回新导入素材 id；剪贴板没有图片返回空数组 */
+  importClipboardImage: () => Promise<string[]>
   deleteSelection: (permanent?: boolean) => Promise<void>
   restoreSelection: () => Promise<void>
   emptyTrash: () => Promise<void>
@@ -773,6 +775,21 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         want.has(a.id) && !a.tagNames.includes(tag) ? { ...a, tagNames: [...a.tagNames, tag] } : a
       )
     })
+  },
+
+  importClipboardImage: async () => {
+    const dataUrl = await window.api.readClipboardImage()
+    if (!dataUrl) return []
+    const r = await window.api.importClipboardImage(dataUrl)
+    const ids = r?.importedIds ?? []
+    if ((r?.imported ?? 0) > 0) {
+      get().showToast(`已从剪贴板导入 ${r.imported} 张`)
+      await get().refreshAll()
+    } else if ((r?.skipped ?? 0) > 0) {
+      get().showToast('这张图已在素材库中')
+      await get().refreshAll()
+    }
+    return ids
   },
 
   applyTag: async (ids, tag) => {

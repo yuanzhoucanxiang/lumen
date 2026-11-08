@@ -253,6 +253,11 @@ const api = {
   /* 系统操作 */
   showInFolder: (id: string): Promise<void> => ipcRenderer.invoke('shell:showItem', id),
   copyImage: (id: string): Promise<boolean> => ipcRenderer.invoke('asset:copyImage', id),
+  /** 系统剪贴板图片（里程碑 231）：PNG dataURL，没有图片为 null */
+  readClipboardImage: (): Promise<string | null> => ipcRenderer.invoke('clipboard:readImage'),
+  /** 把剪贴板图片导入素材库（里程碑 231） */
+  importClipboardImage: (dataUrl: string): Promise<ImportResult> =>
+    ipcRenderer.invoke('clipboard:importImage', dataUrl),
   /** 白板选区复制为图片写入系统剪贴板（里程碑 222） */
   copyBoardImage: (dataUrl: string): Promise<boolean> => ipcRenderer.invoke('board:copyImage', dataUrl),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('shell:openExternal', url),

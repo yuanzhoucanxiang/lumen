@@ -373,7 +373,13 @@ export default function App() {
       const target = e.target as HTMLElement | null
       if (target?.closest('input, textarea, [contenteditable="true"]')) return
       const text = (e.clipboardData?.getData('text/plain') ?? '').trim()
-      if (!text) return
+      if (!text) {
+        // 剪贴板图片（里程碑 231）：跨应用复制（浏览器右键复制图片等）时 paste 事件里
+        // 常常既没有 files 也没有文本，只能回主进程读系统剪贴板
+        e.preventDefault()
+        void useLibraryStore.getState().importClipboardImage()
+        return
+      }
       const tokens = text.split(/\s+/).filter(Boolean)
       const urls = tokens.filter((t) => /^https?:\/\//i.test(t))
       // 仅当整段文本都是 URL 时才接管(部分是链接的普通文本不拦截)
