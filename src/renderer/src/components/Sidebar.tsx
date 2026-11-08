@@ -981,35 +981,34 @@ function Sidebar() {
       {/* 品牌区 */}
       <header className="archive-brand">
         <div className="archive-brand__negative">
-            <span className="archive-brand__frame-no mono">{pixel ? '03' : cyber ? '02' : '36'}</span>
-            <img className="brand-mark" src={ravenMarkUrl} alt="" draggable={false} />
-          </div>
-          <div className="archive-brand__copy">
-            <span className="archive-brand__edition mono">
-              {boardViewMode === 'board' ? (pixel ? 'ARCHIVE CANVAS / 03' : cyber ? 'NODE CANVAS / 02' : 'LIGHT TABLE / 01') : pixel ? 'INDEX / 03' : cyber ? 'SIGNAL / 02' : 'ARCHIVE / 01'}
+          <span className="archive-brand__frame-no mono">{pixel ? '03' : cyber ? '02' : '36'}</span>
+          <img className="brand-mark" src={ravenMarkUrl} alt="" draggable={false} />
+        </div>
+        <div className="archive-brand__copy">
+          <span className="archive-brand__edition mono">
+            {boardViewMode === 'board' ? (pixel ? 'ARCHIVE CANVAS / 03' : cyber ? 'NODE CANVAS / 02' : 'LIGHT TABLE / 01') : pixel ? 'INDEX / 03' : cyber ? 'SIGNAL / 02' : 'ARCHIVE / 01'}
+          </span>
+          <h1 className="brand-wordmark">{boardViewMode === 'board' ? 'BOARD' : 'LUMEN'}</h1>
+          {/* 助手入口（里程碑 228）：做成品牌块内的文字链接行——常显、带说明与箭头，
+              不再用挤在字标旁的独立按钮（那样会把 ARCHIVE / 01 挤到换行、像硬贴上去的） */}
+          <button
+            aria-label="助手"
+            aria-pressed={agentPanelOpen}
+            title="助手：对话式找图（Ctrl+J 打开/收起）"
+            className={`archive-brand__assistant ${agentPanelOpen ? 'is-open' : ''}`}
+            onClick={() => useLibraryStore.getState().toggleAgentPanel()}
+          >
+            <Icon name="assistant" size={10} strokeWidth={2} />
+            <span>助手</span>
+            <span className="archive-brand__assistant-hint">对话式找图</span>
+            <Icon name="chevronRight" size={9} strokeWidth={2} className="archive-brand__assistant-arrow" />
+          </button>
+          {(pixel || cyber) && (
+            <span className="archive-brand__subtitle mono">
+              {boardViewMode === 'board' ? (pixel ? 'REFERENCE INDEX WORKSPACE' : 'VISUAL SIGNAL WORKSPACE') : pixel ? 'LOCAL VISUAL INDEX' : 'LOCAL SIGNAL MATRIX'}
             </span>
-            <h1 className="brand-wordmark">{boardViewMode === 'board' ? 'BOARD' : 'LUMEN'}</h1>
-            {(pixel || cyber) && (
-              <span className="archive-brand__subtitle mono">
-                {boardViewMode === 'board' ? (pixel ? 'REFERENCE INDEX WORKSPACE' : 'VISUAL SIGNAL WORKSPACE') : pixel ? 'LOCAL VISUAL INDEX' : 'LOCAL SIGNAL MATRIX'}
-              </span>
-            )}
-          </div>
-        {/* 助手入口（里程碑 226）：放在品牌行里，用带文字的按钮——只靠图标可点，普通用户发现不了 */}
-        <button
-          aria-label="助手"
-          aria-pressed={agentPanelOpen}
-          title="助手：对话式找图（Ctrl+J 打开/收起）"
-          className={`ml-auto flex shrink-0 items-center gap-1 rounded-sm border px-1.5 py-1 text-[10.5px] transition-colors duration-100 ${
-            agentPanelOpen
-              ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-text)]'
-              : 'border-[var(--border-strong)] text-[var(--text-dim)] hover:border-[var(--accent)] hover:text-[var(--accent-text)]'
-          }`}
-          onClick={() => useLibraryStore.getState().toggleAgentPanel()}
-        >
-          <Icon name="assistant" size={11} strokeWidth={2} />
-          助手
-        </button>
+          )}
+        </div>
         {boardViewMode === 'board' && (
           <button
             aria-label="收起素材库列表"

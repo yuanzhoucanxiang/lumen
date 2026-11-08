@@ -130,7 +130,7 @@ async function main() {
   }
 
   const navSpread = m.navHeights.length > 1 ? Math.max(...m.navHeights) - Math.min(...m.navHeights) : 0
-  check('品牌区压缩到 52px', Math.abs(m.brandH - 52) <= 3, `brandH=${m.brandH.toFixed(1)}`)
+  check('品牌区 56px', Math.abs(m.brandH - 56) <= 3, `brandH=${m.brandH.toFixed(1)}`)
   // 助手入口已并入品牌区（里程碑 226），不再作为导航行比较高度
   check('导航行高统一 32px', navSpread <= 2 && Math.abs(m.navHeights[0] - 33) <= 2, JSON.stringify({ nav: m.navHeights.slice(0, 3) }))
   check('分区间距统一 12px', m.sectionMargins.every((v) => Math.abs(v - 12) <= 1), JSON.stringify(m.sectionMargins))

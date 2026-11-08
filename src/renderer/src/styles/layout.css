@@ -55,10 +55,10 @@ body::before {
 .archive-brand {
   position: relative;
   display: flex;
-  min-height: 52px;
+  min-height: 56px;
   align-items: center;
   gap: 12px;
-  padding: 5px 10px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--border-strong);
   background:
     linear-gradient(105deg, rgba(215, 210, 197, 0.045), transparent 42%),
@@ -112,6 +112,7 @@ body::before {
 .archive-brand__edition {
   display: block;
   margin-bottom: 4px;
+  white-space: nowrap;
   color: var(--accent-text);
   font-size: 8px;
   letter-spacing: 0.18em;
@@ -119,12 +120,47 @@ body::before {
 
 .archive-brand .brand-wordmark {
   margin: 0;
+  white-space: nowrap;
   color: var(--paper);
   font-family: var(--font-display);
   font-size: 15px;
   font-weight: 600;
   line-height: 1;
   letter-spacing: 0.24em;
+}
+
+/* 助手入口（里程碑 228）：品牌块内的文字链接行，常显说明 + 箭头 */
+.archive-brand__assistant {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  color: var(--accent-text);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  transition: color 120ms ease;
+}
+.archive-brand__assistant:hover {
+  color: var(--text-main);
+}
+.archive-brand__assistant-hint {
+  color: var(--text-faint);
+  font-size: 9.5px;
+  transition: color 120ms ease;
+}
+.archive-brand__assistant:hover .archive-brand__assistant-hint {
+  color: var(--text-dim);
+}
+.archive-brand__assistant-arrow {
+  color: var(--text-faint);
+  transition:
+    color 120ms ease,
+    transform 120ms ease;
+}
+.archive-brand__assistant:hover .archive-brand__assistant-arrow {
+  color: var(--accent-text);
+  transform: translateX(1px);
 }
 
 .archive-brand__subtitle {
