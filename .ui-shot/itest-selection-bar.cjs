@@ -193,6 +193,20 @@ async function main() {
   `)
   check('取消选择后批量操作消失', !cleared.actions && !cleared.bar && cleared.selected === 0, JSON.stringify(cleared))
 
+  // 里程碑 241：助手停靠（详情栏自动收起）且未多选时，底部不应残留空操作条
+  const agentEmpty = await run(`
+    const nav = document.querySelector('nav[aria-label="素材库导航"]')
+    const agent = [...nav.querySelectorAll('button[aria-label]')].find((b) => b.getAttribute('aria-label') === '助手')
+    agent?.click()
+    await new Promise((r) => setTimeout(r, 500))
+    const bar = document.querySelector('[data-testid="selection-bar"]')
+    const docked = document.querySelector('[data-testid="agent-panel"]')?.getAttribute('data-mode')
+    agent?.click()
+    await new Promise((r) => setTimeout(r, 400))
+    return { bar: !!bar, docked }
+  `)
+  check('助手停靠且未多选时无空操作条', agentEmpty.bar === false, JSON.stringify(agentEmpty))
+
   await send('Emulation.clearDeviceMetricsOverride')
   await sleep(300)
   ws.close()

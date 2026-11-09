@@ -1,14 +1,19 @@
 import { memo } from 'react'
+import { useLibraryStore } from '@renderer/stores/libraryStore'
 import SelectionActions from './SelectionActions'
 
 /**
  * 选区操作条（里程碑 195）：多选时浮在图库底部。
  * 里程碑 232：动作本体抽到 <SelectionActions>，与右侧详情栏共用；
  * 这条底部条现在只在详情栏收起时出现（避免两处重复入口），位置按左右面板实际占用居中。
+ * 里程碑 241：未多选时整条不渲染——此前外壳无条件渲染，助手停靠（详情栏收起）时会露出空黑条。
  */
 function SelectionBar({ leftInset, rightInset }: { leftInset: number; rightInset: number }) {
+  const selection = useLibraryStore((s) => s.selection)
   const width = `calc(100vw - ${leftInset}px - ${rightInset}px - 2rem)`
   const left = `calc(${leftInset}px + (100vw - ${leftInset}px - ${rightInset}px) / 2)`
+
+  if (selection.length < 2) return null
 
   return (
     <div
