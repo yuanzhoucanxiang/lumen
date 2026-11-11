@@ -17,6 +17,8 @@ const DEFAULT_SHORTCUT = 'CommandOrControl+Alt+S'
 
 let tray: Tray | null = null
 let getMain: () => BrowserWindow | null = () => null
+/** 主窗被异常销毁时重建（正常情况下关闭只是 hide，不会走到这里） */
+let createMain: (() => void) | null = null
 /** 用户主动退出（托盘菜单/系统关机）时才真的关闭窗口 */
 let quitting = false
 /** 当前注册成功的全局快捷键（空 = 未注册） */
@@ -30,26 +32,56 @@ export function markQuitting(): void {
   quitting = true
 }
 
-function showMain(): void {
-  const win = getMain()
+/**
+ * 显示并前置主窗口（托盘单击/菜单/第二实例/任务栏重启共用）。
+ * Windows 的 show/focus 会被系统前台锁拦下，置顶一次再取消作为兜底。
+ */
+export function restoreWindow(win: BrowserWindow | null): void {
   if (!win || win.isDestroyed()) return
   if (win.isMinimized()) win.restore()
-  win.show()
+  if (!win.isVisible()) win.show()
   win.focus()
+  if (process.platform === 'win32' && !win.isFocused()) {
+    win.setAlwaysOnTop(true)
+    win.setAlwaysOnTop(false)
+    win.focus()
+  }
 }
 
-/** 托盘图标：开发/打包都从 build/icon.ico 读（打包 files 白名单包含 build/**） */
-function trayIcon(): Electron.NativeImage {
-  const candidates = [
-    join(__dirname, '../../build/icon.ico'),
-    join(process.resourcesPath ?? '', 'build/icon.ico')
-  ]
-  for (const p of candidates) {
-    if (existsSync(p)) {
-      const img = nativeImage.createFromPath(p)
-      if (!img.isEmpty()) return img
-    }
+function showMain(): void {
+  const win = getMain()
+  if (!win || win.isDestroyed()) {
+    // 窗口不存在（异常销毁/启动竞态）：请求主进程重建，ready-to-show 会自动显示
+    createMain?.()
+    return
   }
+  restoreWindow(win)
+}
+
+/** 托盘图标：打包后由 extraResources 复制到 resources/icon.ico|png；开发态读 build/ */
+function trayIcon(): Electron.NativeImage {
+  const resources = process.resourcesPath ?? ''
+  const winCandidates = [
+    join(resources, 'icon.ico'),
+    join(__dirname, '../../build/icon.ico'),
+    join(resources, 'icon.png'),
+    join(__dirname, '../../build/icon.png')
+  ]
+  const macCandidates = [
+    join(resources, 'icon.png'),
+    join(__dirname, '../../build/icon.png'),
+    join(resources, 'icon.ico'),
+    join(__dirname, '../../build/icon.ico')
+  ]
+  for (const p of process.platform === 'win32' ? winCandidates : macCandidates) {
+    if (!existsSync(p)) continue
+    let img = nativeImage.createFromPath(p)
+    if (img.isEmpty()) continue
+    // macOS 菜单栏按 16pt 渲染；Windows 由系统从多尺寸 ICO 里选
+    if (process.platform === 'darwin') img = img.resize({ width: 16, height: 16 })
+    return img
+  }
+  logger.warn('[desktop]', '托盘图标缺失：resources/icon.ico|png 与 build/ 均未找到')
   return nativeImage.createEmpty()
 }
 
@@ -74,7 +106,9 @@ function buildTrayMenu(): Menu {
 
 function createTray(): void {
   if (tray) return
-  tray = new Tray(trayIcon())
+  const icon = trayIcon()
+  tray = new Tray(icon)
+  logger.info('[desktop]', `托盘图标: ${icon.isEmpty() ? '空(异常)' : `${icon.getSize().width}x${icon.getSize().height}`}`)
   tray.setToolTip('LUMEN · 本地素材档案')
   tray.setContextMenu(buildTrayMenu())
   tray.on('click', showMain)
@@ -118,8 +152,12 @@ export function refreshGlobalShortcut(): void {
 }
 
 /** 初始化托盘与全局快捷键（主窗口创建后调用一次） */
-export function initDesktop(getMainWindow: () => BrowserWindow | null): void {
+export function initDesktop(
+  getMainWindow: () => BrowserWindow | null,
+  recreateMainWindow?: () => void
+): void {
   getMain = getMainWindow
+  createMain = recreateMainWindow ?? null
   createTray()
   refreshGlobalShortcut()
   app.on('will-quit', () => {

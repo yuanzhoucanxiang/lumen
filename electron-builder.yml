@@ -50,6 +50,12 @@ asarUnpack:
 extraResources:
   - from: agent-skill
     to: skill
+  # 托盘图标随包分发（里程碑 245）：files 白名单只有 out/**，build/icon.* 不会进 asar；
+  # 放到 resources/icon.ico|png 供 desktop.ts 直接读取，否则正式版托盘是空图标
+  - from: build/icon.ico
+    to: icon.ico
+  - from: build/icon.png
+    to: icon.png
 nsis:
   artifactName: Lumen-${version}-setup.${ext}
   shortcutName: LUMEN

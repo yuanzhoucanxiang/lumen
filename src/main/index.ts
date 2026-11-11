@@ -24,7 +24,7 @@ import {
   toggleFloatingBoardMinimize
 } from './floatingBoard'
 import { ipcMain } from 'electron'
-import { initDesktop, isQuitting, markQuitting } from './desktop'
+import { initDesktop, isQuitting, markQuitting, restoreWindow } from './desktop'
 
 // 无头 CI(xvfb):禁用 GPU 硬件加速,让重载/导入等场景在 headless Chromium 下更稳
 if (process.env.LUMEN_HEADLESS === '1') {
@@ -75,11 +75,12 @@ if (!gotSingleInstanceLock && !allowMulti) {
   app.quit()
 }
 app.on('second-instance', () => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.show()
-    mainWindow.focus()
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    // 首个实例可能还在启动（窗口未建好）或窗口被异常销毁：ready 后补建
+    if (app.isReady()) createWindow()
+    return
   }
+  restoreWindow(mainWindow)
 })
 
 // asset: 协议必须声明为 privileged scheme（stream: true），否则 <video>/<audio> 无法播放该协议内容。
@@ -240,7 +241,9 @@ app.whenReady().then(() => {
 
   createWindow()
   // 托盘常驻 + 区域截图全局快捷键（里程碑 235）
-  initDesktop(() => mainWindow)
+  initDesktop(() => mainWindow, () => {
+    if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+  })
 
   // 自动更新（electron-updater，打包版生效）
   initUpdater(() => mainWindow)
