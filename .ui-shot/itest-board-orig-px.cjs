@@ -176,7 +176,90 @@ async function main() {
   }
   check('再放大回原图(>512 恢复)', growOrig > 0, `orig=${growOrig}`)
 
-  /* ---------- 5. 富剪贴板：选区图片可写入系统剪贴板（里程碑 222） ---------- */
+  /* ---------- 5. 素材多且相隔远：平移到远处素材仍恢复 LOD（里程碑 242 回归） ----------
+     此前高清候选遍历全量 boardItems 且只留 32 个，屏幕外元素占满名额后，
+     平移到远处素材即使渲染尺寸足够也拿不到高清叠加层。 */
+  await mainRun(`(async () => {
+    const bs = await window.api.listBoards()
+    for (const b of bs) if (b.name === 'itest-LOD-远端') await window.api.deleteBoard(b.id)
+  })()`)
+  const farBoard = await mainRun(`return window.api.createBoard('itest-LOD-远端')`)
+  const farBoardId = farBoard.id
+  await mainRun(`(async () => {
+    const items = []
+    for (let i = 0; i < 40; i++) {
+      items.push({ assetId: ${JSON.stringify(asset.id)}, type: 'asset', x: 100 + i * 1500, y: 100, width: 900, height: 600 })
+    }
+    await window.api.addBoardItems(${farBoardId}, items)
+    return true
+  })()`)
+  const farItems = await mainRun(`return window.api.listBoardItems(${farBoardId})`)
+  const farTarget = farItems[farItems.length - 1]
+  await mainRun(`location.reload()`)
+  ready = false
+  for (let i = 0; i < 120; i++) {
+    await sleep(500)
+    ready = await mainRun(`return !!document.querySelector('nav[aria-label="素材库导航"]')`)
+    if (ready) break
+  }
+  if (ready) {
+    await mainRun(`(() => {
+      const btn = document.querySelector('nav[aria-label="素材库导航"] button[aria-label="白板"]')
+      btn.click()
+    })()`)
+    await sleep(500)
+    await mainRun(`(() => {
+      const sel = document.querySelector('select[aria-label="切换白板"]')
+      sel.value = ${farBoardId}
+      sel.dispatchEvent(new Event('change', { bubbles: true }))
+    })()`)
+    await sleep(1000)
+    await mainRun(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '0', bubbles: true }))`)
+    await sleep(500)
+    // 中键拖拽平移到最远的一件（画布 40 件、间距 1500px）
+    const dx = -(farTarget.x - 100)
+    await mainRun(`(() => {
+      const frame = document.querySelector('[data-board-frame]')
+      const opt = { bubbles: true, cancelable: true, pointerId: 88, pointerType: 'mouse', button: 1, buttons: 4 }
+      frame.dispatchEvent(new PointerEvent('pointerdown', { ...opt, clientX: 700, clientY: 500 }))
+      frame.dispatchEvent(new PointerEvent('pointermove', { ...opt, clientX: 700 + ${dx}, clientY: 500 }))
+      frame.dispatchEvent(new PointerEvent('pointerup', { ...opt, clientX: 700 + ${dx}, clientY: 500, buttons: 0 }))
+      return true
+    })()`)
+    await sleep(1200)
+  }
+  const far = ready
+    ? await mainRun(`return (async () => {
+        const target = document.querySelector('[data-board-item="${farTarget.id}"]')
+        const overlay = target?.querySelector('[data-board-orig]')
+        const src = overlay?.getAttribute('src') ?? ''
+        let previewOk = false
+        if (src) {
+          try {
+            const res = await fetch(src)
+            previewOk = res.status === 200 && (await res.arrayBuffer()).byteLength > 0
+          } catch {
+            previewOk = false
+          }
+        }
+        return {
+          inDom: !!target,
+          w: target ? Math.round(target.getBoundingClientRect().width) : 0,
+          orig: !!overlay,
+          lod: overlay?.getAttribute('data-board-lod') ?? '',
+          previewOk
+        }
+      })()`)
+    : { inDom: false, w: 0, orig: false, lod: '', previewOk: false }
+  check('多素材相隔远：平移到远处素材(渲染>512)', far.inDom && far.w > 500, `inDom=${far.inDom} w=${far.w}`)
+  check(
+    '多素材相隔远：远处素材仍挂载 LOD 高清层且请求 200',
+    far.orig && ['640', '1280', '2048', '3072', 'orig'].includes(far.lod) && far.previewOk === true,
+    `orig=${far.orig} lod=${far.lod} previewOk=${far.previewOk}`
+  )
+  await mainRun(`await window.api.deleteBoard(${farBoardId})`)
+
+  /* ---------- 6. 富剪贴板：选区图片可写入系统剪贴板（里程碑 222） ---------- */
   const copyOk = await mainRun(`return window.api.copyBoardImage(
     'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
   )`)

@@ -319,29 +319,9 @@ export default function BoardCanvas({
 
   /* ---------- 原图/缩略图切换(方案 B,逐项像素判据)----------
      素材渲染长边超过缩略图分辨率才换原图(淡入覆盖,像素级清晰),否则缩略图足够;
-     逐项滞回防抖动,切回缩略图控制大图显存。 */
+     逐项滞回防抖动,切回缩略图控制大图显存。
+     候选集在视口裁剪之后计算(见 visibleItems 下方),屏幕外元素不占名额。 */
   const [origItems, setOrigItems] = useState<ReadonlySet<string>>(new Set())
-  useEffect(() => {
-    setOrigItems((prev) => {
-      // 收集时带上屏幕尺寸：超过上限就按「屏幕上更大」的优先给原图
-      const want: { id: string; px: number }[] = []
-      for (const it of boardItems) {
-        if (it.type !== 'asset' || !it.assetId) continue
-        const h = it.height > 0 ? it.height : it.width * (aspectCacheRef.current[it.assetId] ?? 0.75)
-        const rendered = Math.max(it.width, h) * viewport.s
-        // 已在原图:缩回阈值以下才切回；不在原图:放大到阈值以上才换（滞回防抖动）
-        if (prev.has(it.id) ? rendered > ORIG_PX_DOWN : rendered >= ORIG_PX_UP) want.push({ id: it.id, px: rendered })
-      }
-      if (want.length > ORIG_MAX) {
-        want.sort((a, b) => b.px - a.px)
-        want.length = ORIG_MAX
-      }
-      const next = new Set(want.map((w) => w.id))
-      if (next.size !== prev.size) return next
-      for (const id of next) if (!prev.has(id)) return next
-      return prev
-    })
-  }, [viewport.s, boardItems])
   /** 已成功加载原图的 assetId(驱动淡入,避免原图未就绪时的空白闪动) */
   const [origLoaded, setOrigLoaded] = useState<Set<string>>(new Set())
 
@@ -857,6 +837,37 @@ export default function BoardCanvas({
     picked.sort((a, b) => a - b)
     return picked.map((i) => boardItems[i])
   }, [boardItems, cullRect, yIndex, editingNoteId])
+
+  /* 高清叠加层候选：只在当前渲染集（视口 + 一圈余量）里选。
+     此前遍历全量 boardItems，素材多且相隔远时屏幕外元素会占满 ORIG_MAX 名额，
+     平移到远处素材后反而拿不到 LOD（里程碑 242）。 */
+  useEffect(() => {
+    setOrigItems((prev) => {
+      // 收集时带上屏幕尺寸与是否真在视口内：名额不足时优先保视口内的
+      const want: { id: string; px: number; onscreen: boolean }[] = []
+      for (const it of visibleItems) {
+        if (it.type !== 'asset' || !it.assetId) continue
+        const h = it.height > 0 ? it.height : it.width * (aspectCacheRef.current[it.assetId] ?? 0.75)
+        const rendered = Math.max(it.width, h) * viewport.s
+        // 已在原图:缩回阈值以下才切回；不在原图:放大到阈值以上才换（滞回防抖动）
+        if (prev.has(it.id) ? rendered <= ORIG_PX_DOWN : rendered < ORIG_PX_UP) continue
+        const onscreen =
+          it.x + it.width > viewportRect.x &&
+          it.x < viewportRect.x + viewportRect.w &&
+          it.y + h > viewportRect.y &&
+          it.y < viewportRect.y + viewportRect.h
+        want.push({ id: it.id, px: rendered, onscreen })
+      }
+      if (want.length > ORIG_MAX) {
+        want.sort((a, b) => Number(b.onscreen) - Number(a.onscreen) || b.px - a.px)
+        want.length = ORIG_MAX
+      }
+      const next = new Set(want.map((w) => w.id))
+      if (next.size !== prev.size) return next
+      for (const id of next) if (!prev.has(id)) return next
+      return prev
+    })
+  }, [visibleItems, viewport.s, viewportRect.x, viewportRect.y, viewportRect.w, viewportRect.h])
 
   /* ---------- 右键菜单 ---------- */
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; itemId: string | null } | null>(null)
