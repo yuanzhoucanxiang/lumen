@@ -463,6 +463,19 @@ async function main() {
       return items.find((i) => i.assetId === ${JSON.stringify(flipAssetId)}) ?? null
     })()`)
     check('素材元素默认未翻转', !!flipItem && flipItem.flipX === false && flipItem.flipY === false, JSON.stringify({ flipX: flipItem?.flipX, flipY: flipItem?.flipY }))
+    // 右键菜单含「在资源管理器中显示」（与首页素材右键一致）
+    const revealMenu = await run(`return (async () => {
+      const el = document.querySelector('[data-board-item="${flipItem.id}"]')
+      const b = el.getBoundingClientRect()
+      el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: b.left + 40, clientY: b.top + 40, button: 2 }))
+      await new Promise((r) => setTimeout(r, 300))
+      const btn = [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === '在资源管理器中显示')
+      const result = { exists: !!btn, width: btn ? Math.round(btn.getBoundingClientRect().width) : 0 }
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await new Promise((r) => setTimeout(r, 200))
+      return result
+    })()`)
+    check('白板素材右键含「在资源管理器中显示」', revealMenu.exists && revealMenu.width > 50, JSON.stringify(revealMenu))
     /** 右键元素 → 点击指定菜单项 → 返回 {db 态, DOM transform} */
     const flipViaMenu = (label) => run(`return (async () => {
       const el = document.querySelector('[data-board-item="${flipItem.id}"]')

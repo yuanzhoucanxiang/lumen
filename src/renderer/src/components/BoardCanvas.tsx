@@ -3076,6 +3076,17 @@ export default function BoardCanvas({
               </div>
               {ctxItem?.type === 'asset' && (
                 <>
+                  {/* 与首页素材右键一致：定位到 LUMEN 实际保存的文件 */}
+                  <button
+                    className="flex w-full cursor-pointer items-center gap-1.5 px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                    onClick={() => {
+                      if (ctxItem.assetId) void window.api.showInFolder(ctxItem.assetId)
+                      setCtxMenu(null)
+                    }}
+                  >
+                    <Icon name="folder" size={12} />
+                    在资源管理器中显示
+                  </button>
                   <button
                     className="flex w-full cursor-pointer items-center gap-1.5 px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
                     onClick={() => void flipCtx('flipX')}
