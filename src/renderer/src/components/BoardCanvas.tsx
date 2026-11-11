@@ -3,6 +3,7 @@ import { assetPreviewUrl, assetThumbUrl, useLibraryStore } from '@renderer/store
 import Icon from './Icon'
 import { useTheme } from '../theme'
 import type { Asset, BoardItem, BoardItemPatch, NewBoardItem, ShapeSpec } from '@shared/types'
+import { PREVIEW_LOD_EXTS } from '@shared/previewFormats'
 
 const ASSET_MIME = 'application/x-eaglelike-assets'
 
@@ -34,19 +35,19 @@ const MIN_SIZE = 40
 /** 素材上板初始尺寸:按原比例入板(长边取原像素尺寸、封顶 1280,不放大)。
  *  旧版封顶 280px 太小,大图一进来就是小缩略图,需放大才清晰(对标 PureRef 原尺寸入板)。 */
 const BOARD_DROP_LONG_EDGE = 1280
-/** 原图切换(方案 B 像素级判据,对标 PureRef):缩略图长边上限 512px(与主进程生成一致),
- *  素材渲染尺寸超过它(= 缩略图被放大)就切原图,否则缩略图足够清晰。
+/** 高清叠加(方案 B 像素级判据,对标 PureRef):缩略图长边上限 512 **设备像素**(与主进程生成一致),
+ *  素材渲染长边 × DPR 超过它(= 缩略图被放大)就切 LOD/原图,否则缩略图足够清晰。
  *  旧版用整体缩放阈值(≥1.25 才开),100% 缩放下的大图仍是放大的缩略图,必须放大才清晰;
- *  逐项滞回防抖动:渲染长边 >512 开原图、< ~358 切回缩略图(控制大图显存)。 */
+ *  逐项滞回防抖动:渲染长边 >512 开高清、< ~358 切回缩略图(控制大图显存)。 */
 /** 多档预览档位（里程碑 222，借鉴 MOTZ LOD）：按渲染像素选最小够用的一档 */
 const LOD_LEVELS = [640, 1280, 2048, 3072] as const
 
+/** 阈值为设备像素：高 DPI 下 300 CSS px 的图实际占 600~800 设备像素，缩略图已被放大 */
 const ORIG_PX_UP = 512
 const ORIG_PX_DOWN = 512 * 0.7
 /**
- * 同时挂原图的数量上限。判据只看「屏幕上被放大」，于是缩小视图下几百个元素
- * 一起够格 → 几百张原图解码 + 显存直接顶穿。超了按屏幕尺寸排序取前 N，
- * 反正越大的原图越需要那点对比度，小图用缩略图肉眼无差。
+ * 同时挂高清层的数量上限。判据只看「屏幕上被放大」，于是缩小视图下几百个元素
+ * 一起够格 → 几百张图解码 + 显存直接顶穿。超了优先保视口内的、再按屏幕尺寸取前 N。
  */
 const ORIG_MAX = 32
 /** 白板可直接用浏览器解码的扩展名(heic/psd/ai 等无浏览器原图,仍用缩略图) */
@@ -307,6 +308,8 @@ export default function BoardCanvas({
   }, [assets, boardItems])
 
   const [viewport, setViewport] = useState<Viewport>({ s: 1, x: 0, y: 0 })
+  /** 高清判据与 LOD 档位统一按设备像素（上限 2：再高对素材细节收益很小，却成倍放大解码量） */
+  const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1))
   const viewportRef = useRef(viewport)
   viewportRef.current = viewport
   const surfaceRef = useRef<HTMLDivElement>(null)
@@ -848,15 +851,15 @@ export default function BoardCanvas({
       for (const it of visibleItems) {
         if (it.type !== 'asset' || !it.assetId) continue
         const h = it.height > 0 ? it.height : it.width * (aspectCacheRef.current[it.assetId] ?? 0.75)
-        const rendered = Math.max(it.width, h) * viewport.s
-        // 已在原图:缩回阈值以下才切回；不在原图:放大到阈值以上才换（滞回防抖动）
-        if (prev.has(it.id) ? rendered <= ORIG_PX_DOWN : rendered < ORIG_PX_UP) continue
+        const renderedPx = Math.max(it.width, h) * viewport.s * dpr
+        // 已在高清:缩回阈值以下才切回；未在高清:放大到阈值以上才换（滞回防抖动）
+        if (prev.has(it.id) ? renderedPx <= ORIG_PX_DOWN : renderedPx < ORIG_PX_UP) continue
         const onscreen =
           it.x + it.width > viewportRect.x &&
           it.x < viewportRect.x + viewportRect.w &&
           it.y + h > viewportRect.y &&
           it.y < viewportRect.y + viewportRect.h
-        want.push({ id: it.id, px: rendered, onscreen })
+        want.push({ id: it.id, px: renderedPx, onscreen })
       }
       if (want.length > ORIG_MAX) {
         want.sort((a, b) => Number(b.onscreen) - Number(a.onscreen) || b.px - a.px)
@@ -867,7 +870,7 @@ export default function BoardCanvas({
       for (const id of next) if (!prev.has(id)) return next
       return prev
     })
-  }, [visibleItems, viewport.s, viewportRect.x, viewportRect.y, viewportRect.w, viewportRect.h])
+  }, [visibleItems, viewport.s, dpr, viewportRect.x, viewportRect.y, viewportRect.w, viewportRect.h])
 
   /* ---------- 右键菜单 ---------- */
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; itemId: string | null } | null>(null)
@@ -2771,14 +2774,15 @@ export default function BoardCanvas({
             item.y < viewportRect.y + viewportRect.h
           // 多档 LOD（里程碑 222）：渲染长边 × 缩放 × DPR × 1.12 决定取哪一档预览；
           // 超过最高档（3072）才回原图，避免"刚过 512 就整张原图解码"的显存峰值
-          const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1))
           const needPx = Math.max(item.width, autoH) * viewport.s * dpr * 1.12
           const lodLevel: 0 | 640 | 1280 | 2048 | 3072 | 'orig' =
             needPx <= 512 ? 0 : (LOD_LEVELS.find((l) => needPx <= l) ?? 'orig')
-          const lodLabel = lodLevel === 0 ? '' : lodLevel === 'orig' ? 'orig' : String(lodLevel)
+          // GIF 保留动画、SVG 保留矢量清晰度：主进程不生成 LOD，直接回退原图
+          const useOriginal = lodLevel === 'orig' || (!!asset && !PREVIEW_LOD_EXTS.has(asset.ext))
+          const lodLabel = lodLevel === 0 ? '' : useOriginal ? 'orig' : String(lodLevel)
           const origSrc =
             elig && lodLevel !== 0
-              ? lodLevel === 'orig'
+              ? useOriginal
                 ? `${window.api.originalUrl(item.assetId!)}&e=${asset!.edited ?? 0}`
                 : assetPreviewUrl(asset!, lodLevel)
               : ''
@@ -3374,6 +3378,11 @@ const BoardItemView = memo(function BoardItemView({
   alt
 }: BoardItemViewProps) {
   const a = api.current
+  /** LOD 加载偶发失败（生成队列拥堵/瞬断）时的一次性重试；src 换档后旧重试自动失效 */
+  const [retryFor, setRetryFor] = useState<{ src: string; n: number } | null>(null)
+  const origSrcRef = useRef(origSrc)
+  origSrcRef.current = origSrc
+  const retriedSrc = retryFor?.src === origSrc ? `${origSrc}&r=${retryFor.n}` : origSrc
   // 素材翻转（对标 PureRef 画师对照）:镜像缩略图/原图/占位块,外框与选中态不镜像
   const flipTransform =
     item.type === 'asset' && (item.flipX || item.flipY)
@@ -3443,7 +3452,7 @@ const BoardItemView = memo(function BoardItemView({
               <img
                 data-board-orig
                 data-board-lod={lodLabel || undefined}
-                src={origSrc}
+                src={retriedSrc}
                 className="pointer-events-none absolute inset-0 h-full w-full object-cover"
                 style={{
                   opacity: origLoaded ? (item.opacity ?? 100) / 100 : 0,
@@ -3453,7 +3462,14 @@ const BoardItemView = memo(function BoardItemView({
                 alt=""
                 draggable={false}
                 onLoad={() => a.markOrigLoaded(item.assetId!)}
-                onError={() => a.markOrigLoaded(item.assetId!)}
+                onError={() => {
+                  // 先按已加载处理避免空白，再在 1.5s 后带重试参数重新请求一次
+                  a.markOrigLoaded(item.assetId!)
+                  if (!origSrc || retryFor?.src === origSrc) return
+                  window.setTimeout(() => {
+                    if (origSrcRef.current === origSrc) setRetryFor({ src: origSrc, n: 1 })
+                  }, 1500)
+                }}
               />
             )}
           </>

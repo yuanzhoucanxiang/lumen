@@ -9,12 +9,30 @@ import { existsSync, mkdirSync, renameSync } from 'fs'
 import { join } from 'path'
 import sharp from 'sharp'
 import { logger } from './logger'
+import { PREVIEW_LOD_EXTS } from '../shared/previewFormats'
 
 export const PREVIEW_LEVELS = [640, 1280, 2048, 3072] as const
 export type PreviewLevel = (typeof PREVIEW_LEVELS)[number]
 
-/** 能被 sharp 稳定解码的静态图；GIF 排除（要保留动图）、视频/音频走缩略图与故事板 */
-const LOD_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'bmp', 'avif', 'tif', 'tiff'])
+/** 生成并发上限：多张图同时入画时避免一次解码几十张原图把内存顶穿（失败会表现为 404/不恢复） */
+const MAX_GENERATIONS = 2
+let activeGenerations = 0
+const generationQueue: (() => void)[] = []
+
+/** 取一个生成名额；排队时由 release 直接转交名额，不增减 activeGenerations */
+function acquireGeneration(): Promise<void> {
+  if (activeGenerations < MAX_GENERATIONS) {
+    activeGenerations++
+    return Promise.resolve()
+  }
+  return new Promise((resolve) => generationQueue.push(resolve))
+}
+
+function releaseGeneration(): void {
+  const next = generationQueue.shift()
+  if (next) next()
+  else activeGenerations--
+}
 
 const inflight = new Map<string, Promise<string | null>>()
 
@@ -40,7 +58,7 @@ export async function ensurePreview(
   edited: number
 ): Promise<string | null> {
   const ext = originalPath.split('.').pop()?.toLowerCase() ?? ''
-  if (!LOD_EXTS.has(ext)) return null
+  if (!PREVIEW_LOD_EXTS.has(ext)) return null
   const dir = previewCacheDir()
   const file = join(dir, `${id}-${level}-${edited}.jpg`)
   if (existsSync(file)) return file
@@ -48,6 +66,7 @@ export async function ensurePreview(
   if (running) return running
 
   const task = (async () => {
+    await acquireGeneration()
     try {
       mkdirSync(dir, { recursive: true })
       const tmp = `${file}.${process.pid}.${Date.now()}.tmp`
@@ -63,6 +82,7 @@ export async function ensurePreview(
       return null
     } finally {
       inflight.delete(file)
+      releaseGeneration()
     }
   })()
   inflight.set(file, task)

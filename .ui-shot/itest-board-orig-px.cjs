@@ -75,7 +75,7 @@ async function main() {
   })()`)
   if (!asset) throw new Error('库内没有可用素材（需要任一有尺寸的图片素材）')
 
-  /* ---------- 1. 建板并放入一大一小两个素材 ---------- */
+  /* ---------- 1. 建板并放入大、中、小三个素材 ---------- */
   await mainRun(`(async () => {
     const bs = await window.api.listBoards()
     for (const b of bs) if (b.name === 'itest-原图像素') await window.api.deleteBoard(b.id)
@@ -83,9 +83,11 @@ async function main() {
   const board = await mainRun(`return window.api.createBoard('itest-原图像素')`)
   const boardId = board.id
   // 大素材:900px 宽 → 100% 缩放下渲染 900 > 512(缩略图长边),应切原图
-  await mainRun(`window.api.addBoardItem(${boardId}, { assetId: ${JSON.stringify(asset.id)}, type: 'asset', x: 100, y: 100, width: 900, height: 600 })`)
+  await mainRun(`window.api.addBoardItem(${boardId}, { assetId: ${JSON.stringify(asset.id)}, type: 'asset', x: 100, y: 100, width: 900, height: 380 })`)
   // 小素材:200px 宽 → 渲染 200 < 512,缩略图足够,不应切原图
   await mainRun(`window.api.addBoardItem(${boardId}, { assetId: ${JSON.stringify(asset.id)}, type: 'asset', x: 1100, y: 100, width: 200, height: 133 })`)
+  // 中等素材:300px 宽 → DPR=1 时不切；DPR≥2 时设备像素 600 > 512，应切 LOD（高 DPI 回归）
+  await mainRun(`window.api.addBoardItem(${boardId}, { assetId: ${JSON.stringify(asset.id)}, type: 'asset', x: 580, y: 500, width: 300, height: 140 })`)
 
   /* ---------- 2. 重载进入白板模式(store 需从 DB 拉取 boardItems) ---------- */
   await mainRun(`location.reload()`)
@@ -108,15 +110,17 @@ async function main() {
   })()`)
   await sleep(800)
 
-  /* ---------- 3. 100% 缩放(scale=1)：大图切原图、小图保持缩略图 ---------- */
-  // 显式归位 scale=1
+  /* ---------- 3. 100% 缩放(scale=1)：大图切高清、小图保持缩略图、中等图按设备像素 ---------- */
+  // 显式归位 scale=1；本机高 DPI（273% 缩放）下 300 CSS px 已占 600 设备像素
   await mainRun(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '0', bubbles: true }))`)
   await sleep(400)
+  const dpr = await mainRun(`return Math.min(2, Math.max(1, window.devicePixelRatio || 1))`)
   const at100 = await mainRun(`return (async () => {
     const items = [...document.querySelectorAll('[data-board-item]')]
     const byW = (el) => el.getBoundingClientRect().width
     const big = items.find((el) => byW(el) > 500)
     const small = items.find((el) => byW(el) < 300)
+    const mid = items.find((el) => Math.abs(byW(el) - 300) < 1)
     const overlay = big?.querySelector('[data-board-orig]')
     const src = overlay?.getAttribute('src') ?? ''
     const lod = overlay?.getAttribute('data-board-lod') ?? ''
@@ -129,6 +133,7 @@ async function main() {
         previewOk = false
       }
     }
+    const midOverlay = mid?.querySelector('[data-board-orig]')
     return {
       total: items.length,
       bigOrig: !!overlay,
@@ -136,12 +141,15 @@ async function main() {
       bigLoaded: !!big?.querySelector('[data-board-orig][style*="opacity: 1"]'),
       bigW: big ? Math.round(byW(big)) : 0,
       smallW: small ? Math.round(byW(small)) : 0,
+      midW: mid ? Math.round(byW(mid)) : 0,
+      midOrig: !!midOverlay,
+      midLod: midOverlay?.getAttribute('data-board-lod') ?? '',
       lod,
       previewOk,
       src
     }
   })()`)
-  check('100% 缩放有 2 个素材', at100.total === 2 && at100.bigW > 500 && at100.smallW < 300, `bigW=${at100.bigW} smallW=${at100.smallW} total=${at100.total}`)
+  check('100% 缩放有 3 个素材', at100.total === 3 && at100.bigW > 500 && at100.smallW < 300 && at100.midW === 300, `bigW=${at100.bigW} smallW=${at100.smallW} midW=${at100.midW} total=${at100.total}`)
   check('大图(渲染>512)100% 缩放即切原图并淡入', at100.bigOrig && at100.bigLoaded, `bigOrig=${at100.bigOrig} loaded=${at100.bigLoaded}`)
   check('小图(渲染<512)100% 缩放保持缩略图', !at100.smallOrig, `smallOrig=${at100.smallOrig}`)
   check(
@@ -149,34 +157,61 @@ async function main() {
     ['640', '1280', '2048', '3072', 'orig'].includes(at100.lod) && at100.previewOk === true,
     `lod=${at100.lod} previewOk=${at100.previewOk} src=${String(at100.src).slice(0, 60)}`
   )
+  // DPR=1 时 300 CSS px < 512 设备像素（保持缩略图）；DPR≥2 时 600 设备像素应切 LOD
+  check(
+    '中等素材按设备像素触发 LOD（高 DPI）',
+    dpr <= 1 ? at100.midOrig === false : at100.midOrig === true && at100.midLod !== '',
+    `dpr=${dpr} midW=${at100.midW} midOrig=${at100.midOrig} midLod=${at100.midLod}`
+  )
 
-  /* ---------- 4. 缩小到渲染 < 阈值下沿(滞回)后切回缩略图；再放大回原图 ---------- */
-  // 每次 '-' ×0.8:需 900 * 0.8^n < 358(n>4),循环按压直到大图渲染降到滞回下沿以下
+  /* ---------- 4. 缩小到设备像素 < 阈值下沿(滞回)后切回缩略图；再放大恢复 ---------- */
+  // 每次 '-' ×0.8:需 900 * 0.8^n * DPR < 358，循环按压直到大图降到滞回下沿以下
   let shrinkBigW = 999
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 10; i++) {
     await mainRun(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '-', bubbles: true }))`)
     await sleep(350)
     shrinkBigW = await mainRun(`return (() => {
       const items = [...document.querySelectorAll('[data-board-item]')]
       const byW = (el) => el.getBoundingClientRect().width
-      const big = items.find((el) => byW(el) > 300)
-      return big ? Math.round(byW(big)) : 0
+      return items.length > 0 ? Math.round(Math.max(...items.map(byW))) : 0
     })()`)
-    if (shrinkBigW < 358) break
+    if (shrinkBigW * dpr < 358) break
   }
   const shrunk = await mainRun(`return document.querySelectorAll('[data-board-orig]').length`)
-  check('缩小到渲染<358 后切回缩略图(原图层移除)', shrunk === 0 && shrinkBigW < 358, `bigW=${shrinkBigW} orig=${shrunk}`)
-  // 放大回原图:循环 '+' 直到大图渲染 > 512
+  check(
+    '缩小到设备像素<358 后切回缩略图(高清层移除)',
+    shrunk === 0 && shrinkBigW * dpr < 358,
+    `bigW=${shrinkBigW} dpr=${dpr} orig=${shrunk}`
+  )
+  // 放大回高清:循环 '+' 直到大图渲染超过 512 设备像素
   let growOrig = 0
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 10; i++) {
     await mainRun(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '+', bubbles: true }))`)
     await sleep(350)
     growOrig = await mainRun(`return document.querySelectorAll('[data-board-orig]').length`)
     if (growOrig > 0) break
   }
-  check('再放大回原图(>512 恢复)', growOrig > 0, `orig=${growOrig}`)
+  check('再放大回高清(>512 设备像素恢复)', growOrig > 0, `orig=${growOrig} dpr=${dpr}`)
 
-  /* ---------- 5. 素材多且相隔远：平移到远处素材仍恢复 LOD（里程碑 242 回归） ----------
+  /* ---------- 5. GIF 回退原图：不生成 LOD 档（保留动画），白板仍能放大清晰 ---------- */
+  const gifAsset = await mainRun(`return (async () => {
+    const all = await window.api.queryAssets({ limit: 2000 })
+    return all.filter((a) => a.ext === 'gif' && a.width > 0 && !a.deletedAt).sort((a, b) => a.size - b.size)[0] ?? null
+  })()`)
+  let gifBoardId = null
+  if (gifAsset) {
+    await mainRun(`(async () => {
+      const bs = await window.api.listBoards()
+      for (const b of bs) if (b.name === 'itest-LOD-动图') await window.api.deleteBoard(b.id)
+    })()`)
+    const gifBoard = await mainRun(`return window.api.createBoard('itest-LOD-动图')`)
+    gifBoardId = gifBoard.id
+    await mainRun(`window.api.addBoardItem(${gifBoardId}, { assetId: ${JSON.stringify(gifAsset.id)}, type: 'asset', x: 100, y: 100, width: 900, height: 600 })`)
+  } else {
+    console.log('  SKIP GIF 回退原图 — 库内没有 GIF 素材')
+  }
+
+  /* ---------- 6. 素材多且相隔远：平移到远处素材仍恢复 LOD（里程碑 242 回归） ----------
      此前高清候选遍历全量 boardItems 且只留 32 个，屏幕外元素占满名额后，
      平移到远处素材即使渲染尺寸足够也拿不到高清叠加层。 */
   await mainRun(`(async () => {
@@ -259,7 +294,38 @@ async function main() {
   )
   await mainRun(`await window.api.deleteBoard(${farBoardId})`)
 
-  /* ---------- 6. 富剪贴板：选区图片可写入系统剪贴板（里程碑 222） ---------- */
+  if (gifBoardId) {
+    await mainRun(`(() => {
+      const sel = document.querySelector('select[aria-label="切换白板"]')
+      sel.value = ${gifBoardId}
+      sel.dispatchEvent(new Event('change', { bubbles: true }))
+    })()`)
+    await sleep(1000)
+    await mainRun(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '0', bubbles: true }))`)
+    await sleep(500)
+    const gif = await mainRun(`return (async () => {
+      const overlay = document.querySelector('[data-board-orig]')
+      const src = overlay?.getAttribute('src') ?? ''
+      let previewOk = false
+      if (src) {
+        try {
+          const res = await fetch(src)
+          previewOk = res.status === 200 && (await res.arrayBuffer()).byteLength > 0
+        } catch {
+          previewOk = false
+        }
+      }
+      return { orig: !!overlay, lod: overlay?.getAttribute('data-board-lod') ?? '', src, previewOk }
+    })()`)
+    check(
+      'GIF 大图回退原图（不请求不存在的 LOD 档）',
+      gif.orig && gif.lod === 'orig' && String(gif.src).includes('t=o') && gif.previewOk === true,
+      `orig=${gif.orig} lod=${gif.lod} previewOk=${gif.previewOk} src=${String(gif.src).slice(0, 60)}`
+    )
+    await mainRun(`await window.api.deleteBoard(${gifBoardId})`)
+  }
+
+  /* ---------- 7. 富剪贴板：选区图片可写入系统剪贴板（里程碑 222） ---------- */
   const copyOk = await mainRun(`return window.api.copyBoardImage(
     'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
   )`)
