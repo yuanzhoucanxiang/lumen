@@ -146,17 +146,25 @@ async function main() {
   }
 
   /* ---------- ③ /tags?q= 搜索 ---------- */
-  const qRes = await request('GET', '/tags?q=' + encodeURIComponent('奇幻'))
-  const names = (qRes.json?.tags ?? []).map((t) => t.name)
-  check(
-    '/tags?q= 关键词过滤',
-    qRes.status === 200 &&
-      typeof qRes.json?.total === 'number' &&
-      qRes.json.total >= names.length &&
-      names.length > 0 &&
-      names.every((n) => n.includes('奇幻') || n.toLowerCase().includes('qihuan') || n.length > 0),
-    JSON.stringify({ status: qRes.status, total: qRes.json?.total, sample: names.slice(0, 3) })
-  )
+  // 不写死关键词（CI 种子库没有「奇幻」，此前在无头环境恒失败）：
+  // 取库内第一个标签名的前两个字符做子串查询，断言返回项都含该子串
+  const probeTag = await run(`const t = (await window.api.listTags())[0]; return t ? t.name : null`)
+  const probeKey = probeTag ? probeTag.slice(0, 2) : ''
+  if (!probeKey) {
+    check('/tags?q= 关键词过滤', true, '环境跳过(库里没有标签)')
+  } else {
+    const qRes = await request('GET', '/tags?q=' + encodeURIComponent(probeKey))
+    const names = (qRes.json?.tags ?? []).map((t) => t.name)
+    check(
+      '/tags?q= 关键词过滤',
+      qRes.status === 200 &&
+        typeof qRes.json?.total === 'number' &&
+        qRes.json.total >= names.length &&
+        names.length > 0 &&
+        names.every((n) => n.includes(probeKey) || n.toLowerCase().includes(probeKey.toLowerCase())),
+      JSON.stringify({ key: probeKey, status: qRes.status, total: qRes.json?.total, sample: names.slice(0, 3) })
+    )
+  }
 
   /* ---------- ④ 健康面板 ---------- */
   await run(`

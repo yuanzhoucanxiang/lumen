@@ -9,7 +9,8 @@ const http = require('http')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
-const sharp = require('E:/类eagle搭建/node_modules/sharp')
+// 用项目 node_modules 里的 sharp（相对解析：脚本在 .ui-shot/，向上找到根 node_modules）
+const sharp = require('sharp')
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const CLIP_PORT = Number(process.env.LUMEN_CLIP_PORT) || 45678

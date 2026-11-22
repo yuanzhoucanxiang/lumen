@@ -62,7 +62,10 @@ async function main() {
   )
   const ids = []
   for (let i = 1; i <= 12; i++) {
-    const id = ('ci' + String(i).padStart(14, '0'))
+    // 与生产同形的 16 位十六进制 id（里程碑 251）：此前用 'ci'+14 位数字，
+    // /tag 的 resolveAgentIds 按 ^[0-9a-f]{16}$ 校验会把它们整批过滤掉，
+    // 导致 CI 上 quota/tag 断言恒为 tagged:0 的假失败
+    const id = 'c1a0' + i.toString(16).padStart(12, '0')
     const rel = `assets/ab/${id}`
     const abs = path.join(lib, rel)
     fs.mkdirSync(abs, { recursive: true })
