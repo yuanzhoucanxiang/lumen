@@ -21,9 +21,19 @@ export interface GalleryNavMeta {
 let meta: GalleryNavMeta | null = null
 /** Shift+方向键扩选的锚点:最近一次不带 Shift 的移动落点 */
 let anchor: string | null = null
+/** 方向键刚移动过选中:Gallery 的滚动进视口只在此时介入
+ *  (点选/程序化选中的目标必然可见或来自测试合成点击,不该拽动滚动位置) */
+let navJustMoved = false
 
 export function setGalleryNavMeta(m: GalleryNavMeta | null): void {
   meta = m
+}
+
+/** 图库 effect 消费:方向键移动过才滚动,取走即清 */
+export function consumeNavJustMoved(): boolean {
+  const v = navJustMoved
+  navJustMoved = false
+  return v
 }
 
 const flatStep = (key: string): number => (key === 'ArrowRight' || key === 'ArrowDown' ? 1 : -1)
@@ -91,6 +101,7 @@ export function galleryNavMove(
   if (!target || (curId && !flat.some((a) => a.id === target))) return selection
   if (!extend) {
     anchor = target
+    navJustMoved = true
     return [target]
   }
   const anchorValid = anchor !== null && flat.some((a) => a.id === anchor)
@@ -100,5 +111,6 @@ export function galleryNavMove(
   const bi = flat.findIndex((a) => a.id === target)
   if (ai === -1 || bi === -1) return [target]
   const [lo, hi] = ai <= bi ? [ai, bi] : [bi, ai]
+  navJustMoved = true
   return flat.slice(lo, hi + 1).map((a) => a.id)
 }

@@ -45,30 +45,8 @@ function rawRequest(method, urlPath, body) {
 }
 
 async function main() {
-  // ---------- 0. 生成夹具并导入 ----------
-  const tag = `keynav-${Date.now().toString(36)}`
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `lumen-${tag}-`))
-  const ids = []
-  for (let i = 0; i < 12; i++) {
-    const f = path.join(dir, `${tag}-${String(i).padStart(2, '0')}.png`)
-    const r = 40 + Math.floor(Math.random() * 200)
-    const g = 40 + Math.floor(Math.random() * 200)
-    const b = 40 + Math.floor(Math.random() * 200)
-    await sharp({ create: { width: 300 + i * 8, height: 210 + (i % 5) * 12, channels: 3, background: { r, g, b, alpha: 1 } } })
-      .png()
-      .toFile(f)
-    ids.push(f)
-  }
-  const imp = await rawRequest('POST', '/import', JSON.stringify({ paths: [dir], folder: `Agent 导入/${tag}` }))
-  if (imp.status !== 200 || (imp.json?.importedIds ?? []).length !== 12) {
-    throw new Error(`夹具导入失败: status=${imp.status} body=${imp.raw.slice(0, 200)}`)
-  }
-  const assetIds = imp.json.importedIds
-  const folders = (await rawRequest('GET', '/folders')).json?.folders ?? []
-  const folderId = folders.find((f) => f.name === tag)?.id
-  console.log(`夹具就绪: 12 张, folderId=${folderId}`)
-
-  // ---------- 1. CDP 连接 ----------
+  // ---------- 0. CDP 连接(先于导入:全量回归时,前序套件会改 Agent 可写范围配置,
+  //              夹具导入须先临时放开,结束后还原,避免 403) ----------
   const targets = await getJson('http://127.0.0.1:9333/json/list')
   const page = targets.find((t) => t.type === 'page' && !t.url.includes('floating'))
   if (!page) throw new Error('找不到主渲染进程页面')
@@ -107,6 +85,32 @@ async function main() {
     await send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers })
   }
 
+  // ---------- 0b. 生成夹具并导入 ----------
+  const prevScope = await run(`return { u: (await window.api.getSettings()).agentScopeUnrestricted ?? false }`)
+  await run(`await window.api.updateSettings({ agentScopeUnrestricted: true })`)
+  const tag = `keynav-${Date.now().toString(36)}`
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `lumen-${tag}-`))
+  const ids = []
+  for (let i = 0; i < 12; i++) {
+    const f = path.join(dir, `${tag}-${String(i).padStart(2, '0')}.png`)
+    const r = 40 + Math.floor(Math.random() * 200)
+    const g = 40 + Math.floor(Math.random() * 200)
+    const b = 40 + Math.floor(Math.random() * 200)
+    await sharp({ create: { width: 300 + i * 8, height: 210 + (i % 5) * 12, channels: 3, background: { r, g, b, alpha: 1 } } })
+      .png()
+      .toFile(f)
+    ids.push(f)
+  }
+  const imp = await rawRequest('POST', '/import', JSON.stringify({ paths: [dir], folder: `Agent 导入/${tag}` }))
+  if (imp.status !== 200 || (imp.json?.importedIds ?? []).length !== 12) {
+    throw new Error(`夹具导入失败: status=${imp.status} body=${imp.raw.slice(0, 200)}`)
+  }
+  const assetIds = imp.json.importedIds
+  const folders = (await rawRequest('GET', '/folders')).json?.folders ?? []
+  const folderId = folders.find((f) => f.name === tag)?.id
+  console.log(`夹具就绪: 12 张, folderId=${folderId}`)
+
+  // ---------- 1. 断言助手 ----------
   let pass = 0
   let fail = 0
   const check = (name, ok, detail) => {
@@ -278,8 +282,9 @@ async function main() {
     `)
     check('瀑布流 ArrowDown 留在同一列', !masonry.err && masonry.sameCol && masonry.movedDown, JSON.stringify(masonry))
   } finally {
-    // ---------- 7. 清理夹具(永久删除 + 删文件夹) ----------
+    // ---------- 7. 清理夹具(永久删除 + 删文件夹 + 还原 Agent 范围) ----------
     try {
+      await run(`await window.api.updateSettings({ agentScopeUnrestricted: ${prevScope ? prevScope.u : false} })`)
       if (assetIds.length > 0) {
         await run(`await window.api.deleteAssets(${JSON.stringify(assetIds)}, true)`)
       }

@@ -43,27 +43,7 @@ function rawRequest(method, urlPath, body) {
 }
 
 async function main() {
-  // ---------- 0. 夹具导入 ----------
-  const tag = `bsnap-${Date.now().toString(36)}`
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `lumen-${tag}-`))
-  const files = []
-  for (let i = 0; i < 2; i++) {
-    const f = path.join(dir, `${tag}-${i}.png`)
-    await sharp({ create: { width: 320 + i * 40, height: 220, channels: 3,
-      background: { r: 60 + Math.floor(Math.random() * 180), g: 60 + Math.floor(Math.random() * 180), b: 60 + Math.floor(Math.random() * 180), alpha: 1 } } })
-      .png()
-      .toFile(f)
-    files.push(f)
-  }
-  const imp = await rawRequest('POST', '/import', JSON.stringify({ paths: [dir], folder: `Agent 导入/${tag}` }))
-  if (imp.status !== 200 || (imp.json?.importedIds ?? []).length !== 2) {
-    throw new Error(`夹具导入失败: status=${imp.status} body=${imp.raw.slice(0, 200)}`)
-  }
-  const assetIds = imp.json.importedIds
-  const folderId = (((await rawRequest('GET', '/folders')).json?.folders ?? []).find((f) => f.name === tag) || {}).id
-  console.log(`夹具就绪: 2 张, folderId=${folderId}`)
-
-  // ---------- 1. CDP 连接 ----------
+  // ---------- 0. CDP 连接(先于导入:全量回归时前序套件会改 Agent 可写范围,导入前先临时放开) ----------
   const targets = await getJson('http://127.0.0.1:9333/json/list')
   const page = targets.find((t) => t.type === 'page' && !t.url.includes('floating'))
   if (!page) throw new Error('找不到主渲染进程页面')
@@ -98,6 +78,30 @@ async function main() {
       return payload?.result?.value
     })
 
+  const prevScope = await run(`return { u: (await window.api.getSettings()).agentScopeUnrestricted ?? false }`)
+  await run(`await window.api.updateSettings({ agentScopeUnrestricted: true })`)
+
+  // ---------- 0b. 夹具导入 ----------
+  const tag = `bsnap-${Date.now().toString(36)}`
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `lumen-${tag}-`))
+  const files = []
+  for (let i = 0; i < 2; i++) {
+    const f = path.join(dir, `${tag}-${i}.png`)
+    await sharp({ create: { width: 320 + i * 40, height: 220, channels: 3,
+      background: { r: 60 + Math.floor(Math.random() * 180), g: 60 + Math.floor(Math.random() * 180), b: 60 + Math.floor(Math.random() * 180), alpha: 1 } } })
+      .png()
+      .toFile(f)
+    files.push(f)
+  }
+  const imp = await rawRequest('POST', '/import', JSON.stringify({ paths: [dir], folder: `Agent 导入/${tag}` }))
+  if (imp.status !== 200 || (imp.json?.importedIds ?? []).length !== 2) {
+    throw new Error(`夹具导入失败: status=${imp.status} body=${imp.raw.slice(0, 200)}`)
+  }
+  const assetIds = imp.json.importedIds
+  const folderId = (((await rawRequest('GET', '/folders')).json?.folders ?? []).find((f) => f.name === tag) || {}).id
+  console.log(`夹具就绪: 2 张, folderId=${folderId}`)
+
+  // ---------- 1. 断言助手 ----------
   let pass = 0
   let fail = 0
   const check = (name, ok, detail) => {
@@ -221,16 +225,18 @@ async function main() {
       await new Promise((r) => setTimeout(r, 500))
       const boards = await window.api.listBoards()
       const b = boards.find((x) => x.id === ${JSON.stringify(boardId)})
-      const p = JSON.parse(b.appearance || '{}')
-      return { checked: cb.checked, stored: p.snap }
+      if (!b) return { err: '找不到目标白板', boardId: ${JSON.stringify(boardId)} }
+      return { checked: cb.checked, stored: JSON.parse(b.appearance || '{}').snap }
     `)
     check('吸附开关关闭并按白板持久化', !snapOff.err && snapOff.checked === false && snapOff.stored === false, JSON.stringify(snapOff))
     const snapOn = await run(`
       const cb = document.querySelector('input[aria-label="吸附开关"]')
+      if (!cb) return { err: '找不到吸附开关' }
       cb.click()
       await new Promise((r) => setTimeout(r, 500))
       const boards = await window.api.listBoards()
       const b = boards.find((x) => x.id === ${JSON.stringify(boardId)})
+      if (!b) return { err: '找不到目标白板', boardId: ${JSON.stringify(boardId)} }
       return { checked: cb.checked, stored: JSON.parse(b.appearance || '{}').snap }
     `)
     check('吸附开关重新打开', snapOn.checked === true && snapOn.stored === true, JSON.stringify(snapOn))
@@ -250,6 +256,7 @@ async function main() {
         if (b.items.length > n0) added.push(...b.items.slice(n0))
       }
       if (added.length > 0) await run(`await window.api.deleteBoardItems(${JSON.stringify(added)})`)
+      await run(`await window.api.updateSettings({ agentScopeUnrestricted: ${prevScope ? prevScope.u : false} })`)
       await run(`await window.api.deleteAssets(${JSON.stringify(assetIds)}, true)`)
       if (Number.isInteger(folderId)) await run(`await window.api.deleteFolder(${folderId})`)
       await run(`

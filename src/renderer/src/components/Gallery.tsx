@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { assetEditable, assetStoryboardUrl, assetThumbUrl, useLibraryStore, zoomToWidth } from '@renderer/stores/libraryStore'
-import { setGalleryNavMeta } from '@renderer/galleryNav'
+import { consumeNavJustMoved, setGalleryNavMeta } from '@renderer/galleryNav'
 import Icon from './Icon'
 import PixelArt from './PixelArt'
 import ScrambleText from './ScrambleText'
@@ -573,18 +573,22 @@ function Gallery() {
   }, [layout, layoutMode])
 
   // 方向键移动选中后保证目标卡片进入视口(虚拟化下目标可能在渲染窗口外);
-  // 最小位移滚动,不居中(点选已可见的卡片不该发生跳滚)。框选期间不介入。
+  // 最小位移滚动,不居中。只服务于键盘导航(galleryNav 移动过才介入)——
+  // 点选的目标必然可见;测试的合成点击可能命中视口外但已渲染的卡片,不该被拽动,
+  // 否则破坏里程碑 208 的「打标签不跳顶」。框选期间不介入。
   const lastSelId = selection[selection.length - 1]
+  const layoutRef = useRef(layout)
+  layoutRef.current = layout
   useEffect(() => {
-    if (!lastSelId || marquee) return
+    if (!lastSelId || marquee || !consumeNavJustMoved()) return
     const el = containerRef.current
-    const item = layout.find((it) => it.a.id === lastSelId)
+    const item = layoutRef.current.find((it) => it.a.id === lastSelId)
     if (!el || !item) return
     const viewTop = el.scrollTop
     const viewBottom = viewTop + el.clientHeight
     if (item.y < viewTop) el.scrollTop = item.y
     else if (item.y + item.h > viewBottom) el.scrollTop = item.y + item.h - el.clientHeight
-  }, [lastSelId, layout, marquee])
+  }, [lastSelId, marquee])
 
   /**
    * 可见区间索引：布局项按它占用的桶登记，查询只扫与视口相交的桶。
