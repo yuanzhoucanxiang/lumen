@@ -137,6 +137,9 @@ async function main() {
 
     // ---------- 2. 进入夹具文件夹视图 ----------
     await run(`
+      // 全量回归时上一套件可能把应用留在白板模式:白板模式下点导航只改参考来源,主区仍是画布,必须先退出
+      const exit = document.querySelector('button[aria-label="退出白板"]')
+      if (exit) { exit.click(); await new Promise((r) => setTimeout(r, 600)) }
       const nav = document.querySelector('nav[aria-label="素材库导航"]')
       const all = nav && [...nav.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '全部素材')
       if (all) all.click()

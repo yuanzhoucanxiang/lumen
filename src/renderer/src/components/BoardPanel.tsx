@@ -1,9 +1,10 @@
 import { memo, useCallback, useRef, useState } from 'react'
 import { useLibraryStore } from '@renderer/stores/libraryStore'
 import Icon from './Icon'
-import BoardCanvas, { APPEARANCE_PRESETS, type BoardCanvasApi, type BoardTool } from './BoardCanvas'
+import BoardCanvas, { type BoardCanvasApi, type BoardTool } from './BoardCanvas'
+import { APPEARANCE_PRESETS, parseBoardAppearance, type BoardAppearance } from '@shared/boardAppearance'
 
-/** 画布外观预设（与 BoardCanvas 共用一份色值,此处只补显示名） */
+/** 画布外观预设（色值/解析与画布共用 @shared/boardAppearance,此处只补显示名） */
 const BG_PRESETS: { key: string; label: string; color: string }[] = [
   { key: 'dark', label: '深色' },
   { key: 'gray', label: '中灰' },
@@ -11,14 +12,6 @@ const BG_PRESETS: { key: string; label: string; color: string }[] = [
   { key: 'white', label: '白色' },
   { key: 'black', label: '黑色' }
 ].map((p) => ({ ...p, color: APPEARANCE_PRESETS[p.key] }))
-
-interface BoardAppearance {
-  bg: string
-  grid: boolean
-  gridSize: number
-  /** 智能吸附持久开关（里程碑 247），与 BoardCanvas 保持同构 */
-  snap: boolean
-}
 
 const TOOLS: { id: BoardTool; label: string; icon: Parameters<typeof Icon>[0]['name']; title: string }[] = [
   { id: 'select', label: '选择', icon: 'pointer', title: '选择/框选（V）' },
@@ -54,14 +47,8 @@ function BoardPanel() {
   const board = boards.find((b) => b.id === activeBoardId)
   const hasBoard = board != null
 
-  // 当前外观（从 boards 解析;默认深色+网格+吸附开）
-  let appearance: BoardAppearance = { bg: 'dark', grid: true, gridSize: 24, snap: true }
-  try {
-    const p = JSON.parse(board?.appearance ?? '')
-    if (p && typeof p === 'object') appearance = { bg: p.bg ?? 'dark', grid: p.grid !== false, gridSize: Number(p.gridSize) || 24, snap: p.snap !== false }
-  } catch {
-    /* 忽略 */
-  }
+  // 当前外观（解析与默认值见 @shared/boardAppearance;此前在此重复一份 JSON 解析）
+  const appearance: BoardAppearance = parseBoardAppearance(board?.appearance)
 
   /** 缩放滑块与画布滚轮/快捷键双向同步 */
   const onViewportChange = useCallback((s: number) => setZoom(s), [])

@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { assetEditable, assetStoryboardUrl, assetThumbUrl, useLibraryStore, zoomToWidth } from '@renderer/stores/libraryStore'
-import { consumeNavJustMoved, setGalleryNavMeta } from '@renderer/galleryNav'
+import { setGalleryNavMeta, consumeNavJustMoved } from '@renderer/galleryNav'
+import { TAG_MIME, readTagName, writeAssetDrag } from '@renderer/dnd'
 import Icon from './Icon'
 import PixelArt from './PixelArt'
 import ScrambleText from './ScrambleText'
@@ -14,9 +15,6 @@ import type { Asset } from '@shared/types'
 const GAP = 18
 const LABEL_H = 30
 const LIST_ROW_H = 40
-/** 拖拽打标签（里程碑 221）：侧栏标签拖到图库/图库素材拖到侧栏标签共用这个 MIME */
-const TAG_MIME = 'application/x-eaglelike-tag'
-const ASSET_MIME = 'application/x-eaglelike-assets'
 
 const HOVER_PREVIEW_DELAY = 420
 const HOVER_PREVIEW_W = 288
@@ -55,8 +53,7 @@ function onAssetDragStart(e: React.DragEvent, a: Asset): void {
     window.api.dragOutAssets(ids)
     return
   }
-  e.dataTransfer.setData(ASSET_MIME, JSON.stringify(ids))
-  e.dataTransfer.effectAllowed = 'copy'
+  writeAssetDrag(e.dataTransfer, ids)
 }
 
 const KIND_ICON: Record<string, IconName> = {
@@ -183,27 +180,13 @@ const AssetCard = memo(function AssetCard({
       : assetThumbUrl(a)
   const imgH = item.h - LABEL_H
   const setStar = async (star: number) => {
-    await window.api.updateAsset(a.id, { star })
-    useLibraryStore.getState().updateAssetLocal(a.id, { star })
+    await useLibraryStore.getState().rateAssets([a.id], star)
   }
   // 发送到白板（照抄 MOTZ send-chip）：已发送显示 ✓,点击提示已在并选中画布元素
   const sendToBoard = async () => {
     const st = useLibraryStore.getState()
-    if (st.activeBoardId == null) {
-      st.showToast('请先新建白板（白板面板右侧 + 号）')
-      return
-    }
     const ids = st.selection.includes(a.id) && st.selection.length > 1 ? st.selection : [a.id]
-    const existingIds = await st.sendAssetsToBoard(ids)
-    st.showToast(
-      existingIds.length > 0
-        ? ids.length > 1
-          ? '选中的素材已在当前白板中'
-          : '这个素材已在当前白板中'
-        : ids.length > 1
-          ? `已发送 ${ids.length} 张到当前白板`
-          : '已发送到当前白板'
-    )
+    await st.sendToBoardWithToast(ids)
   }
 
   return (
@@ -904,7 +887,7 @@ function Gallery() {
         }
       }}
       onDrop={(e) => {
-        const name = e.dataTransfer.getData(TAG_MIME)
+        const name = readTagName(e.dataTransfer)
         if (!name) return
         e.preventDefault()
         // 落在某张卡片上 = 只打这张；落在空白 = 打在当前选区上

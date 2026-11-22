@@ -217,6 +217,15 @@ interface LibraryState {
   setInspectorWidth: (w: number) => void
   /** 发送素材到当前白板（照抄 MOTZ：3 列错开摆放,返回已存在的 id） */
   sendAssetsToBoard: (ids: string[], boardId?: number) => Promise<string[]>
+  /** 送素材到白板并统一反馈（里程碑 251）：未建板提示、全新增/部分已存在/全部已在的文案。
+   *  此前卡片发送、选区操作条、侧栏白板项各写一份文案与守卫，措辞还不一致。 */
+  sendToBoardWithToast: (
+    ids: string[],
+    target?: { boardId?: number; boardName?: string }
+  ) => Promise<{ added: number; existing: number }>
+  /** 评分统一入口（里程碑 251）：单张/多张同一路径——批量写库 + 就地更新 + 多张时一次反馈。
+   *  此前 App 键盘、图库卡片、详情栏、预览各写一份，只有键盘路径处理了多选与失败。 */
+  rateAssets: (ids: string[], star: number) => Promise<void>
   refreshStats: () => Promise<void>
   refreshAll: () => Promise<void>
 
@@ -539,6 +548,40 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     }
     return existingIds
   },
+
+  sendToBoardWithToast: async (ids, target) => {
+    const s = get()
+    const boardId = target?.boardId ?? s.activeBoardId
+    if (boardId == null) {
+      s.showToast('请先新建白板（白板面板右侧 + 号）')
+      return { added: 0, existing: 0 }
+    }
+    const uniq = Array.from(new Set(ids.filter(Boolean)))
+    if (uniq.length === 0) return { added: 0, existing: 0 }
+    const existingIds = await s.sendAssetsToBoard(uniq, boardId)
+    const existing = existingIds.length
+    const added = uniq.length - existing
+    const where = target?.boardName ? `「${target.boardName}」` : '当前白板'
+    if (added === 0) s.showToast(uniq.length > 1 ? `选中的素材已在${where}中` : `这个素材已在${where}中`)
+    else if (existing > 0) s.showToast(`已发送 ${added} 张到${where}，${existing} 张已在`)
+    else s.showToast(uniq.length > 1 ? `已发送 ${added} 张到${where}` : `已发送到${where}`)
+    return { added, existing }
+  },
+
+  rateAssets: async (ids, star) => {
+    const uniq = Array.from(new Set(ids.filter(Boolean)))
+    if (uniq.length === 0) return
+    try {
+      await Promise.all(uniq.map((id) => window.api.updateAsset(id, { star })))
+      get().updateAssetsLocal(uniq, { star })
+      if (uniq.length > 1) {
+        get().showToast(star === 0 ? `已清除 ${uniq.length} 个素材的星级` : `已为 ${uniq.length} 个素材评 ${star} 星`)
+      }
+    } catch {
+      get().showToast('评分失败')
+    }
+  },
+
   setKeyword: (keyword) => {
     set({ keyword })
     // 250ms 防抖:每敲一个字符都全库查询是浪费(输入「人物造型」触发 4 次全量 SQL);

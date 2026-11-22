@@ -6,6 +6,7 @@ import MergeTagDialog from './MergeTagDialog'
 import TagManagerDialog from './TagManagerDialog'
 import Icon from './Icon'
 import { useTheme } from '../theme'
+import { ASSET_MIME, FOLDER_MIME, TAG_MIME, readAssetIds, readFolderId } from '../dnd'
 import type { IconName } from './Icon'
 import type { Folder, Tag, Board } from '@shared/types'
 
@@ -342,10 +343,6 @@ function Sidebar() {
   const sectionCls = (collapsed: boolean): string =>
     collapsed ? 'mt-3 shrink-0 px-2' : 'mt-3 flex flex-col px-2'
 
-  const ASSET_MIME = 'application/x-eaglelike-assets'
-  const TAG_MIME = 'application/x-eaglelike-tag'
-  /** 文件夹拖拽改层级用的独立类型：与素材拖入（copy 语义）区分，避免两套 drop 逻辑互相误判 */
-  const FOLDER_MIME = 'application/x-eaglelike-folder'
   const [draggingFolder, setDraggingFolder] = useState<number | null>(null)
   /** 拖拽打标签（里程碑 221）：素材拖到哪个标签行上高亮 */
   const [dropTargetTag, setDropTargetTag] = useState<number | null>(null)
@@ -388,9 +385,9 @@ function Sidebar() {
     e.stopPropagation()
     setDropTargetFolder(null)
     setRootDropActive(false)
-    const movedId = e.dataTransfer.getData(FOLDER_MIME)
-    if (movedId) {
-      await applyFolderMove(Number(movedId), node.id, node.name)
+    const movedId = readFolderId(e.dataTransfer)
+    if (movedId != null) {
+      await applyFolderMove(movedId, node.id, node.name)
       return
     }
     await dropOnFolder(e, node.id, node.name)
@@ -401,11 +398,9 @@ function Sidebar() {
     e.preventDefault()
     e.stopPropagation()
     setDropTargetFolder(null)
-    const data = e.dataTransfer.getData(ASSET_MIME)
-    if (!data) return
+    const ids = readAssetIds(e.dataTransfer)
+    if (ids.length === 0) return
     try {
-      const ids = JSON.parse(data) as string[]
-      if (ids.length === 0) return
       await window.api.addAssetsToFolder(ids, folderId)
       useLibraryStore.getState().showToast(`已将 ${ids.length} 个素材添加到「${folderName}」`)
       await useLibraryStore.getState().refreshFolders()
@@ -414,7 +409,7 @@ function Sidebar() {
         await useLibraryStore.getState().refreshAssets()
       }
     } catch {
-      /* 非法拖拽数据忽略 */
+      /* 写入失败(库不可用等)静默,toast 由 store 侧负责 */
     }
   }
 
@@ -423,19 +418,10 @@ function Sidebar() {
     e.preventDefault()
     e.stopPropagation()
     setDropTargetBoard(null)
-    const data = e.dataTransfer.getData(ASSET_MIME)
-    if (!data) return
-    try {
-      const ids = JSON.parse(data) as string[]
-      if (ids.length === 0) return
-      const existing = await useLibraryStore.getState().sendAssetsToBoard(ids, b.id)
-      const added = ids.length - existing.length
-      useLibraryStore
-        .getState()
-        .showToast(added === 0 ? `选中的素材已在「${b.name}」中` : `已发送 ${added} 张到「${b.name}」`)
-    } catch {
-      /* 非法拖拽数据忽略 */
-    }
+    const ids = readAssetIds(e.dataTransfer)
+    if (ids.length === 0) return
+    // 文案/未建板提示统一在 store 的 sendToBoardWithToast（里程碑 251）
+    await useLibraryStore.getState().sendToBoardWithToast(ids, { boardId: b.id, boardName: b.name })
   }
 
   useEffect(() => {
@@ -797,17 +783,10 @@ function Sidebar() {
         }}
         onDrop={(e) => {
           setDropTargetTag(null)
-          const raw = e.dataTransfer.getData(ASSET_MIME)
-          if (!raw) return
+          const ids = readAssetIds(e.dataTransfer)
+          if (ids.length === 0) return
           e.preventDefault()
           e.stopPropagation()
-          let ids: string[] = []
-          try {
-            ids = JSON.parse(raw) as string[]
-          } catch {
-            return
-          }
-          if (ids.length === 0) return
           // 素材 → 标签行：给拖过来的素材批量打标签
           void useLibraryStore.getState().applyTag(ids, t.name)
         }}
@@ -1276,11 +1255,11 @@ function Sidebar() {
             onDragLeave={() => setRootDropActive(false)}
             onDrop={async (e) => {
               e.preventDefault()
-              const movedId = e.dataTransfer.getData(FOLDER_MIME)
+              const movedId = readFolderId(e.dataTransfer)
               setRootDropActive(false)
               setDraggingFolder(null)
-              if (!movedId) return
-              await applyFolderMove(Number(movedId), null, '顶层')
+              if (movedId == null) return
+              await applyFolderMove(movedId, null, '顶层')
             }}
           >
             拖到此处移出为顶层

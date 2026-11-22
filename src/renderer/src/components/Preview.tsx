@@ -104,8 +104,7 @@ function Preview() {
   }
 
   const setStar = async (star: number) => {
-    await window.api.updateAsset(asset.id, { star })
-    useLibraryStore.getState().updateAssetLocal(asset.id, { star })
+    await useLibraryStore.getState().rateAssets([asset.id], star)
   }
 
   // 可浏览器直接解码的图片格式(排除视频:视频走 video 分支播放)

@@ -1,10 +1,9 @@
 import { memo, useMemo, useState } from 'react'
 import { assetThumbUrl, useLibraryStore } from '@renderer/stores/libraryStore'
+import { writeAssetDrag } from '@renderer/dnd'
 import Icon from './Icon'
 import type { Asset } from '@shared/types'
 import { useTheme } from '../theme'
-
-const ASSET_MIME = 'application/x-eaglelike-assets'
 
 function sourceName(
   view: ReturnType<typeof useLibraryStore.getState>['view'],
@@ -19,8 +18,7 @@ function sourceName(
 }
 
 function beginAssetDrag(event: React.DragEvent, asset: Asset): void {
-  event.dataTransfer.setData(ASSET_MIME, JSON.stringify([asset.id]))
-  event.dataTransfer.effectAllowed = 'copy'
+  writeAssetDrag(event.dataTransfer, [asset.id])
 }
 
 function BoardReferencePanel() {

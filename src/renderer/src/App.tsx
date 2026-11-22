@@ -16,8 +16,7 @@ import BoardPanel from './components/BoardPanel'
 import BoardReferencePanel from './components/BoardReferencePanel'
 import ArchiveHeader from './components/ArchiveHeader'
 import SelectionBar from './components/SelectionBar'
-import { loadShortcuts, matchesShortcut } from './shortcuts'
-import { galleryNavMove } from './galleryNav'
+import { useGlobalShortcuts } from './useGlobalShortcuts'
 import type { UpdateStatus } from '@shared/types'
 
 /** 素材库与白板面板之间的拖拽分隔条（照抄 MOTZ main-pane-resizer） */
@@ -280,99 +279,8 @@ export default function App() {
     }
   }, [refreshAll])
 
-  // 键盘快捷键：Delete 删除、Ctrl+Z 撤销、Ctrl+A 全选、空格预览开关、0-5 评分(多选批量)、方向键移动(网格感知+Shift 扩选)
-  // (预览/全选/撤销三个动作支持设置页自定义绑定)
-  useEffect(() => {
-    const readShortcuts = () => loadShortcuts()
-    let sc = readShortcuts()
-    const onShortcutsChanged = () => {
-      sc = readShortcuts()
-    }
-    window.addEventListener('lumen:shortcuts', onShortcutsChanged)
-
-    const onKey = (e: KeyboardEvent): void => {
-      const target = e.target as HTMLElement
-      const inInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
-      const s = useLibraryStore.getState()
-      // 白板全屏或焦点在画布内时素材库不可见/不活跃：
-      // 库级快捷键(删除/撤销/全选/评分/方向键)让位给画布
-      // (否则白板里按 Delete/Ctrl+A 会连带操作素材库选中项)
-      const boardActive =
-        s.boardViewMode === 'board' ||
-        (typeof target.closest === 'function' && !!target.closest('[data-board-frame]'))
-      if (boardActive) return
-      if (e.key === 'Delete') {
-        if (inInput) return
-        void s.deleteSelection(s.view.type === 'trash')
-      } else if (e.key === 'Escape') {
-        s.openPreview(null)
-        s.openEditor(null)
-        s.setSelection([])
-        // 助手面板无更上层浮层时一并收起(预览/编辑器打开时先让 Esc 关它们)
-        if (!s.previewId && !s.editorId) s.closeAgentPanel()
-      } else if (matchesShortcut(e, sc.undoDelete)) {
-        if (inInput) return
-        e.preventDefault()
-        void s.undoLast()
-      } else if (matchesShortcut(e, sc.selectAll)) {
-        if (inInput) return
-        e.preventDefault()
-        // 图库分页后 assets 只是已加载部分，全选要走 store（会把剩余页取完）
-        void s.selectAllAssets()
-      } else if (matchesShortcut(e, sc.preview)) {
-        if (inInput) return
-        e.preventDefault()
-        // Eagle 式开关:再按一次关闭(此前只能 Esc)
-        if (s.previewId) s.openPreview(null)
-        else if (s.selection.length === 1) s.openPreview(s.selection[0])
-      } else if (matchesShortcut(e, sc.screenshot)) {
-        e.preventDefault()
-        void window.api.screenshotStart().catch(() => useLibraryStore.getState().showToast('截图启动失败'))
-      } else if (matchesShortcut(e, sc.focusSearch)) {
-        e.preventDefault()
-        const input = document.querySelector<HTMLInputElement>('input[aria-label="搜索素材"], input[aria-label="AI 智能搜索"]')
-        if (input) {
-          input.focus()
-          input.select()
-        }
-      } else if (matchesShortcut(e, sc.toggleAssistant)) {
-        // 助手面板开关(允许在输入框内触发——它是全局面板而非图库操作)
-        e.preventDefault()
-        useLibraryStore.getState().toggleAgentPanel()
-      } else if (matchesShortcut(e, sc.toggleInspector)) {
-        e.preventDefault()
-        useLibraryStore.getState().toggleInspector()
-      } else if (/^[0-5]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (inInput) return
-        const star = Number(e.key)
-        // 预览打开时 0 是缩放复位(Preview 内部处理),不当作清星
-        if (star === 0 && s.previewId) return
-        const ids = s.selection
-        if (ids.length === 0) return
-        // 多选批量打星(里程碑 246):此前只给第一张打
-        void Promise.all(ids.map((id) => window.api.updateAsset(id, { star })))
-          .then(() => {
-            s.updateAssetsLocal(ids, { star })
-            if (ids.length > 1) {
-              s.showToast(star === 0 ? `已清除 ${ids.length} 个素材的星级` : `已为 ${ids.length} 个素材评 ${star} 星`)
-            }
-          })
-          .catch(() => s.showToast('评分失败'))
-      } else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
-        if (inInput) return
-        const list = s.assets
-        if (list.length === 0) return
-        e.preventDefault()
-        // 网格感知移动 + Shift 扩选(里程碑 246):见 galleryNav
-        s.setSelection(galleryNavMove(e.key, s.selection, list, e.shiftKey))
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('keydown', onKey)
-      window.removeEventListener('lumen:shortcuts', onShortcutsChanged)
-    }
-  }, [])
+  // 全局快捷键：Delete/Ctrl+Z/Ctrl+A/空格预览/0-5 评分/方向键导航（派发逻辑见 useGlobalShortcuts）
+  useGlobalShortcuts()
 
   // Ctrl+V 粘贴导入:剪贴板文件(截图/复制的图)直接导入;纯 http(s) 链接文本则抓取入库
   useEffect(() => {

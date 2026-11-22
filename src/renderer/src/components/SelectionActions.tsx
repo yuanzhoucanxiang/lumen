@@ -87,13 +87,7 @@ export default function SelectionActions({ layout = 'row' }: { layout?: 'row' | 
   }
 
   const sendToBoard = async () => {
-    const st = useLibraryStore.getState()
-    if (st.activeBoardId == null) {
-      st.showToast('请先新建白板（白板面板右侧 + 号）')
-      return
-    }
-    const existing = await st.sendAssetsToBoard([...selection])
-    st.showToast(existing.length > 0 ? '选中的素材已在当前白板中' : `已发送 ${selection.length} 张到当前白板`)
+    await useLibraryStore.getState().sendToBoardWithToast([...selection])
   }
 
   const tagPanel = (

@@ -4,8 +4,14 @@ import Icon from './Icon'
 import { useTheme } from '../theme'
 import type { Asset, BoardItem, BoardItemPatch, NewBoardItem, ShapeSpec } from '@shared/types'
 import { PREVIEW_LOD_EXTS } from '@shared/previewFormats'
-
-const ASSET_MIME = 'application/x-eaglelike-assets'
+import { ASSET_MIME, readAssetIds } from '@renderer/dnd'
+import {
+  DEFAULT_BOARD_APPEARANCE,
+  hexLuminance,
+  parseBoardAppearance,
+  resolveBgColor,
+  type BoardAppearance
+} from '@shared/boardAppearance'
 
 /** 白板工具模式 */
 export type BoardTool = 'select' | 'pen' | 'arrow' | 'line' | 'rect' | 'ellipse' | 'note'
@@ -62,39 +68,12 @@ const DEFAULT_SHAPE_STYLE = { color: '#5aa0ff', sw: 2.5 }
 const SHAPE_COLORS = ['#5aa0ff', '#ff6b6b', '#ffd166', '#4ade80', '#c792ea', '#e8eef7']
 /** 形状可选线宽 */
 const SHAPE_WIDTHS = [1.5, 2.5, 4, 6, 8]
-/** 画布外观预设（bg 键 → 颜色）。导出给 BoardPanel 色板共用,两处不许再各自维护 */
-export const APPEARANCE_PRESETS: Record<string, string> = {
-  dark: '#191c20',
-  gray: '#262a31',
-  light: '#e8e8e8',
-  white: '#ffffff',
-  black: '#0c0d0f'
-}
-
-interface BoardAppearance {
-  bg: string
-  grid: boolean
-  gridSize: number
-  /** 智能吸附持久开关（里程碑 247):Alt 仍是拖拽中的临时关闭 */
-  snap: boolean
-}
-const DEFAULT_APPEARANCE: BoardAppearance = { bg: 'dark', grid: true, gridSize: 24, snap: true }
+/** 画布外观预设：色值与解析在 @shared/boardAppearance（BoardPanel 也用它,不再反向依赖本文件） */
 
 /** 素材元素屏幕渲染尺寸小于该值(px)时降级为色块占位:
  *  超大规模白板缩小视图时,数千张缩略图的解码/绘制是主要瓶颈,
  *  色块只占一个 div 无解码开销(对标"视口降级",见项目策划案进行中项)。 */
 const DEGRADE_PX = 22
-
-/** hex 颜色亮度（0-1），用于点阵颜色深浅自适应 */
-function hexLuminance(hex: string): number {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
-  if (!m) return 0.2
-  const n = parseInt(m[1], 16)
-  const r = (n >> 16) & 255
-  const g = (n >> 8) & 255
-  const b = n & 255
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255
-}
 
 /** XML 转义（导出 SVG 用） */
 function xmlEscape(s: string): string {
@@ -137,12 +116,6 @@ function toFiniteNum(v: unknown, fallback: number): number {
 
 /** PNG 导出笔记 clipPath 的自增序号（同屏多次导出防 id 冲突） */
 let clipSeq = 0
-
-/** 画布背景白名单：仅预设键或 #hex，其余回退 dark（bg 源于可导入的 .lumenboard） */
-function resolveBgColor(bg: string): string {
-  if (APPEARANCE_PRESETS[bg]) return APPEARANCE_PRESETS[bg]
-  return /^#[0-9a-f]{3,8}$/i.test(bg) ? bg : APPEARANCE_PRESETS.dark
-}
 
 /** 形状元素 → SVG 子元素（元素内坐标,unit=item 尺寸） */
 function shapeSvgNodes(shape: ShapeSpec, w: number, h: number): ReactNode | null {
@@ -393,20 +366,10 @@ export default function BoardCanvas({
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  /* ---------- 画布外观（背景色/网格,按白板持久化） ---------- */
-  const [appearance, setAppearance] = useState<BoardAppearance>(DEFAULT_APPEARANCE)
+  /* ---------- 画布外观（背景色/网格/吸附,按白板持久化;解析见 @shared/boardAppearance） ---------- */
+  const [appearance, setAppearance] = useState<BoardAppearance>(DEFAULT_BOARD_APPEARANCE)
   useEffect(() => {
-    const b = boards.find((x) => x.id === activeBoardId)
-    let a: BoardAppearance = DEFAULT_APPEARANCE
-    try {
-      const p = JSON.parse(b?.appearance ?? '')
-      if (p && typeof p === 'object') {
-        a = { bg: typeof p.bg === 'string' ? p.bg : 'dark', grid: p.grid !== false, gridSize: Number(p.gridSize) || 24, snap: p.snap !== false }
-      }
-    } catch {
-      /* 忽略 */
-    }
-    setAppearance(a)
+    setAppearance(parseBoardAppearance(boards.find((x) => x.id === activeBoardId)?.appearance))
   }, [boards, activeBoardId])
   const bgColor = resolveBgColor(appearance.bg)
   const gridDotColor = hexLuminance(bgColor) > 0.6 ? 'rgba(60,60,60,0.22)' : 'rgba(255,255,255,0.14)'
@@ -1946,17 +1909,10 @@ export default function BoardCanvas({
       })()
       return
     }
-    const raw = e.dataTransfer.getData(ASSET_MIME)
-    if (!raw) return
+    const ids = readAssetIds(e.dataTransfer)
+    if (ids.length === 0 || boardId == null) return
     e.preventDefault()
     e.stopPropagation()
-    let ids: string[] = []
-    try {
-      ids = JSON.parse(raw)
-    } catch {
-      return
-    }
-    if (ids.length === 0 || boardId == null) return
     const pt = canvasPointFromClient(e.clientX, e.clientY)
     void addAssetsToBoard(ids, pt.x, pt.y)
   }

@@ -135,8 +135,13 @@ async function main() {
     // ---------- 2. 拖素材到侧栏白板项 → 直接上板 ----------
     // dev 的 localStorage 不随配置隔离,侧栏可能残留收起态,先展开;进夹具文件夹保证拖的是新素材
     await run(`
+      // dev 的 localStorage 不随配置隔离,侧栏可能残留收起态,先展开
       const expand = document.querySelector('button[aria-label="展开侧栏"]')
       if (expand) { expand.click(); await new Promise((r) => setTimeout(r, 350)) }
+      // 全量回归时上一套件可能把应用留在白板模式:白板模式下点导航只改参考来源,
+      // 主区仍是画布(无 .contact-sheet),必须先退出
+      const exit = document.querySelector('button[aria-label="退出白板"]')
+      if (exit) { exit.click(); await new Promise((r) => setTimeout(r, 600)) }
       const nav = document.querySelector('nav[aria-label="素材库导航"]')
       const all = nav && [...nav.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '全部素材')
       if (all) all.click()
@@ -165,7 +170,7 @@ async function main() {
       // 只拖夹具素材:轮询等文件夹视图渲染出夹具卡(整库视图首卡可能本来就在目标板里)
       const want = new Set(${JSON.stringify(assetIds)})
       let card = null
-      for (let i = 0; i < 20 && !card; i++) {
+      for (let i = 0; i < 40 && !card; i++) {
         card = [...document.querySelectorAll('.contact-sheet [data-asset-id]')].find(
           (c) => want.has(c.getAttribute('data-asset-id')) && c.getBoundingClientRect().width > 0
         )

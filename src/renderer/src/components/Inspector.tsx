@@ -173,10 +173,8 @@ function Inspector({ width = 252 }: { width?: number }) {
                 className={`text-base transition-all duration-100 hover:scale-110 ${
                   n <= asset.star ? 'text-[var(--amber)]' : 'text-white/15 hover:text-white/50'
                 }`}
-                onClick={async () => {
-                  const star = n === asset.star ? 0 : n
-                  await window.api.updateAsset(asset.id, { star })
-                  useLibraryStore.getState().updateAssetLocal(asset.id, { star })
+                onClick={() => {
+                  void useLibraryStore.getState().rateAssets([asset.id], n === asset.star ? 0 : n)
                 }}
               >
                 ★
