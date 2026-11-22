@@ -7,7 +7,7 @@ import TagManagerDialog from './TagManagerDialog'
 import Icon from './Icon'
 import { useTheme } from '../theme'
 import type { IconName } from './Icon'
-import type { Folder, Tag } from '@shared/types'
+import type { Folder, Tag, Board } from '@shared/types'
 
 const ravenMarkUrl = new URL('../../../../build/raven-icon-source.svg', import.meta.url).href
 
@@ -228,6 +228,8 @@ function Sidebar() {
   const [libMenuOpen, setLibMenuOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [dropTargetFolder, setDropTargetFolder] = useState<number | null>(null)
+  /** 拖素材悬停的白板项（里程碑 247:拖到白板名上直接加入该白板） */
+  const [dropTargetBoard, setDropTargetBoard] = useState<number | null>(null)
   /** 新建白板输入框 */
   const [boardInputOpen, setBoardInputOpen] = useState(false)
   const [boardInputVal, setBoardInputVal] = useState('')
@@ -411,6 +413,26 @@ function Sidebar() {
       if (v.type === 'folder' && v.id === folderId) {
         await useLibraryStore.getState().refreshAssets()
       }
+    } catch {
+      /* 非法拖拽数据忽略 */
+    }
+  }
+
+  /** 拖素材到白板项：直接加入该白板（里程碑 247）。目标不必是当前白板 */
+  const onBoardRowDrop = async (e: React.DragEvent, b: Board): Promise<void> => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDropTargetBoard(null)
+    const data = e.dataTransfer.getData(ASSET_MIME)
+    if (!data) return
+    try {
+      const ids = JSON.parse(data) as string[]
+      if (ids.length === 0) return
+      const existing = await useLibraryStore.getState().sendAssetsToBoard(ids, b.id)
+      const added = ids.length - existing.length
+      useLibraryStore
+        .getState()
+        .showToast(added === 0 ? `选中的素材已在「${b.name}」中` : `已发送 ${added} 张到「${b.name}」`)
     } catch {
       /* 非法拖拽数据忽略 */
     }
@@ -1342,14 +1364,32 @@ function Sidebar() {
                 onBlur={() => void submitRename()}
               />
             ) : (
-              <NavItem
+              <div
                 key={b.id}
-                active={activeBoardId === b.id}
-                icon="shapes"
-                label={b.name}
-                onClick={() => void openBoardView(b.id)}
-                onContextMenu={(e) => openMenu(e, 'board', b.id)}
-              />
+                onDragOver={(e) => {
+                  if (!e.dataTransfer.types.includes(ASSET_MIME)) return
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'copy'
+                  if (dropTargetBoard !== b.id) setDropTargetBoard(b.id)
+                }}
+                onDragLeave={() => {
+                  if (dropTargetBoard === b.id) setDropTargetBoard(null)
+                }}
+                onDrop={(e) => void onBoardRowDrop(e, b)}
+                className={`transition-shadow duration-100 ${
+                  dropTargetBoard === b.id
+                    ? 'bg-[var(--accent-soft)] outline outline-1 outline-[var(--accent)]'
+                    : ''
+                }`}
+              >
+                <NavItem
+                  active={activeBoardId === b.id}
+                  icon="shapes"
+                  label={b.name}
+                  onClick={() => void openBoardView(b.id)}
+                  onContextMenu={(e) => openMenu(e, 'board', b.id)}
+                />
+              </div>
             )
           )}
           {visibleBoards.length === 0 && !boardInputOpen && (

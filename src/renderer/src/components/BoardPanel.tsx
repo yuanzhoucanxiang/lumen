@@ -16,6 +16,8 @@ interface BoardAppearance {
   bg: string
   grid: boolean
   gridSize: number
+  /** 智能吸附持久开关（里程碑 247），与 BoardCanvas 保持同构 */
+  snap: boolean
 }
 
 const TOOLS: { id: BoardTool; label: string; icon: Parameters<typeof Icon>[0]['name']; title: string }[] = [
@@ -52,11 +54,11 @@ function BoardPanel() {
   const board = boards.find((b) => b.id === activeBoardId)
   const hasBoard = board != null
 
-  // 当前外观（从 boards 解析;默认深色+网格）
-  let appearance: BoardAppearance = { bg: 'dark', grid: true, gridSize: 24 }
+  // 当前外观（从 boards 解析;默认深色+网格+吸附开）
+  let appearance: BoardAppearance = { bg: 'dark', grid: true, gridSize: 24, snap: true }
   try {
     const p = JSON.parse(board?.appearance ?? '')
-    if (p && typeof p === 'object') appearance = { bg: p.bg ?? 'dark', grid: p.grid !== false, gridSize: Number(p.gridSize) || 24 }
+    if (p && typeof p === 'object') appearance = { bg: p.bg ?? 'dark', grid: p.grid !== false, gridSize: Number(p.gridSize) || 24, snap: p.snap !== false }
   } catch {
     /* 忽略 */
   }
@@ -381,6 +383,16 @@ function BoardPanel() {
               <option value={24}>中 24</option>
               <option value={40}>疏 40</option>
             </select>
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 text-[11px] text-[var(--text-dim)]">
+            <input
+              type="checkbox"
+              aria-label="吸附开关"
+              className="accent-[var(--accent)]"
+              checked={appearance.snap}
+              onChange={(event) => void persistAppearance({ ...appearance, snap: event.target.checked })}
+            />
+            智能吸附
           </label>
           <button
             aria-label="收起画布外观"

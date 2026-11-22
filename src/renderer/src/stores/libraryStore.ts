@@ -216,7 +216,7 @@ interface LibraryState {
   toggleInspector: () => void
   setInspectorWidth: (w: number) => void
   /** 发送素材到当前白板（照抄 MOTZ：3 列错开摆放,返回已存在的 id） */
-  sendAssetsToBoard: (ids: string[]) => Promise<string[]>
+  sendAssetsToBoard: (ids: string[], boardId?: number) => Promise<string[]>
   refreshStats: () => Promise<void>
   refreshAll: () => Promise<void>
 
@@ -487,20 +487,26 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     }
     set({ inspectorWidth: width })
   },
-  /** 发送素材到当前白板（照抄 MOTZ sendAssetsToBoard：3 列错开 + 按宽高比定尺寸） */
-  sendAssetsToBoard: async (ids) => {
+  /** 发送素材到白板（照抄 MOTZ sendAssetsToBoard：3 列错开 + 按宽高比定尺寸）。
+   *  boardId 缺省 = 当前白板;显式传入时可投递到任意白板(里程碑 247,侧栏白板项拖放用),
+   *  非当前板要现取它的元素清单做查重与摆放起点,添加后也不刷新当前视图。 */
+  sendAssetsToBoard: async (ids, boardId) => {
     const s = get()
-    if (s.activeBoardId == null) return []
+    const targetId = boardId ?? s.activeBoardId
+    if (targetId == null) return []
     const uniqueIds = Array.from(new Set(ids.filter(Boolean)))
     if (uniqueIds.length === 0) return []
-    const existing = new Set(s.boardItems.filter((i) => i.assetId).map((i) => i.assetId))
+    const isCurrent = targetId === s.activeBoardId
+    // 目标板≠当前板时,现有元素清单要现取(store.boardItems 只属于当前板)
+    const targetItems = isCurrent ? s.boardItems : await window.api.listBoardItems(targetId)
+    const existing = new Set(targetItems.filter((i) => i.assetId).map((i) => i.assetId))
     const newIds = uniqueIds.filter((id) => !existing.has(id))
     const existingIds = uniqueIds.filter((id) => existing.has(id))
     if (newIds.length > 0) {
       // 记录添加前快照,BoardCanvas 消费后入撤销栈(参考架/素材库发送同样可 Ctrl+Z)
-      set({ boardHistoryHint: { boardId: s.activeBoardId, snapshot: s.boardItems.map((i) => ({ ...i })) } })
-      const originX = 96 + ((s.boardItems.length * 42) % 260)
-      const originY = 90 + ((s.boardItems.length * 34) % 180)
+      set({ boardHistoryHint: { boardId: targetId, snapshot: targetItems.map((i) => ({ ...i })) } })
+      const originX = 96 + ((targetItems.length * 42) % 260)
+      const originY = 90 + ((targetItems.length * 34) % 180)
       let cursorX = originX
       let cursorY = originY
       let rowHeight = 0
@@ -518,7 +524,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           w = Math.min(maxW, asset.width)
           h = w * (asset.height / Math.max(1, asset.width))
         }
-        await window.api.addBoardItem(s.activeBoardId, {
+        await window.api.addBoardItem(targetId, {
           assetId: newIds[i],
           type: 'asset',
           x: Math.round(cursorX),
@@ -529,7 +535,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         cursorX += w
         rowHeight = Math.max(rowHeight, h || w * 0.75)
       }
-      await s.refreshBoardItems(s.activeBoardId)
+      if (isCurrent) await s.refreshBoardItems(targetId)
     }
     return existingIds
   },

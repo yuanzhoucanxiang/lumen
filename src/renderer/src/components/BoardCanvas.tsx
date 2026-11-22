@@ -75,8 +75,10 @@ interface BoardAppearance {
   bg: string
   grid: boolean
   gridSize: number
+  /** 智能吸附持久开关（里程碑 247):Alt 仍是拖拽中的临时关闭 */
+  snap: boolean
 }
-const DEFAULT_APPEARANCE: BoardAppearance = { bg: 'dark', grid: true, gridSize: 24 }
+const DEFAULT_APPEARANCE: BoardAppearance = { bg: 'dark', grid: true, gridSize: 24, snap: true }
 
 /** 素材元素屏幕渲染尺寸小于该值(px)时降级为色块占位:
  *  超大规模白板缩小视图时,数千张缩略图的解码/绘制是主要瓶颈,
@@ -399,7 +401,7 @@ export default function BoardCanvas({
     try {
       const p = JSON.parse(b?.appearance ?? '')
       if (p && typeof p === 'object') {
-        a = { bg: typeof p.bg === 'string' ? p.bg : 'dark', grid: p.grid !== false, gridSize: Number(p.gridSize) || 24 }
+        a = { bg: typeof p.bg === 'string' ? p.bg : 'dark', grid: p.grid !== false, gridSize: Number(p.gridSize) || 24, snap: p.snap !== false }
       }
     } catch {
       /* 忽略 */
@@ -2197,9 +2199,10 @@ export default function BoardCanvas({
     const dx = (e.clientX - d.startX) / s
     const dy = (e.clientY - d.startY) / s
     d.lockAspect = d.mode === 'resize' && e.shiftKey
-    // Alt 临时关闭吸附（对标 Figma：需要精确错位摆放时按住 Alt）
+    // Alt 临时关闭吸附（对标 Figma：需要精确错位摆放时按住 Alt）；画布外观抽屉可持久关闭(里程碑 247)
     d.snapOff = e.altKey
-    const { rects, vLines, hLines, box } = layoutDrag(d, dx, dy, { snap: !e.altKey, lockAspect: d.lockAspect })
+    const snapEnabled = appearanceRef.current.snap !== false
+    const { rects, vLines, hLines, box } = layoutDrag(d, dx, dy, { snap: !e.altKey && snapEnabled, lockAspect: d.lockAspect })
     for (const [id, r] of rects) {
       const el = itemEls.current.get(id)
       if (!el) continue
@@ -2268,7 +2271,10 @@ export default function BoardCanvas({
     pushHistory()
     const s = viewportRef.current.s
     // 与预览同一套数学（吸附/等比沿用最后一帧的修饰键状态，避免松手瞬间跳几像素）
-    const { rects } = layoutDrag(d, rawDx / s, rawDy / s, { snap: !d.snapOff, lockAspect: !!d.lockAspect })
+    const { rects } = layoutDrag(d, rawDx / s, rawDy / s, {
+      snap: !d.snapOff && appearanceRef.current.snap !== false,
+      lockAspect: !!d.lockAspect
+    })
     const updates: { id: string; patch: BoardItemPatch }[] = []
     for (const [id, r] of rects) {
       const o = d.origs.get(id)
