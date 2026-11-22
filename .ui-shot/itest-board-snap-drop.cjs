@@ -158,17 +158,26 @@ async function main() {
       return true
     `)
     const drop = await run(`
-      const card = [...document.querySelectorAll('.contact-sheet [data-asset-id]')].find((c) => c.getBoundingClientRect().width > 0)
+      // 只拖夹具素材:轮询等文件夹视图渲染出夹具卡(整库视图首卡可能本来就在目标板里)
+      const want = new Set(${JSON.stringify(assetIds)})
+      let card = null
+      for (let i = 0; i < 20 && !card; i++) {
+        card = [...document.querySelectorAll('.contact-sheet [data-asset-id]')].find(
+          (c) => want.has(c.getAttribute('data-asset-id')) && c.getBoundingClientRect().width > 0
+        )
+        if (!card) await new Promise((r) => setTimeout(r, 250))
+      }
       const sec = document.querySelector('section[aria-label="白板"]')
-      if (!card || !sec) return { err: '找不到卡片或白板分区' }
+      if (!card || !sec) return { err: '找不到夹具卡片或白板分区' }
       const boardBtn = [...sec.querySelectorAll('button[aria-label]')].find((b) => {
         const l = b.getAttribute('aria-label') || ''
         return l !== '新建白板' && l !== '展开白板' && l !== '折叠白板' && b.getBoundingClientRect().width > 0
       })
       if (!boardBtn) return { err: '侧栏没有白板' }
       const boardName = boardBtn.getAttribute('aria-label')
+      const dragId = card.getAttribute('data-asset-id')
       const dt = new DataTransfer()
-      dt.setData('application/x-eaglelike-assets', JSON.stringify([card.getAttribute('data-asset-id')]))
+      dt.setData('application/x-eaglelike-assets', JSON.stringify([dragId]))
       card.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }))
       await new Promise((r) => setTimeout(r, 120))
       boardBtn.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }))
@@ -176,15 +185,16 @@ async function main() {
       const highlighted = !!(boardBtn.parentElement && (boardBtn.parentElement.className || '').includes('outline'))
       boardBtn.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
       await new Promise((r) => setTimeout(r, 700))
-      return { boardName, highlighted }
+      return { boardName, highlighted, dragId }
     `)
     check('拖卡片到白板项出现高亮与落板', !drop.err && !!drop.boardName, JSON.stringify(drop))
     const boardId = await run(`
       const boards = await window.api.listBoards()
       return boards.find((b) => b.name === ${JSON.stringify((drop && drop.boardName) || '')})?.id ?? null
     `)
+    const dragId = drop && !drop.err ? drop.dragId : assetIds[0]
     const item = boardId != null
-      ? await run(`return (await window.api.listBoardItems(${boardId})).find((i) => i.assetId === ${JSON.stringify(assetIds[0])}) ?? null`)
+      ? await run(`return (await window.api.listBoardItems(${boardId})).find((i) => i.assetId === ${JSON.stringify(dragId)}) ?? null`)
       : null
     check('素材已进入目标白板(元素落库)', !!item, `boardId=${boardId} itemId=${item && item.id}`)
 

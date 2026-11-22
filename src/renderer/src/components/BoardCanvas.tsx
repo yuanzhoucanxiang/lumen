@@ -2987,6 +2987,8 @@ export default function BoardCanvas({
         >
           {ctxItem ? (
             <>
+              {/* 分组标签(里程碑 248):菜单加锁定/成组/图层/对齐/样式后过长,用档案风格小节标签分块 */}
+              <div className="mono border-b border-[var(--border)] px-4 pb-1 pt-1.5 text-[9px] tracking-[0.14em] text-[var(--text-faint)]">操作</div>
               <button
                 className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] text-[var(--danger)] hover:bg-[var(--bg-hover)]"
                 onClick={() => void removeCtxItem()}
@@ -3032,6 +3034,8 @@ export default function BoardCanvas({
                   </button>
                 )
               )}
+              {/* 排列:对齐/图层/自动排列/等距分布收进同一小节(里程碑 248,原排列三项在菜单尾部) */}
+              <div className="mono border-t border-[var(--border)] px-4 pb-0.5 pt-1.5 text-[9px] tracking-[0.14em] text-[var(--text-faint)]">排列</div>
               {/* 对齐（对标 Figma）：以选区包围盒为基准，仅多选时出现 */}
               {multiSelected && (
                 <div className="flex items-center gap-1 px-4 py-1.5">
@@ -3080,8 +3084,35 @@ export default function BoardCanvas({
                   </button>
                 ))}
               </div>
+              {/* 自动排列与等距分布(原在菜单尾部,248 收进「排列」小节) */}
+              <button className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]" onClick={() => void arrangeCtx('grid')}>
+                网格排列选中
+              </button>
+              <button className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]" onClick={() => void arrangeCtx('row')}>
+                横向排列选中
+              </button>
+              <button className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]" onClick={() => void arrangeCtx('column')}>
+                纵向排列选中
+              </button>
+              {multiSelected && selectedIdsRef.current.length >= 3 && (
+                <>
+                  <button
+                    className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                    onClick={() => void distributeCtx('h')}
+                  >
+                    水平等距分布选中
+                  </button>
+                  <button
+                    className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
+                    onClick={() => void distributeCtx('v')}
+                  >
+                    垂直等距分布选中
+                  </button>
+                </>
+              )}
               {ctxItem?.type === 'asset' && (
                 <>
+                  <div className="mono border-t border-[var(--border)] px-4 pb-0.5 pt-1.5 text-[9px] tracking-[0.14em] text-[var(--text-faint)]">素材</div>
                   {/* 与首页素材右键一致：定位到 LUMEN 实际保存的文件 */}
                   <button
                     className="flex w-full cursor-pointer items-center gap-1.5 px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
@@ -3109,9 +3140,10 @@ export default function BoardCanvas({
                   </button>
                 </>
               )}
-              <div className="my-1 border-t border-[var(--border)]" />
+              {/* 样式:透明度/字体/描边,note 与 shape 各自的内联标签保留(里程碑 248) */}
+              <div className="mono border-t border-[var(--border)] px-4 pb-0.5 pt-1.5 text-[9px] tracking-[0.14em] text-[var(--text-faint)]">样式</div>
               {ctxIsNote && (
-                <div className="border-t border-[var(--border)] px-3 py-2">
+                <div className="px-3 py-2">
                   <div className="mb-1 text-[10px] text-[var(--text-faint)]">字体</div>
                   <select
                     aria-label="note 字体"
@@ -3159,7 +3191,7 @@ export default function BoardCanvas({
               )}
               {/* 形状样式（颜色/线宽,多选时批量应用;新绘制沿用所选样式） */}
               {ctxIsShape && (
-                <div className="border-t border-[var(--border)] px-3 py-2">
+                <div className="px-3 py-2">
                   <div className="mb-1 text-[10px] text-[var(--text-faint)]">描边颜色</div>
                   <div className="flex items-center gap-1">
                     {SHAPE_COLORS.map((c) => (
@@ -3202,7 +3234,7 @@ export default function BoardCanvas({
               )}
               {/* 透明度（对标 PureRef 参考图透明度对比,多选时批量应用） */}
               {ctxItem && (
-                <div className="border-t border-[var(--border)] px-3 py-2">
+                <div className="px-3 py-2">
                   <div className="mb-1 flex items-center justify-between text-[10px] text-[var(--text-faint)]">
                     <span>透明度</span>
                     <span className="mono">{ctxItem.opacity ?? 100}%</span>
@@ -3235,7 +3267,6 @@ export default function BoardCanvas({
                   />
                 </div>
               )}
-              <div className="my-1 border-t border-[var(--border)]" />
             </>
           ) : (
             <>
@@ -3280,28 +3311,17 @@ export default function BoardCanvas({
               </button>
             </>
           )}
-          <button className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]" onClick={() => void arrangeCtx('grid')}>
-            网格排列{multiSelected ? '选中' : ctxItem ? '选中' : ''}
-          </button>
-          <button className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]" onClick={() => void arrangeCtx('row')}>
-            横向排列{multiSelected ? '选中' : ctxItem ? '选中' : ''}
-          </button>
-          <button className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]" onClick={() => void arrangeCtx('column')}>
-            纵向排列{multiSelected ? '选中' : ctxItem ? '选中' : ''}
-          </button>
-          {multiSelected && selectedIdsRef.current.length >= 3 && (
+          {/* 空白画布菜单的排列三项(元素菜单里已收进「排列」小节,不重复;里程碑 248) */}
+          {!ctxItem && (
             <>
-              <button
-                className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
-                onClick={() => void distributeCtx('h')}
-              >
-                水平等距分布选中
+              <button className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]" onClick={() => void arrangeCtx('grid')}>
+                网格排列
               </button>
-              <button
-                className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
-                onClick={() => void distributeCtx('v')}
-              >
-                垂直等距分布选中
+              <button className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]" onClick={() => void arrangeCtx('row')}>
+                横向排列
+              </button>
+              <button className="block w-full cursor-pointer px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]" onClick={() => void arrangeCtx('column')}>
+                纵向排列
               </button>
             </>
           )}
