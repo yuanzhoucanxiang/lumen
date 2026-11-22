@@ -17,6 +17,7 @@ import BoardReferencePanel from './components/BoardReferencePanel'
 import ArchiveHeader from './components/ArchiveHeader'
 import SelectionBar from './components/SelectionBar'
 import { loadShortcuts, matchesShortcut } from './shortcuts'
+import { galleryNavMove } from './galleryNav'
 import type { UpdateStatus } from '@shared/types'
 
 /** 素材库与白板面板之间的拖拽分隔条（照抄 MOTZ main-pane-resizer） */
@@ -279,7 +280,7 @@ export default function App() {
     }
   }, [refreshAll])
 
-  // 键盘快捷键：Delete 删除、Ctrl+Z 撤销、Ctrl+A 全选、空格预览、1-5 评分、方向键移动
+  // 键盘快捷键：Delete 删除、Ctrl+Z 撤销、Ctrl+A 全选、空格预览开关、0-5 评分(多选批量)、方向键移动(网格感知+Shift 扩选)
   // (预览/全选/撤销三个动作支持设置页自定义绑定)
   useEffect(() => {
     const readShortcuts = () => loadShortcuts()
@@ -321,7 +322,9 @@ export default function App() {
       } else if (matchesShortcut(e, sc.preview)) {
         if (inInput) return
         e.preventDefault()
-        if (s.selection.length === 1) s.openPreview(s.selection[0])
+        // Eagle 式开关:再按一次关闭(此前只能 Esc)
+        if (s.previewId) s.openPreview(null)
+        else if (s.selection.length === 1) s.openPreview(s.selection[0])
       } else if (matchesShortcut(e, sc.screenshot)) {
         e.preventDefault()
         void window.api.screenshotStart().catch(() => useLibraryStore.getState().showToast('截图启动失败'))
@@ -339,24 +342,29 @@ export default function App() {
       } else if (matchesShortcut(e, sc.toggleInspector)) {
         e.preventDefault()
         useLibraryStore.getState().toggleInspector()
-      } else if (/^[1-5]$/.test(e.key) && !e.ctrlKey && !e.metaKey) {
+      } else if (/^[0-5]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
         if (inInput) return
-        const id = s.selection[0]
-        if (id) {
-          const star = Number(e.key)
-          void window.api.updateAsset(id, { star })
-          s.updateAssetLocal(id, { star })
-        }
+        const star = Number(e.key)
+        // 预览打开时 0 是缩放复位(Preview 内部处理),不当作清星
+        if (star === 0 && s.previewId) return
+        const ids = s.selection
+        if (ids.length === 0) return
+        // 多选批量打星(里程碑 246):此前只给第一张打
+        void Promise.all(ids.map((id) => window.api.updateAsset(id, { star })))
+          .then(() => {
+            s.updateAssetsLocal(ids, { star })
+            if (ids.length > 1) {
+              s.showToast(star === 0 ? `已清除 ${ids.length} 个素材的星级` : `已为 ${ids.length} 个素材评 ${star} 星`)
+            }
+          })
+          .catch(() => s.showToast('评分失败'))
       } else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
         if (inInput) return
         const list = s.assets
         if (list.length === 0) return
         e.preventDefault()
-        const curId = s.selection[s.selection.length - 1]
-        const idx = list.findIndex((a) => a.id === curId)
-        const dir = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1
-        const next = idx === -1 ? 0 : Math.min(Math.max(idx + dir, 0), list.length - 1)
-        s.setSelection([list[next].id])
+        // 网格感知移动 + Shift 扩选(里程碑 246):见 galleryNav
+        s.setSelection(galleryNavMove(e.key, s.selection, list, e.shiftKey))
       }
     }
     window.addEventListener('keydown', onKey)

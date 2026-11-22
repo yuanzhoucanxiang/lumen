@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { assetEditable, assetStoryboardUrl, assetThumbUrl, useLibraryStore, zoomToWidth } from '@renderer/stores/libraryStore'
+import { setGalleryNavMeta } from '@renderer/galleryNav'
 import Icon from './Icon'
 import PixelArt from './PixelArt'
 import ScrambleText from './ScrambleText'
@@ -113,11 +114,9 @@ const ListRow = memo(function ListRow({ item, selected, onClick, onDoubleClick, 
       onDoubleClick={() => onDoubleClick(a.id)}
       onContextMenu={(e) => onContextMenu(a.id, e)}
       onKeyDown={(e) => {
+        // 只保留 Enter 开预览;空格不再就地切换选中——卡片有焦点时(点选即聚焦)
+        // 它会先把唯一选中项反选掉,导致 App 层的「空格开关预览」永远到不了(里程碑 246)
         if (e.key === 'Enter') onDoubleClick(a.id)
-        if (e.key === ' ') {
-          e.preventDefault()
-          onClick(a.id, e as unknown as React.MouseEvent)
-        }
       }}
     >
       {selected && (
@@ -225,11 +224,8 @@ const AssetCard = memo(function AssetCard({
       onMouseLeave={onHoverEnd}
       onDragStartCapture={onHoverEnd}
       onKeyDown={(e) => {
+        // 只保留 Enter 开预览;空格不再就地切换选中(理由同 ListRow,里程碑 246)
         if (e.key === 'Enter') onDoubleClick(a.id)
-        if (e.key === ' ') {
-          e.preventDefault()
-          onClick(a.id, e as unknown as React.MouseEvent)
-        }
       }}
     >
       <div
@@ -565,6 +561,30 @@ function Gallery() {
     for (const it of layout) max = Math.max(max, it.y + it.h)
     return max
   }, [layout])
+
+  // 方向键导航元数据(里程碑 246):布局变化时发布给 App 的键盘分支,
+  // 网格按列数跨行、瀑布流按列几何移动。模块级单例,不进 store。
+  useEffect(() => {
+    setGalleryNavMeta(
+      layout.length > 0
+        ? { mode: layoutMode, items: layout.map((it) => ({ id: it.a.id, dev: it.dev ?? 0, y: it.y, h: it.h })) }
+        : null
+    )
+  }, [layout, layoutMode])
+
+  // 方向键移动选中后保证目标卡片进入视口(虚拟化下目标可能在渲染窗口外);
+  // 最小位移滚动,不居中(点选已可见的卡片不该发生跳滚)。框选期间不介入。
+  const lastSelId = selection[selection.length - 1]
+  useEffect(() => {
+    if (!lastSelId || marquee) return
+    const el = containerRef.current
+    const item = layout.find((it) => it.a.id === lastSelId)
+    if (!el || !item) return
+    const viewTop = el.scrollTop
+    const viewBottom = viewTop + el.clientHeight
+    if (item.y < viewTop) el.scrollTop = item.y
+    else if (item.y + item.h > viewBottom) el.scrollTop = item.y + item.h - el.clientHeight
+  }, [lastSelId, layout, marquee])
 
   /**
    * 可见区间索引：布局项按它占用的桶登记，查询只扫与视口相交的桶。

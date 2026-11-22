@@ -223,6 +223,8 @@ interface LibraryState {
   importDialog: () => Promise<void>
   importFiles: (files: File[]) => Promise<void>
   updateAssetLocal: (id: string, patch: Partial<Asset>) => void
+  /** 批量就地更新(里程碑 246,多选打星用):一次 set,不逐个触发重渲染 */
+  updateAssetsLocal: (ids: string[], patch: Partial<Asset>) => void
   /** 批量加标签的就地更新（里程碑 209）：一次 set 完成，不整页重查（避免滚动被顶回） */
   addTagLocal: (ids: string[], tag: string) => void
   /** 拖拽打标签：写库 + 就地更新列表 + 刷新标签计数 */
@@ -767,6 +769,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   updateAssetLocal: (id, patch) =>
     set({ assets: get().assets.map((a) => (a.id === id ? { ...a, ...patch } : a)) }),
+
+  /** 批量就地更新(里程碑 246):一次 set 完成,多选打星不再逐个触发重渲染 */
+  updateAssetsLocal: (ids, patch) => {
+    const want = new Set(ids)
+    set({ assets: get().assets.map((a) => (want.has(a.id) ? { ...a, ...patch } : a)) })
+  },
 
   addTagLocal: (ids, tag) => {
     const want = new Set(ids)
