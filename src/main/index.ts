@@ -293,12 +293,16 @@ app.whenReady().then(() => {
     mainWindow?.webContents.send('clip:imported', count, 'startup')
   })
 
-  // 回收站自动清理（30 天）
-  try {
-    cleanTrashOlderThan(30)
-  } catch (e) {
-    logger.warn('[trash]', `回收站清理失败: ${(e as Error).message}`)
+  // 回收站自动清理（30 天）:启动跑一次 + 每 6 小时补跑(长驻会话此前从不清理,里程碑 249)
+  const cleanTrash = (): void => {
+    try {
+      cleanTrashOlderThan(30)
+    } catch (e) {
+      logger.warn('[trash]', `回收站清理失败: ${(e as Error).message}`)
+    }
   }
+  cleanTrash()
+  setInterval(cleanTrash, 6 * 60 * 60 * 1000).unref()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

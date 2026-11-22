@@ -567,6 +567,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <div className="section-title mb-2">AI 智能处理</div>
           <div className="mb-2 text-[11px] text-[var(--text-dim)]">
             配置后可批量为素材自动生成文件名和标签（OpenAI 兼容格式，支持智谱 GLM-4V / 通义 / Ollama 等）。
+            Base URL 与模型改动即时生效，API Key 需点「保存 Key」；「保存当前配置」把整套配置存成可一键切换的档案。
           </div>
           <div className="space-y-2">
             <div>
@@ -697,7 +698,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
                   disabled={!aiKeyInput}
                   onClick={() => void saveAiKey()}
                 >
-                  保存
+                  保存 Key
                 </button>
               </div>
             </div>

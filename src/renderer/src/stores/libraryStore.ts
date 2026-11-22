@@ -842,6 +842,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     if (ids.length === 0) return
     await window.api.restoreAssets(ids)
     set({ selection: [] })
+    get().showToast(`已恢复 ${ids.length} 个素材`)
     await get().refreshAll()
   },
 
