@@ -1,4 +1,5 @@
 import { BrowserWindow, clipboard, dialog, ipcMain, nativeImage, shell } from 'electron'
+import { createHash } from 'crypto'
 import { mkdtempSync } from 'fs'
 import { rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
@@ -9,11 +10,29 @@ import { exportToFolder, exportToZip } from '../exporter'
 import { installAgentSkill, agentSkillStatus, openAgentSkillFolder } from '../agentSkill'
 import type { ExportOptions } from '../../shared/types'
 
-/** 白板选区复制的剪贴板标记（里程碑 253）：写入 HTML 格式，粘贴时用来区分
- *  「板内 Ctrl+C 的选区」与「从浏览器/其他软件复制来的图片」。HTML 标记对用户不可见，
- *  也不会污染纯文本粘贴（实测 text 为空、formats 为 text/html + image/png）。 */
-const BOARD_CLIP_MARK = 'data-lumen-board-clip'
-const BOARD_CLIP_HTML = `<meta charset="utf-8"><span ${BOARD_CLIP_MARK}="1"></span>`
+/** 白板选区复制的"内容指纹"（里程碑 253/254）：粘贴时用来区分
+ *  「板内 Ctrl+C 的选区」与「从浏览器/其他软件复制来的图片」。
+ *  不用 HTML 标记——那会让剪贴板多出 text/html，个别偏好 HTML 的软件会粘成空白；
+ *  指纹方案下剪贴板保持纯 image/png（实测 writeImage → readImage().toPNG() 字节一致），
+ *  粘到微信/其他软件的行为与之前完全相同。 */
+let boardClipPrint: { hash: string; size: number; w: number; h: number } | null = null
+const pngPrint = (buf: Buffer, w: number, h: number) => ({
+  hash: createHash('sha256').update(buf).digest('hex'),
+  size: buf.length,
+  w,
+  h
+})
+/** 是否白板自己刚复制的图：hash 命中（Windows 实测字节一致）；
+ *  兜底用 尺寸+字节数 同形（个别平台读回会重新编码，不保证字节一致）。
+ *  先比尺寸再编码——外部大图尺寸不同即短路，避免每次粘贴都编码整张 PNG。 */
+function isBoardClipImage(img: ReturnType<typeof clipboard.readImage>): boolean {
+  if (!boardClipPrint) return false
+  const { width, height } = img.getSize()
+  if (width !== boardClipPrint.w || height !== boardClipPrint.h) return false
+  const buf = img.toPNG()
+  if (boardClipPrint.hash === createHash('sha256').update(buf).digest('hex')) return true
+  return buf.length === boardClipPrint.size
+}
 
 export function registerSystemIpc(getWindow: () => BrowserWindow | null): void {
   /* ---------------- 系统操作 ---------------- */
@@ -81,24 +100,25 @@ export function registerSystemIpc(getWindow: () => BrowserWindow | null): void {
   })
 
   /** 白板选区复制到系统剪贴板（里程碑 222，借鉴 MOTZ 富剪贴板）：dataURL → nativeImage。
-   *  同时写一段 HTML 标记（里程碑 253）：粘贴时据此区分「白板自己的选区」与「外部复制的图片」——
-   *  此前只写裸图片，白板内 Ctrl+V 只能靠"内部剪贴板有无内容"判断优先级，
-   *  导致外部复制的图片在复制过白板元素后永远粘不进来。 */
+   *  只写图片本身（不附加 HTML 标记，外部软件粘贴行为保持不变）；
+   *  另记内容指纹供 `clipboard:readImageInfo` 判断"这张图是不是白板刚复制的"（里程碑 253/254）。 */
   ipcMain.handle('board:copyImage', (_e, dataUrl: string): boolean => {
     if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return false
     const img = nativeImage.createFromDataURL(dataUrl)
     if (img.isEmpty()) return false
-    clipboard.write({ image: img, html: BOARD_CLIP_HTML })
+    const { width, height } = img.getSize()
+    boardClipPrint = pngPrint(img.toPNG(), width, height)
+    clipboard.writeImage(img)
     return true
   })
 
-  /** 系统剪贴板里是否有图片、且是否是白板自己刚复制的选区（里程碑 253）。
-   *  轻量查询（不编码 PNG）：粘贴前先判来源，决定"导入外部图片"还是"复制板内元素"。 */
+  /** 系统剪贴板里是否有图片、且是否是白板自己刚复制的选区（里程碑 253/254）。
+   *  轻量查询（只有命中指纹时才需要编码比对）：粘贴前先判来源，
+   *  决定"导入外部图片"还是"复制板内元素"。 */
   ipcMain.handle('clipboard:readImageInfo', (): { hasImage: boolean; isBoardCopy: boolean } => {
-    const hasImage = !clipboard.readImage().isEmpty()
-    // HTML 标记只在白板复制后存在；外部应用复制图片不会带它（实测外部图片常为纯 image/png）
-    const isBoardCopy = hasImage && clipboard.readHTML().includes(BOARD_CLIP_MARK)
-    return { hasImage, isBoardCopy }
+    const img = clipboard.readImage()
+    if (img.isEmpty()) return { hasImage: false, isBoardCopy: false }
+    return { hasImage: true, isBoardCopy: isBoardClipImage(img) }
   })
 
   ipcMain.handle('shell:openExternal', (_e, url: string) => {

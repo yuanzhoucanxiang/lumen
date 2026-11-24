@@ -92,9 +92,13 @@ async function svgToPngDataUrl(svg: string, scale = 2): Promise<string> {
       img.onerror = () => reject(new Error('SVG 渲染失败'))
       img.src = url
     })
-    const m = /^<svg[^>]*width="(d+)" height="(d+)"/.exec(svg)
+    // 尺寸以 SVG 头为准（导出时由 buildBoardSvg 显式写入）；此前正则漏了反斜杠、
+    // 一直靠 naturalWidth 兜底，极端时序下会产出 1×1 占位图（里程碑 254）
+    const m = /^<svg[^>]*width="(\d+(?:\.\d+)?)" height="(\d+(?:\.\d+)?)"/.exec(svg)
     const w = m ? Number(m[1]) : img.naturalWidth || 1200
     const h = m ? Number(m[2]) : img.naturalHeight || 800
+    // 尺寸不可靠时宁可不写剪贴板，也不要把 1×1 占位图盖上去（粘到外部会得到空白）
+    if (!(w >= 2 && h >= 2)) throw new Error('SVG 尺寸无效')
     const canvas = document.createElement('canvas')
     canvas.width = Math.max(1, Math.round(w * scale))
     canvas.height = Math.max(1, Math.round(h * scale))
@@ -521,7 +525,7 @@ export default function BoardCanvas({
   /** 系统剪贴板里是否有图片（右键菜单打开时探测，决定"粘贴"项是否出现；里程碑 253） */
   const [sysClipImage, setSysClipImage] = useState(false)
   /** 最近一次板内复制的时间：选区图是异步渲染后才写入系统剪贴板的，
-   *  紧接着 Ctrl+V 时标记可能还没落地，这段时间内按"板内复制优先"处理（里程碑 253） */
+   *  紧接着 Ctrl+V 时来源判定可能还没就绪，这段时间内按"板内复制优先"处理（里程碑 253） */
   const lastBoardCopyAtRef = useRef(0)
   const copySelection = () => {
     const ids = selectedIdsRef.current
@@ -529,7 +533,7 @@ export default function BoardCanvas({
     clipboardRef.current = boardItemsRef.current
       .filter((i) => ids.includes(i.id))
       .map((i) => ({ ...i, shape: i.shape }))
-    // 刚复制：写入系统剪贴板是异步的（选区要先渲染成 PNG），标记落地前的粘贴按板内处理
+    // 刚复制：写入系统剪贴板是异步的（选区要先渲染成 PNG），来源判定就绪前的粘贴按板内处理
     lastBoardCopyAtRef.current = Date.now()
     // 富剪贴板（里程碑 222，借鉴 MOTZ）：内部复制照旧，同时把选区渲染成透明 PNG 写进系统剪贴板，
     // 可以直接粘到微信/其他软件；失败不影响内部复制与粘贴。
@@ -634,8 +638,8 @@ export default function BoardCanvas({
    * 白板粘贴统一入口（里程碑 253）。
    * 优先级按「剪贴板内容来源」判定，而不是「内部剪贴板是否有内容」：
    * 1. 外部复制来的图片（浏览器右键复制/截图工具）→ 导入并放到画布中心；
-   * 2. 白板自己刚复制的选区（复制时写了 HTML 标记）→ 板内复制；
-   * 3. 有图但无标记且内部为空（例如别的白板/上次运行复制过的选区渲染图）→ 当外部图片导入。
+   * 2. 白板自己刚复制的选区（主进程记了内容指纹）→ 板内复制；
+   * 3. 有图但指纹不匹配且内部为空（例如别的白板/上次运行复制过的选区渲染图）→ 当外部图片导入。
    * 此前内部剪贴板一旦有内容就永远优先，导致复制过白板元素后，外部复制的图片再也粘不进来。
    */
   const pasteFromClipboard = async (): Promise<void> => {
@@ -657,7 +661,7 @@ export default function BoardCanvas({
   }
 
   // paste 事件里才有 clipboardData.files（复制图片文件）；Ctrl+V 的 keydown 先占位，
-  // 同一手势随后到达的空 paste 事件按标记跳过，避免与 keydown 路径双粘贴。
+  // 同一手势随后到达的空 paste 事件按时间戳跳过，避免与 keydown 路径双粘贴。
   const lastKeyboardPasteRef = useRef(0)
   const pasteFromClipboardRef = useRef(pasteFromClipboard)
   pasteFromClipboardRef.current = pasteFromClipboard

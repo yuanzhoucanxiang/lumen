@@ -188,13 +188,25 @@ async function main() {
     check('选中画布元素', !picked.err, JSON.stringify(picked))
     if (picked.err) throw new Error(picked.err)
 
-    // ---------- 2. 板内 Ctrl+C：系统剪贴板应带白板标记 ----------
+    // ---------- 2. 板内 Ctrl+C：写出的图片（透明 PNG，2x 选区）可粘到外部，且被识别为白板来源 ----------
     await key('c', 'KeyC', 67, 2)
-    const marked = await waitFor(`
-      const info = await window.api.readClipboardImageInfo()
-      return info.hasImage && info.isBoardCopy ? info : false
-    `, 5000)
-    check('板内复制写入带标记的剪贴板图片', !!marked, JSON.stringify(marked))
+    // 等"本次复制"真正落地：尺寸必须是 2x 选区。只等"有带标记的图"不够——
+    // 全量回归时上一套件可能已留下同样带标记的旧板内剪贴板，会让断言拿到旧图（1×1 假失败）
+    const clipImage = await waitFor(`
+      const dataUrl = await window.api.readClipboardImage()
+      if (!dataUrl) return false
+      const size = await new Promise((resolve) => {
+        const img = new Image()
+        img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+        img.onerror = () => resolve({ w: 0, h: 0 })
+        img.src = dataUrl
+      })
+      if (!(size.w >= 380 && size.w <= 440 && size.h >= 280 && size.h <= 340)) return false
+      return { isPng: dataUrl.startsWith('data:image/png'), bytes: dataUrl.length, ...size }
+    `, 8000)
+    check('板内复制写出的图片可粘到外部(2x 选区尺寸)', !!clipImage && clipImage.isPng, JSON.stringify(clipImage))
+    const marked = await run(`const i = await window.api.readClipboardImageInfo(); return i`)
+    check('板内复制被识别为白板来源', marked.hasImage === true && marked.isBoardCopy === true, JSON.stringify(marked))
 
     // ---------- 3. 外部图片优先级：内部剪贴板有内容时也应导入上板 ----------
     // 等过"刚复制"窗口（1.2s），再用 copyImage 把库里另一张图写成无标记的外部剪贴板内容
