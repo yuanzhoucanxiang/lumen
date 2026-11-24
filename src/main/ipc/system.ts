@@ -80,6 +80,10 @@ export function registerSystemIpc(getWindow: () => BrowserWindow | null): void {
     return `data:image/png;base64,${img.toPNG().toString('base64')}`
   })
 
+  /** 读取系统剪贴板纯文本（里程碑 255）：白板里粘贴"纯图片链接"时用来抓图，
+   *  与素材库的 URL 粘贴行为对齐（此前白板会吞掉 paste 事件，链接粘贴毫无反应）。 */
+  ipcMain.handle('clipboard:readText', (): string => clipboard.readText())
+
   /** 剪贴板图片导入素材库（里程碑 231）：dataURL 落临时文件后走统一导入管线
    *  （缩略图/查重/拼音/来源标记都复用），导入后删临时目录 */
   ipcMain.handle('clipboard:importImage', async (_e, dataUrl: string) => {

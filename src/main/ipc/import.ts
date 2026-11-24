@@ -112,6 +112,8 @@ export function registerImportIpc(getWindow: () => BrowserWindow | null): void {
         result.failed += r.failed
         if (r.failedFiles) result.failedFiles!.push(...r.failedFiles)
         if (r.importedIds) result.importedIds = [...(result.importedIds ?? []), ...r.importedIds]
+        // 命中库内已有素材（里程碑 255）：白板粘贴链接 / 重复抓同一 URL 时也要能放上画布
+        if (r.matchedIds) result.matchedIds = [...(result.matchedIds ?? []), ...r.matchedIds]
       }
       return result
     } finally {

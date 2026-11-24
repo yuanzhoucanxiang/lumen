@@ -266,6 +266,8 @@ const api = {
    *  外部复制来的图片 hasImage=true 且 isBoardCopy=false */
   readClipboardImageInfo: (): Promise<{ hasImage: boolean; isBoardCopy: boolean }> =>
     ipcRenderer.invoke('clipboard:readImageInfo'),
+  /** 剪贴板纯文本（里程碑 255）：白板粘贴图片链接时判断用 */
+  readClipboardText: (): Promise<string> => ipcRenderer.invoke('clipboard:readText'),
   /** 把剪贴板图片导入素材库（里程碑 231） */
   importClipboardImage: (dataUrl: string): Promise<ImportResult> =>
     ipcRenderer.invoke('clipboard:importImage', dataUrl),

@@ -83,6 +83,9 @@ function xmlEscape(s: string): string {
 /** 收敛为有限数值（白板元素字段可能源于导入的 .lumenboard，防 SVG 属性逃逸；null/undefined 回退默认） */
 /** SVG 字符串 → PNG dataURL（导出与白板选区复制共用；含 foreignObject 的 SVG 不能走这里） */
 async function svgToPngDataUrl(svg: string, scale = 2): Promise<string> {
+  /** 画布单边上限（Chromium 超限会静默产出空白/1×1）：超大选区/大画布导出时等比降采样，
+   *  宁可比 2x 小一点，也不要写出空白图（里程碑 255） */
+  const MAX_EDGE = 8192
   const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   try {
@@ -99,12 +102,14 @@ async function svgToPngDataUrl(svg: string, scale = 2): Promise<string> {
     const h = m ? Number(m[2]) : img.naturalHeight || 800
     // 尺寸不可靠时宁可不写剪贴板，也不要把 1×1 占位图盖上去（粘到外部会得到空白）
     if (!(w >= 2 && h >= 2)) throw new Error('SVG 尺寸无效')
+    const fit = Math.min(1, MAX_EDGE / Math.max(w * scale, h * scale))
+    const eff = scale * fit
     const canvas = document.createElement('canvas')
-    canvas.width = Math.max(1, Math.round(w * scale))
-    canvas.height = Math.max(1, Math.round(h * scale))
+    canvas.width = Math.max(1, Math.round(w * eff))
+    canvas.height = Math.max(1, Math.round(h * eff))
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('canvas 不可用')
-    ctx.scale(scale, scale)
+    ctx.scale(eff, eff)
     ctx.drawImage(img, 0, 0, w, h)
     return canvas.toDataURL('image/png')
   } finally {
@@ -569,11 +574,23 @@ export default function BoardCanvas({
   }
   const addItemCopies = async (src: BoardItem[], dx: number, dy: number) => {
     if (boardIdRef.current == null || src.length === 0) return
-    // 粘贴与撤销/重做共用 busy 位：快速连按时丢弃后续请求,避免多个 async 交错互相踩踏
+    // 粘贴与撤销/重做共用 busy 位：快速连按时丢弃后续请求，避免多个 async 交错互相踩踏
     if (histBusyRef.current) return
     histBusyRef.current = true
     try {
       pushHistory()
+      // 成组结构跟着复制走（里程碑 255）：同源组的副本共用一个新的组 id，
+      // 此前副本 groupId 为空，复制一组元素后得到的是散件
+      const groupMap = new Map<string, string>()
+      const copyGroup = (gid: string): string => {
+        if (!gid) return ''
+        let next = groupMap.get(gid)
+        if (!next) {
+          next = Math.random().toString(36).slice(2, 10)
+          groupMap.set(gid, next)
+        }
+        return next
+      }
       await window.api.addBoardItems(
         boardIdRef.current,
         src.map((it) => ({
@@ -591,7 +608,8 @@ export default function BoardCanvas({
           noteFontSize: it.noteFontSize ?? 16,
           // 镜像必须跟着复制走（此前漏传，Ctrl+D 出来的图左右翻回正面）
           flipX: it.flipX,
-          flipY: it.flipY
+          flipY: it.flipY,
+          groupId: copyGroup(it.groupId)
         }))
       )
       await refreshBoardItems(boardIdRef.current)
@@ -634,12 +652,36 @@ export default function BoardCanvas({
     }
   }
 
+  /** 剪贴板里是纯图片链接 → 抓取入库并放到画布中心（里程碑 255）。
+   *  素材库的全局 paste 支持粘贴链接抓图，白板此前会吞掉 paste 事件，链接粘贴毫无反应。 */
+  const pasteUrls = async (urls: string[]): Promise<void> => {
+    if (urls.length === 0 || boardIdRef.current == null) return
+    const res = await window.api.importFromUrls(urls).catch(() => null)
+    // 链接图已在库里时也要能上板（与剪贴板图片同一口径）
+    const ids = [...new Set([...(res?.importedIds ?? []), ...(res?.matchedIds ?? [])])]
+    if (ids.length > 0) {
+      const frame = frameRef.current?.getBoundingClientRect()
+      const pt = frame
+        ? canvasPointFromClient(frame.left + frame.width / 2, frame.top + frame.height / 2)
+        : { x: 0, y: 0 }
+      await useLibraryStore.getState().refreshAssets()
+      await addAssetsToBoard(ids, Math.round(pt.x), Math.round(pt.y))
+      useLibraryStore.getState().showToast(`已从链接加入 ${ids.length} 张到白板`)
+    } else if (res) {
+      const failed = res.failedUrls?.length ?? res.failed
+      useLibraryStore.getState().showToast(
+        `抓取完成：导入 ${res.imported}，跳过 ${res.skipped}${failed > 0 ? `，失败 ${failed}` : ''}`
+      )
+    }
+  }
+
   /**
    * 白板粘贴统一入口（里程碑 253）。
    * 优先级按「剪贴板内容来源」判定，而不是「内部剪贴板是否有内容」：
    * 1. 外部复制来的图片（浏览器右键复制/截图工具）→ 导入并放到画布中心；
-   * 2. 白板自己刚复制的选区（主进程记了内容指纹）→ 板内复制；
-   * 3. 有图但指纹不匹配且内部为空（例如别的白板/上次运行复制过的选区渲染图）→ 当外部图片导入。
+   * 2. 剪贴板是纯图片链接（无图片、无文件）→ 抓取链接入库并上板（里程碑 255）；
+   * 3. 白板自己刚复制的选区（主进程记了内容指纹）→ 板内复制；
+   * 4. 有图但指纹不匹配且内部为空（例如别的白板/上次运行复制过的选区渲染图）→ 当外部图片导入。
    * 此前内部剪贴板一旦有内容就永远优先，导致复制过白板元素后，外部复制的图片再也粘不进来。
    */
   const pasteFromClipboard = async (): Promise<void> => {
@@ -652,6 +694,15 @@ export default function BoardCanvas({
       // 外部图片：导入失败也消费掉这次粘贴，不回退到板内旧剪贴板（避免"粘出来的是旧元素"）
       await pasteSystemImage()
       return
+    }
+    // 没有图片时才看文本：整段都是 http(s) 链接 → 抓图（外部复制链接的意图优先于板内旧剪贴板）
+    if (!info.hasImage) {
+      const text = await window.api.readClipboardText().catch(() => '')
+      const tokens = text.split(/\s+/).filter(Boolean)
+      if (tokens.length > 0 && tokens.every((t) => /^https?:\/\//i.test(t))) {
+        await pasteUrls(tokens.slice(0, 20))
+        return
+      }
     }
     if (clipboardRef.current.length > 0) {
       void pasteClipboard()
@@ -676,9 +727,11 @@ export default function BoardCanvas({
       if (closest('input, textarea, select, [contenteditable="true"]')) return
       if (boardViewModeRef.current !== 'board' && !closest('[data-board-frame]')) return
       const files = Array.from(e.clipboardData?.files ?? [])
-      // 板内的粘贴一律自己消费：否则 App 的全局 paste 会把图片导进素材库而不是画布
+      // 板内的粘贴一律自己消费：否则 App 的全局 paste 会把图片导进素材库而不是画布。
+      // 用 stopImmediatePropagation：同一窗口万一挂了多个 BoardCanvas（分屏/多实例），只让第一个处理
       e.preventDefault()
       e.stopPropagation()
+      e.stopImmediatePropagation()
       if (files.length > 0) {
         lastKeyboardPasteRef.current = 0
         void pasteFilesRef.current?.(files)

@@ -109,6 +109,19 @@ async function main() {
   const folderId = (((await rawRequest('GET', '/folders')).json?.folders ?? []).find((f) => f.name === tag) || {}).id
   console.log(`夹具就绪: A=${fixtureA} B=${fixtureB}`)
 
+  // 链接粘贴用本地图源（guardedFetch 对用户主动粘贴的 URL 允许本机地址）
+  const httpServer = http.createServer((req, res) => {
+    if (req.url === '/pic.png') {
+      res.writeHead(200, { 'content-type': 'image/png' })
+      res.end(fs.readFileSync(files[0]))
+    } else {
+      res.writeHead(404)
+      res.end()
+    }
+  })
+  await new Promise((resolve) => httpServer.listen(0, '127.0.0.1', resolve))
+  const urlPort = httpServer.address().port
+
   let pass = 0
   let fail = 0
   const check = (name, ok, detail) => {
@@ -123,6 +136,32 @@ async function main() {
       await sleep(interval)
     }
     return null
+  }
+
+  /** 重载渲染层并进入指定白板（API 直改画布数据后必须重载，画布才从 DB 重建） */
+  async function reloadAndEnter(targetBoardId) {
+    await run(`location.reload()`).catch(() => undefined)
+    let ready = false
+    for (let i = 0; i < 60; i++) {
+      await sleep(400)
+      ready = await run(`return !!document.querySelector('nav[aria-label="素材库导航"]')`).catch(() => false)
+      if (ready) break
+    }
+    if (!ready) return false
+    return (
+      (await run(`
+        const exit = document.querySelector('button[aria-label="退出白板"]')
+        if (exit) { exit.click(); await new Promise((r) => setTimeout(r, 300)) }
+        document.querySelector('nav[aria-label="素材库导航"] button[aria-label="白板"]').click()
+        await new Promise((r) => setTimeout(r, 500))
+        const sel = document.querySelector('select[aria-label="切换白板"]')
+        if (!sel) throw new Error('找不到白板切换器')
+        sel.value = ${targetBoardId}
+        sel.dispatchEvent(new Event('change', { bubbles: true }))
+        await new Promise((r) => setTimeout(r, 600))
+        return !!document.querySelector('[data-board-frame]')
+      `)) === true
+    )
   }
 
   /** 外部粘贴新增元素引用的素材（清理时只删这些非夹具的新素材） */
@@ -146,29 +185,9 @@ async function main() {
       return b
     `)
     boardId = board.id
-    await run(`location.reload()`).catch(() => undefined)
-    let ready = false
-    for (let i = 0; i < 60; i++) {
-      await sleep(400)
-      ready = await run(`return !!document.querySelector('nav[aria-label="素材库导航"]')`).catch(() => false)
-      if (ready) break
-    }
-    check('应用重载后就绪', ready, `boardId=${boardId}`)
-    if (!ready) throw new Error('重载后未就绪')
-    const frameOk = await run(`
-      const exit = document.querySelector('button[aria-label="退出白板"]')
-      if (exit) { exit.click(); await new Promise((r) => setTimeout(r, 300)) }
-      document.querySelector('nav[aria-label="素材库导航"] button[aria-label="白板"]').click()
-      await new Promise((r) => setTimeout(r, 500))
-      const sel = document.querySelector('select[aria-label="切换白板"]')
-      if (!sel) throw new Error('找不到白板切换器')
-      sel.value = ${boardId}
-      sel.dispatchEvent(new Event('change', { bubbles: true }))
-      await new Promise((r) => setTimeout(r, 600))
-      return !!document.querySelector('[data-board-frame]')
-    `)
-    check('进入测试白板', frameOk === true, `frame=${frameOk}`)
-    if (!frameOk) throw new Error('未能进入测试白板')
+    const ready = await reloadAndEnter(boardId)
+    check('应用重载并进入测试白板', ready, `boardId=${boardId}`)
+    if (!ready) throw new Error('未能进入测试白板')
     const items = await run(`return await window.api.listBoardItems(${boardId})`)
     check('测试白板就绪且有元素可复制', items.length === 1, `items=${items.length}`)
     if (items.length !== 1) throw new Error('测试白板元素数量异常')
@@ -250,6 +269,88 @@ async function main() {
       return items.length > ${beforeInternal.length} ? items.length : false
     `, 5000)
     check('板内 Ctrl+C/V 仍复制元素', !!internalAdded, `before=${beforeInternal.length} after=${internalAdded}`)
+
+    // ---------- 5. 链接粘贴：剪贴板是纯图片链接时抓图并上板（里程碑 255） ----------
+    const url = `http://127.0.0.1:${urlPort}/pic.png`
+    const copiedText = await run(`
+      const ta = document.createElement('textarea')
+      ta.value = ${JSON.stringify(url)}
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      document.body.appendChild(ta)
+      ta.select()
+      let ok = false
+      try { ok = document.execCommand('copy') } catch { ok = false }
+      ta.remove()
+      return ok
+    `).catch(() => false)
+    if (!copiedText) {
+      check('链接粘贴：抓图并上板', true, '环境跳过(无法写入剪贴板文本)')
+    } else {
+      const beforeLink = await run(`return (await window.api.listBoardItems(${boardId})).length`)
+      await key('v', 'KeyV', 86, 2)
+      const linkAdded = await waitFor(`
+        const items = await window.api.listBoardItems(${boardId})
+        return items.length > ${beforeLink} ? items.map((i) => i.assetId) : false
+      `, 15000)
+      check('链接粘贴：抓图并上板', !!linkAdded && linkAdded.length > beforeLink, JSON.stringify(linkAdded))
+    }
+
+    // ---------- 6. 成组复制保留分组 + 超大选区复制按上限降采样（里程碑 255） ----------
+    await run(`
+      await window.api.addBoardItems(${boardId}, [
+        { assetId: ${JSON.stringify(fixtureA)}, type: 'asset', x: 80, y: 500, width: 200, height: 150, groupId: 'gtest_orig' },
+        { assetId: ${JSON.stringify(fixtureA)}, type: 'asset', x: 5880, y: 500, width: 200, height: 150, groupId: 'gtest_orig' }
+      ])
+      return true
+    `)
+    const reentered = await reloadAndEnter(boardId)
+    check('重载后回到测试白板(成组场景)', reentered, '')
+    if (!reentered) throw new Error('重载后未能进入白板')
+    const clickedGroup = await run(`
+      const items = await window.api.listBoardItems(${boardId})
+      const g = items.filter((i) => i.groupId === 'gtest_orig')
+      if (g.length !== 2) return { err: '成组元素数量异常', n: g.length }
+      const el = document.querySelector('[data-board-item="' + g[0].id + '"]')
+      if (!el) return { err: '成组元素不在 DOM' }
+      const b = el.getBoundingClientRect()
+      const mk = (type) => new PointerEvent(type, { bubbles: true, cancelable: true, clientX: b.left + b.width / 2, clientY: b.top + b.height / 2, button: 0, pointerId: 41, isPrimary: true })
+      el.dispatchEvent(mk('pointerdown'))
+      el.dispatchEvent(mk('pointerup'))
+      el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: b.left + b.width / 2, clientY: b.top + b.height / 2 }))
+      await new Promise((r) => setTimeout(r, 250))
+      return { ok: true }
+    `)
+    check('点击成组元素选中整组', !clickedGroup.err, JSON.stringify(clickedGroup))
+    await key('c', 'KeyC', 67, 2)
+    const capped = await waitFor(`
+      const dataUrl = await window.api.readClipboardImage()
+      if (!dataUrl) return false
+      const size = await new Promise((resolve) => {
+        const img = new Image()
+        img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+        img.onerror = () => resolve({ w: 0, h: 0 })
+        img.src = dataUrl
+      })
+      return size.w >= 4000 ? size : false
+    `, 10000)
+    check(
+      '超大选区复制按画布上限降采样(≤8192)',
+      !!capped && Math.max(capped.w, capped.h) <= 8200 && Math.min(capped.w, capped.h) >= 100,
+      JSON.stringify(capped)
+    )
+    await key('v', 'KeyV', 86, 2)
+    const grouped = await waitFor(`
+      const items = await window.api.listBoardItems(${boardId})
+      const copies = items.filter((i) => i.groupId && i.groupId !== 'gtest_orig')
+      if (copies.length < 2) return false
+      return { n: copies.length, gids: [...new Set(copies.map((i) => i.groupId))] }
+    `, 6000)
+    check(
+      '成组复制保留分组结构(副本共用新组 id)',
+      !!grouped && grouped.gids.length === 1 && grouped.gids[0] !== 'gtest_orig',
+      JSON.stringify(grouped)
+    )
   } finally {
     // ---------- 5. 清理：整块删除测试白板 + 夹具素材/文件夹 + 范围还原 ----------
     try {
@@ -266,6 +367,7 @@ async function main() {
         if (exit) { exit.click(); await new Promise((r) => setTimeout(r, 400)) }
         return true
       `)
+      httpServer.close()
       fs.rmSync(dir, { recursive: true, force: true })
       console.log('夹具已清理')
     } catch (e) {

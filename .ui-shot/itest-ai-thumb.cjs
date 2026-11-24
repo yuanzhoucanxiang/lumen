@@ -299,13 +299,15 @@ async function main() {
   // 走 IPC 直接导入不会让渲染层 store 重查，切一次视图再切回来（setView 内部 refreshAssets）
   await run(`
     const nav = (label) => [...document.querySelectorAll('button[aria-label]')].find((b) => b.getAttribute('aria-label') === label)?.click()
-    nav('已收藏'); nav('全部素材'); return 1
+    nav('已收藏'); nav('全部素材')
+    // 全量回归里前序套件可能把"全部素材"滚到深处，滚动记忆会恢复该位置，
+    // 新导入卡片（在顶部）不在渲染窗口里 → 先复位再等卡片（里程碑 255 测试加固）
+    for (const el of document.querySelectorAll('.modal-scroll')) el.scrollTop = 0
+    return 1
   `)
-  await sleep(900)
+  await sleep(500)
   if (extreme.imported === 2) {
-    await sleep(700)
-    const colW = await run(`const c = document.querySelector('.asset-card'); return c ? Math.round(c.getBoundingClientRect().width) : 0`)
-    const cards = await run(`
+    const findCards = `
       const out = []
       for (const id of ${JSON.stringify(extreme.importedIds)}) {
         // 用 src 而不是 currentSrc 匹配:懒加载的 img 在浏览器真正开始取图前 currentSrc 是空串,
@@ -318,7 +320,14 @@ async function main() {
         })
       }
       return out
-    `)
+    `
+    // 轮询到两张卡片都进 DOM（此前固定 sleep，全量跑时偶发只渲染出一张/零张）
+    let cards = []
+    for (let i = 0; i < 24 && cards.length < 2; i++) {
+      cards = await run(findCards)
+      if (cards.length < 2) await sleep(250)
+    }
+    const colW = await run(`const c = document.querySelector('.asset-card'); return c ? Math.round(c.getBoundingClientRect().width) : 0`)
     check('极端比例素材导入并在视口内渲染', cards.length === 2 && colW > 0, JSON.stringify({ cards, colW }))
     const tall = cards.find((c) => c.id === extreme.importedIds[0])
     const wide = cards.find((c) => c.id === extreme.importedIds[1])
