@@ -838,7 +838,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     const dataUrl = await window.api.readClipboardImage()
     if (!dataUrl) return []
     const r = await window.api.importClipboardImage(dataUrl)
-    const ids = r?.importedIds ?? []
+    // 命中库内已有素材时也回传 id（里程碑 253）：白板粘贴要用它把"已在库里"的图放上画布，
+    // 否则从素材库右键"复制图片"再粘到白板会毫无反应
+    const ids = [...new Set([...(r?.importedIds ?? []), ...(r?.matchedIds ?? [])])]
     if ((r?.imported ?? 0) > 0) {
       get().showToast(`已从剪贴板导入 ${r.imported} 张`)
       await get().refreshAll()

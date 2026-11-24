@@ -9,6 +9,12 @@ import { exportToFolder, exportToZip } from '../exporter'
 import { installAgentSkill, agentSkillStatus, openAgentSkillFolder } from '../agentSkill'
 import type { ExportOptions } from '../../shared/types'
 
+/** 白板选区复制的剪贴板标记（里程碑 253）：写入 HTML 格式，粘贴时用来区分
+ *  「板内 Ctrl+C 的选区」与「从浏览器/其他软件复制来的图片」。HTML 标记对用户不可见，
+ *  也不会污染纯文本粘贴（实测 text 为空、formats 为 text/html + image/png）。 */
+const BOARD_CLIP_MARK = 'data-lumen-board-clip'
+const BOARD_CLIP_HTML = `<meta charset="utf-8"><span ${BOARD_CLIP_MARK}="1"></span>`
+
 export function registerSystemIpc(getWindow: () => BrowserWindow | null): void {
   /* ---------------- 系统操作 ---------------- */
   ipcMain.handle('assets:export', async (_e, ids: string[], mode: 'folder' | 'zip', opts: ExportOptions | undefined) => {
@@ -74,13 +80,25 @@ export function registerSystemIpc(getWindow: () => BrowserWindow | null): void {
     }
   })
 
-  /** 白板选区复制到系统剪贴板（里程碑 222，借鉴 MOTZ 富剪贴板）：dataURL → nativeImage */
+  /** 白板选区复制到系统剪贴板（里程碑 222，借鉴 MOTZ 富剪贴板）：dataURL → nativeImage。
+   *  同时写一段 HTML 标记（里程碑 253）：粘贴时据此区分「白板自己的选区」与「外部复制的图片」——
+   *  此前只写裸图片，白板内 Ctrl+V 只能靠"内部剪贴板有无内容"判断优先级，
+   *  导致外部复制的图片在复制过白板元素后永远粘不进来。 */
   ipcMain.handle('board:copyImage', (_e, dataUrl: string): boolean => {
     if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return false
     const img = nativeImage.createFromDataURL(dataUrl)
     if (img.isEmpty()) return false
-    clipboard.writeImage(img)
+    clipboard.write({ image: img, html: BOARD_CLIP_HTML })
     return true
+  })
+
+  /** 系统剪贴板里是否有图片、且是否是白板自己刚复制的选区（里程碑 253）。
+   *  轻量查询（不编码 PNG）：粘贴前先判来源，决定"导入外部图片"还是"复制板内元素"。 */
+  ipcMain.handle('clipboard:readImageInfo', (): { hasImage: boolean; isBoardCopy: boolean } => {
+    const hasImage = !clipboard.readImage().isEmpty()
+    // HTML 标记只在白板复制后存在；外部应用复制图片不会带它（实测外部图片常为纯 image/png）
+    const isBoardCopy = hasImage && clipboard.readHTML().includes(BOARD_CLIP_MARK)
+    return { hasImage, isBoardCopy }
   })
 
   ipcMain.handle('shell:openExternal', (_e, url: string) => {

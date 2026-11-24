@@ -262,6 +262,10 @@ const api = {
   copyImage: (id: string): Promise<boolean> => ipcRenderer.invoke('asset:copyImage', id),
   /** 系统剪贴板图片（里程碑 231）：PNG dataURL，没有图片为 null */
   readClipboardImage: (): Promise<string | null> => ipcRenderer.invoke('clipboard:readImage'),
+  /** 剪贴板图片来源判定（里程碑 253）：isBoardCopy=白板自己刚复制的选区；
+   *  外部复制来的图片 hasImage=true 且 isBoardCopy=false */
+  readClipboardImageInfo: (): Promise<{ hasImage: boolean; isBoardCopy: boolean }> =>
+    ipcRenderer.invoke('clipboard:readImageInfo'),
   /** 把剪贴板图片导入素材库（里程碑 231） */
   importClipboardImage: (dataUrl: string): Promise<ImportResult> =>
     ipcRenderer.invoke('clipboard:importImage', dataUrl),

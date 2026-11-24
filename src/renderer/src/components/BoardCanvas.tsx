@@ -518,12 +518,19 @@ export default function BoardCanvas({
 
   /* ---------- 复制/粘贴 ---------- */
   const clipboardRef = useRef<BoardItem[]>([])
+  /** 系统剪贴板里是否有图片（右键菜单打开时探测，决定"粘贴"项是否出现；里程碑 253） */
+  const [sysClipImage, setSysClipImage] = useState(false)
+  /** 最近一次板内复制的时间：选区图是异步渲染后才写入系统剪贴板的，
+   *  紧接着 Ctrl+V 时标记可能还没落地，这段时间内按"板内复制优先"处理（里程碑 253） */
+  const lastBoardCopyAtRef = useRef(0)
   const copySelection = () => {
     const ids = selectedIdsRef.current
     if (ids.length === 0) return
     clipboardRef.current = boardItemsRef.current
       .filter((i) => ids.includes(i.id))
       .map((i) => ({ ...i, shape: i.shape }))
+    // 刚复制：写入系统剪贴板是异步的（选区要先渲染成 PNG），标记落地前的粘贴按板内处理
+    lastBoardCopyAtRef.current = Date.now()
     // 富剪贴板（里程碑 222，借鉴 MOTZ）：内部复制照旧，同时把选区渲染成透明 PNG 写进系统剪贴板，
     // 可以直接粘到微信/其他软件；失败不影响内部复制与粘贴。
     void copySelectionImage(clipboardRef.current)
@@ -602,6 +609,87 @@ export default function BoardCanvas({
     useLibraryStore.getState().showToast(`已从剪贴板加入 ${ids.length} 张到白板`)
     return true
   }
+
+  /** 系统剪贴板里的文件（资源管理器/浏览器"复制图片文件"）→ 导入并放到画布中心。
+   *  paste 事件之外的路径拿不到文件，所以由 paste 监听统一处理（见下方 effect）。 */
+  const pasteFilesToBoard = async (files: File[]): Promise<void> => {
+    if (files.length === 0 || boardIdRef.current == null) return
+    const frame = frameRef.current?.getBoundingClientRect()
+    const pt = frame
+      ? canvasPointFromClient(frame.left + frame.width / 2, frame.top + frame.height / 2)
+      : { x: 0, y: 0 }
+    const result = await window.api.importFileObjects(files)
+    // 已在库里的图（命中查重）也要能上板：拖/粘的是"这张图"，不是"必须新建素材"
+    const ids = [...new Set([...(result?.importedIds ?? []), ...(result?.matchedIds ?? [])])]
+    if (ids.length > 0) {
+      await useLibraryStore.getState().refreshAssets()
+      await addAssetsToBoard(ids, Math.round(pt.x), Math.round(pt.y))
+      useLibraryStore.getState().showToast(`已从剪贴板加入 ${ids.length} 张到白板`)
+    } else if (result && result.skipped > 0) {
+      useLibraryStore.getState().showToast('这些图片已在素材库中（可从左侧参考架拖入）')
+    }
+  }
+
+  /**
+   * 白板粘贴统一入口（里程碑 253）。
+   * 优先级按「剪贴板内容来源」判定，而不是「内部剪贴板是否有内容」：
+   * 1. 外部复制来的图片（浏览器右键复制/截图工具）→ 导入并放到画布中心；
+   * 2. 白板自己刚复制的选区（复制时写了 HTML 标记）→ 板内复制；
+   * 3. 有图但无标记且内部为空（例如别的白板/上次运行复制过的选区渲染图）→ 当外部图片导入。
+   * 此前内部剪贴板一旦有内容就永远优先，导致复制过白板元素后，外部复制的图片再也粘不进来。
+   */
+  const pasteFromClipboard = async (): Promise<void> => {
+    const info = await window.api
+      .readClipboardImageInfo()
+      .catch(() => ({ hasImage: false, isBoardCopy: false }))
+    // 板内复制刚发生（选区图仍在异步渲染）：即便剪贴板还是上一张外部图，也按板内粘贴处理
+    const justCopied = Date.now() - lastBoardCopyAtRef.current < 1200
+    if (info.hasImage && !info.isBoardCopy && !(justCopied && clipboardRef.current.length > 0)) {
+      // 外部图片：导入失败也消费掉这次粘贴，不回退到板内旧剪贴板（避免"粘出来的是旧元素"）
+      await pasteSystemImage()
+      return
+    }
+    if (clipboardRef.current.length > 0) {
+      void pasteClipboard()
+      return
+    }
+    if (info.hasImage) await pasteSystemImage()
+  }
+
+  // paste 事件里才有 clipboardData.files（复制图片文件）；Ctrl+V 的 keydown 先占位，
+  // 同一手势随后到达的空 paste 事件按标记跳过，避免与 keydown 路径双粘贴。
+  const lastKeyboardPasteRef = useRef(0)
+  const pasteFromClipboardRef = useRef(pasteFromClipboard)
+  pasteFromClipboardRef.current = pasteFromClipboard
+  const pasteFilesRef = useRef(pasteFilesToBoard)
+  pasteFilesRef.current = pasteFilesToBoard
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent): void => {
+      const target = e.target as HTMLElement | null
+      const closest = (sel: string): boolean =>
+        !!target && typeof target.closest === 'function' && !!target.closest(sel)
+      // 输入框/备注编辑、或焦点在素材库（split 模式）时不接管
+      if (closest('input, textarea, select, [contenteditable="true"]')) return
+      if (boardViewModeRef.current !== 'board' && !closest('[data-board-frame]')) return
+      const files = Array.from(e.clipboardData?.files ?? [])
+      // 板内的粘贴一律自己消费：否则 App 的全局 paste 会把图片导进素材库而不是画布
+      e.preventDefault()
+      e.stopPropagation()
+      if (files.length > 0) {
+        lastKeyboardPasteRef.current = 0
+        void pasteFilesRef.current?.(files)
+        return
+      }
+      // 键盘 Ctrl+V 已由 keydown 处理（同一次手势的 paste 事件里没有文件）
+      if (Date.now() - lastKeyboardPasteRef.current < 1000) {
+        lastKeyboardPasteRef.current = 0
+        return
+      }
+      void pasteFromClipboardRef.current?.()
+    }
+    window.addEventListener('paste', onPaste, true)
+    return () => window.removeEventListener('paste', onPaste, true)
+  }, [])
 
   /* ---------- 方向键微调（DOM 实时,keyup 落库） ---------- */
   const nudgeRef = useRef<{ origs: Map<string, { x: number; y: number }>; dx: number; dy: number } | null>(null)
@@ -1789,10 +1877,10 @@ export default function BoardCanvas({
           return
         }
         if (key === 'v') {
-          e.preventDefault()
-          // 内部剪贴板有内容优先走内部复制粘贴；否则尝试系统剪贴板图片（里程碑 231）
-          if (clipboardRef.current.length > 0) void pasteClipboard()
-          else void pasteSystemImage()
+          // 不阻止默认行为：让原生 paste 事件照常发出（剪贴板里的"图片文件"只有 paste 事件带得到，
+          // 由下方 capture 监听处理文件）；这里先做图片/板内粘贴，并留时间戳让随后的事件跳过，防双粘贴
+          lastKeyboardPasteRef.current = Date.now()
+          void pasteFromClipboard()
           return
         }
         if (key === 'd') {
@@ -1898,7 +1986,8 @@ export default function BoardCanvas({
       const pt = canvasPointFromClient(e.clientX, e.clientY)
       void (async () => {
         const result = await window.api.importFileObjects(Array.from(e.dataTransfer.files))
-        const ids = result?.importedIds ?? []
+        // 命中查重的既有素材也放上板（用户拖的是这张图，不是"必须新建"）
+        const ids = [...new Set([...(result?.importedIds ?? []), ...(result?.matchedIds ?? [])])]
         if (ids.length > 0) {
           await useLibraryStore.getState().refreshAssets()
           await addAssetsToBoard(ids, Math.round(pt.x), Math.round(pt.y))
@@ -2273,6 +2362,13 @@ export default function BoardCanvas({
     e.stopPropagation()
     // 右键未选中元素：单选它;右键已选中元素：保持组选中（菜单作用于组）
     if (item && !isSelected(item.id)) setSel([item.id])
+    // 空白菜单的「粘贴」不仅适用于板内复制，也要能粘外部图片：打开时探测系统剪贴板有无图片
+    if (!item) {
+      void window.api
+        .readClipboardImageInfo()
+        .then((info) => setSysClipImage(info.hasImage))
+        .catch(() => setSysClipImage(false))
+    }
     setCtxMenu({ x: e.clientX, y: e.clientY, itemId: item?.id ?? null })
   }
   /**
@@ -2565,8 +2661,8 @@ export default function BoardCanvas({
   }
   const pasteCtx = () => {
     setCtxMenu(null)
-    if (clipboardRef.current.length > 0) void pasteClipboard()
-    else void pasteSystemImage()
+    // 与 Ctrl+V 同一入口：外部图片优先，板内选区其次（里程碑 253）
+    void pasteFromClipboard()
   }
 
   /* ---------- 素材宽高比（用于 height=0 自动计算） ---------- */
@@ -3233,7 +3329,7 @@ export default function BoardCanvas({
                 <Icon name="type" size={12} />
                 添加文本
               </button>
-              {clipboardRef.current.length > 0 && (
+              {(clipboardRef.current.length > 0 || sysClipImage) && (
                 <button
                   className="flex w-full cursor-pointer items-center gap-1.5 px-4 py-2 text-left text-[12px] hover:bg-[var(--bg-hover)]"
                   onClick={() => pasteCtx()}
