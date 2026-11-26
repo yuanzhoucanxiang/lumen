@@ -3,6 +3,7 @@ import { assetPreviewUrl, assetThumbUrl, useLibraryStore } from '@renderer/store
 import Icon from './Icon'
 import { useTheme } from '../theme'
 import type { Asset, BoardItem, BoardItemPatch, NewBoardItem, ShapeSpec } from '@shared/types'
+import { VIDEO_EXTS } from '@shared/types'
 import { PREVIEW_LOD_EXTS } from '@shared/previewFormats'
 import { ASSET_MIME, readAssetIds } from '@renderer/dnd'
 import {
@@ -545,10 +546,54 @@ export default function BoardCanvas({
     void copySelectionImage(clipboardRef.current)
   }
 
-  /** 把白板选区渲染成透明底 PNG 写入系统剪贴板（只取选区包围盒） */
+  /** 单张素材复制到剪贴板：直接按**原图分辨率**出图（里程碑 256）。
+   *  此前一律按画布显示尺寸 ×2 渲染，240px 的板面元素粘出去只有 480px，
+   *  远低于原图（用户反馈"不是最高分辨率"）。原图格式浏览器解不了（PSD/HEIC 等）返回 false，
+   *  调用方回退到合成渲染路径。翻转为镜像、透明度按元素设置应用。 */
+  const copySingleAssetOriginal = async (item: BoardItem): Promise<boolean> => {
+    const id = item.assetId
+    if (!id) return false
+    try {
+      const asset = assetById.get(id) ?? (await window.api.getAsset(id))
+      if (!asset || VIDEO_EXTS.includes(asset.ext)) return false
+      const res = await fetch(`${window.api.originalUrl(id)}&e=${asset.edited ?? 0}`)
+      if (!res.ok) return false
+      const blob = await res.blob()
+      const bmp = await createImageBitmap(blob)
+      // 与合成路径同一上限：超大原图等比缩到画布单边 8192
+      const fit = Math.min(1, 8192 / Math.max(bmp.width, bmp.height))
+      const w = Math.max(1, Math.round(bmp.width * fit))
+      const h = Math.max(1, Math.round(bmp.height * fit))
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        bmp.close?.()
+        return false
+      }
+      ctx.globalAlpha = Math.min(100, Math.max(0, item.opacity ?? 100)) / 100
+      ctx.translate(item.flipX ? w : 0, item.flipY ? h : 0)
+      ctx.scale(item.flipX ? -1 : 1, item.flipY ? -1 : 1)
+      ctx.drawImage(bmp, 0, 0, w, h)
+      bmp.close?.()
+      await window.api.copyBoardImage(canvas.toDataURL('image/png'))
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** 把白板选区渲染成透明底 PNG 写入系统剪贴板（只取选区包围盒）。
+   *  单张素材走原图直出；多选/文字/形状走合成，采样倍数取所选素材的原生像素密度
+   *  （显示 240px 的原图有 2000px 就按更高倍数出图），仍受画布单边 8192 上限约束。 */
   const copySelectionImage = async (items: BoardItem[]) => {
     if (items.length === 0) return
     try {
+      const only = items[0]
+      if (items.length === 1 && only.type === 'asset' && only.assetId) {
+        if (await copySingleAssetOriginal(only)) return
+      }
       let minX = Infinity
       let minY = Infinity
       let maxX = -Infinity
@@ -561,12 +606,21 @@ export default function BoardCanvas({
         maxY = Math.max(maxY, it.y + h)
       }
       if (!Number.isFinite(minX) || maxX <= minX || maxY <= minY) return
+      // 原生像素密度：素材原宽 / 板面显示宽。显示 240px 的 2000px 原图 → 8.3 倍
+      let maxRatio = 0
+      for (const it of items) {
+        if (it.type !== 'asset' || !it.assetId || it.width <= 0) continue
+        const asset = assetById.get(it.assetId)
+        if (asset && asset.width > 0) maxRatio = Math.max(maxRatio, asset.width / it.width)
+      }
+      const scale = Math.min(8, Math.max(2, maxRatio || 2))
       const svg = await buildBoardSvg(true, {
         items,
         bbox: { x: minX, y: minY, w: maxX - minX, h: maxY - minY },
-        transparent: true
+        transparent: true,
+        hq: true
       })
-      const dataUrl = await svgToPngDataUrl(svg, 2)
+      const dataUrl = await svgToPngDataUrl(svg, scale)
       await window.api.copyBoardImage(dataUrl)
     } catch {
       /* 剪贴板写入失败静默：内部复制/粘贴不受影响 */
@@ -1255,10 +1309,12 @@ export default function BoardCanvas({
    * 生成画布场景 SVG（背景/参考线/图片/文字/形状全量导出,图片内嵌 base64）。
    * pngMode=true 时笔记用 SVG <text> 渲染而非 foreignObject——Chromium 下
    * 含 foreignObject 的 SVG 绘入 canvas 会污染画布,无法 toDataURL(实测探针确认)。
+   * hq=true 时素材用 3072 档预览而非缩略图：复制/导出 PNG 要交付清晰图，
+   * 缩略图（长边 512）放大后必然糊（里程碑 256）。
    */
   const buildBoardSvg = async (
     pngMode = false,
-    opts?: { items?: BoardItem[]; bbox?: Rect; transparent?: boolean }
+    opts?: { items?: BoardItem[]; bbox?: Rect; transparent?: boolean; hq?: boolean }
   ): Promise<string> => {
     const bbox = opts?.bbox ?? itemsBBox() ?? { x: 0, y: 0, w: 1200, h: 800 }
     const pad = opts?.items ? 0 : 60
@@ -1301,9 +1357,17 @@ export default function BoardCanvas({
       if (it.type === 'asset' && it.assetId) {
         const asset = assetById.get(it.assetId) ?? (await window.api.getAsset(it.assetId))
         if (!asset) continue
+        // 高清路径优先用 3072 预览（视频只有故事板）；取不到再回退缩略图。
         // assetThumbUrl 已含 edited 戳;不可出缩略图的格式返回 ''(fetch('') 会抓当前页面)
-        const thumb = assetThumbUrl(asset)
-        const dataUrl = thumb ? await fetchToDataUrl(thumb) : ''
+        const hq = opts?.hq ?? pngMode
+        let dataUrl = ''
+        if (hq && !VIDEO_EXTS.includes(asset.ext)) {
+          dataUrl = await fetchToDataUrl(assetPreviewUrl(asset, 3072))
+        }
+        if (!dataUrl) {
+          const thumb = assetThumbUrl(asset)
+          dataUrl = thumb ? await fetchToDataUrl(thumb) : ''
+        }
         const ih = it.height > 0 ? it.height : it.width * (aspectCacheRef.current[it.assetId] ?? 0.75)
         if (dataUrl) {
           // 翻转:以元素自身为中心镜像(translate 到对角再反向缩放)

@@ -11,7 +11,17 @@ import type { RefObject } from 'react'
  * 已在组件内自行处理 Esc 的弹窗可传 closeOnEscape:false，但仍参与焦点陷阱与栈顺序。
  */
 let dialogSeq = 0
-const dialogStack: number[] = []
+/** 弹窗栈：记录 id 与元素，按键时清掉已脱离文档的残留条目（里程碑 256）。
+ *  此前只存 id——若某个弹窗元素被移除却没走到 effect cleanup（条件渲染/异常路径），
+ *  它的 id 会永远占着栈顶，之后所有弹窗的 Esc 都会被判成"不是最上层"而失效。 */
+const dialogStack: { id: number; el: HTMLElement }[] = []
+
+/** 清掉已卸载的残留条目（元素脱离文档即视为失效） */
+function pruneDialogStack(): void {
+  for (let i = dialogStack.length - 1; i >= 0; i--) {
+    if (!dialogStack[i].el.isConnected) dialogStack.splice(i, 1)
+  }
+}
 /** 焦点刚进入弹窗前的元素（读取 FocusEvent.relatedTarget；解决 autoFocus 抢在 effect 之前的问题） */
 let focusBeforeDialog: HTMLElement | null = null
 
@@ -57,7 +67,7 @@ export function useDialogFocus(
     if (!el) return
 
     const id = ++dialogSeq
-    dialogStack.push(id)
+    dialogStack.push({ id, el })
     const activeNow = document.activeElement as HTMLElement | null
     const previous = el.contains(activeNow) ? focusBeforeDialog : activeNow
 
@@ -69,8 +79,9 @@ export function useDialogFocus(
     if (explicit || !el.contains(document.activeElement)) initial.focus({ preventScroll: true })
 
     const onKey = (e: KeyboardEvent): void => {
-      // 只有最上层弹窗响应键盘；嵌套时底层不会同时关闭
-      if (dialogStack[dialogStack.length - 1] !== id) return
+      // 先清掉残留条目，再判断是不是最上层
+      pruneDialogStack()
+      if (dialogStack[dialogStack.length - 1]?.id !== id) return
 
       if (e.key === 'Escape' && closeOnEscapeRef.current) {
         e.preventDefault()
@@ -112,7 +123,7 @@ export function useDialogFocus(
     document.addEventListener('keydown', onKey, true)
     return () => {
       document.removeEventListener('keydown', onKey, true)
-      const index = dialogStack.indexOf(id)
+      const index = dialogStack.findIndex((d) => d.id === id)
       if (index >= 0) dialogStack.splice(index, 1)
       if (previous?.isConnected) previous.focus({ preventScroll: true })
     }

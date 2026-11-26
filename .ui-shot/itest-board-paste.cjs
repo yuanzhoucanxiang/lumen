@@ -89,13 +89,15 @@ async function main() {
   const prevScope = await run(`return { u: (await window.api.getSettings()).agentScopeUnrestricted ?? false }`)
   await run(`await window.api.updateSettings({ agentScopeUnrestricted: true })`)
 
-  // ---------- 0b. 夹具：A 用作画布元素，B 用作"外部剪贴板图片" ----------
+  // ---------- 0b. 夹具：A 是高清大图（1600×1200，用于验证按原图分辨率复制），B 用作"外部剪贴板图片" ----------
   const tag = `paste-${Date.now().toString(36)}`
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `lumen-${tag}-`))
   const files = []
   for (const name of ['a', 'b']) {
     const f = path.join(dir, `${tag}-${name}.png`)
-    await sharp({ create: { width: 240 + (name === 'b' ? 24 : 0), height: 180, channels: 3,
+    const w = name === 'a' ? 1600 : 264
+    const h = name === 'a' ? 1200 : 180
+    await sharp({ create: { width: w, height: h, channels: 3,
       background: { r: 30 + Math.floor(Math.random() * 200), g: 30 + Math.floor(Math.random() * 200), b: 30 + Math.floor(Math.random() * 200), alpha: 1 } } })
       .png()
       .toFile(f)
@@ -207,10 +209,9 @@ async function main() {
     check('选中画布元素', !picked.err, JSON.stringify(picked))
     if (picked.err) throw new Error(picked.err)
 
-    // ---------- 2. 板内 Ctrl+C：写出的图片（透明 PNG，2x 选区）可粘到外部，且被识别为白板来源 ----------
+    // ---------- 2. 板内 Ctrl+C：单张素材按原图分辨率出图，且被识别为白板来源 ----------
     await key('c', 'KeyC', 67, 2)
-    // 等"本次复制"真正落地：尺寸必须是 2x 选区。只等"有带标记的图"不够——
-    // 全量回归时上一套件可能已留下同样带标记的旧板内剪贴板，会让断言拿到旧图（1×1 假失败）
+    // 夹具原图 1600×1200，板面元素 200×150：复制应出 1600×1200（原图），而不是板面尺寸 ×2（400×300）
     const clipImage = await waitFor(`
       const dataUrl = await window.api.readClipboardImage()
       if (!dataUrl) return false
@@ -220,10 +221,10 @@ async function main() {
         img.onerror = () => resolve({ w: 0, h: 0 })
         img.src = dataUrl
       })
-      if (!(size.w >= 380 && size.w <= 440 && size.h >= 280 && size.h <= 340)) return false
+      if (!(size.w === 1600 && size.h === 1200)) return false
       return { isPng: dataUrl.startsWith('data:image/png'), bytes: dataUrl.length, ...size }
     `, 8000)
-    check('板内复制写出的图片可粘到外部(2x 选区尺寸)', !!clipImage && clipImage.isPng, JSON.stringify(clipImage))
+    check('板内复制单张素材按原图分辨率出图(1600×1200)', !!clipImage && clipImage.isPng, JSON.stringify(clipImage))
     const marked = await run(`const i = await window.api.readClipboardImageInfo(); return i`)
     check('板内复制被识别为白板来源', marked.hasImage === true && marked.isBoardCopy === true, JSON.stringify(marked))
 
